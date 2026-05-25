@@ -119,6 +119,8 @@ def parse_projection(proj: dict, included_lookup: dict) -> dict | None:
         "start_time": attrs.get("start_time"),
         "is_promo": attrs.get("is_promo", False),
         "is_live": attrs.get("is_live", False),
+	"is_live": attrs.get("is_live", False),
+        "odds_type": attrs.get("odds_type", "standard"),
     }
 
 
@@ -243,12 +245,13 @@ def run():
             session.execute(text("""
                 INSERT INTO prop_lines (
                     sportsbook, sport_code, player_id, game_id, stat_type,
-                    line_value, is_pickem, snapshot_at
+                    line_value, line_variant, is_pickem, snapshot_at
                 )
-                VALUES ('prizepicks', :sc, :pid, :gid, :stat, :line, TRUE, :ts)
+                VALUES ('prizepicks', :sc, :pid, :gid, :stat, :line, :variant, TRUE, :ts)
             """), {
                 "sc": rec["sport_code"], "pid": player_id, "gid": game_id,
-                "stat": rec["stat_type"], "line": rec["line_value"], "ts": snapshot_at,
+                "stat": rec["stat_type"], "line": rec["line_value"],
+                "variant": rec["odds_type"], "ts": snapshot_at,
             })
             inserted += 1
 

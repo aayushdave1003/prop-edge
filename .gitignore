@@ -7,3 +7,5 @@ data/
 *.parquet
 .DS_Store
 *.egg-info/
+backfill.log
+cron.log
