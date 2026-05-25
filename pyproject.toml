@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "props"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "sqlalchemy>=2.0",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pybaseball>=2.2",
+    "requests>=2.32",
+    "python-dotenv>=1.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "tenacity>=8.5",
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipython",
+    "jupyter",
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["props*"]
+exclude = ["sql*", "notebooks*", "scripts*"]
