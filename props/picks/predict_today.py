@@ -351,6 +351,12 @@ def _likely_nba_players_for_team(team_id, target_date, top_n=10):
           AND g.game_date >= :start
           AND g.game_date < :end
           AND pg.minutes_played >= 5
+          AND NOT EXISTS (
+              SELECT 1 FROM player_injuries pi
+              WHERE pi.player_name = p.full_name
+                AND pi.status IN ('Out', 'Doubtful')
+                AND pi.fetched_at > NOW() - INTERVAL '6 hours'
+          )
         GROUP BY pg.player_id, p.full_name
         HAVING MAX(g.game_date) >= :recent_cutoff
         ORDER BY total_min DESC
