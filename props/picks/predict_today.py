@@ -240,7 +240,7 @@ def score_and_edge(model, meta, entry, feature_df):
     if merged.empty:
         merged = lines.merge(preds, on="player_id", how="inner",
                               suffixes=("_line", "_pred"))
-        merged["game_id"] = merged["game_id_line"]
+        merged["game_id"] = merged["game_id_pred"]
 
     merged["p_over"] = 1 - scipy_stats.poisson.cdf(
         merged["line_value"].astype(int), merged["lambda"]
