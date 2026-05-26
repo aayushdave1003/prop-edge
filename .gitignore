@@ -9,3 +9,5 @@ data/
 *.egg-info/
 backfill.log
 cron.log
+nba_backfill.log
+*.log
