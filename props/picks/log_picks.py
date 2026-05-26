@@ -90,6 +90,7 @@ def main():
                     :lid, :dir, :mvid, :prid,
                     :mp, :edge, :ev, NOW()
                 )
+                ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
             """), {
                 "pid": int(row["player_id"]), "gid": int(row["game_id"]),
                 "st": row["stat_type"], "lid": int(row["line_id"]),

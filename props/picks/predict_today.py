@@ -236,11 +236,11 @@ def score_and_edge(model, meta, entry, feature_df):
     if lines.empty:
         return pd.DataFrame()
 
-    merged = lines.merge(preds, on=["player_id", "game_id"], how="inner")
-    if merged.empty:
-        merged = lines.merge(preds, on="player_id", how="inner",
-                              suffixes=("_line", "_pred"))
-        merged["game_id"] = merged["game_id_pred"]
+    # Lines have PrizePicks placeholder game_ids; preds have real MLB game_ids.
+    # Merge on player_id only and take the real game_id from preds.
+    merged = lines.merge(preds, on="player_id", how="inner",
+                          suffixes=("_line", "_pred"))
+    merged["game_id"] = merged["game_id_pred"]
 
     merged["p_over"] = 1 - scipy_stats.poisson.cdf(
         merged["line_value"].astype(int), merged["lambda"]
