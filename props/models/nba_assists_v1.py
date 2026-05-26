@@ -51,6 +51,19 @@ FEATURE_KEYS = [
     # Context
     "days_rest",
     "games_played_season",
+    "opp_last_5_allowed_pts_scored",
+    "opp_last_10_allowed_pts_scored",
+    "opp_last_5_allowed_reb_scored",
+    "opp_last_10_allowed_reb_scored",
+    "opp_last_5_allowed_threes_scored",
+    "opp_last_10_allowed_threes_scored",
+    "opp_last_10_allowed_possessions",
+    "is_back_to_back",
+    "team_days_rest",
+    "last_10_avg_assists_home",
+    "last_10_avg_assists_away",
+    "last_10_avg_minutes_home",
+    "last_10_avg_minutes_away",
 ]
 
 
