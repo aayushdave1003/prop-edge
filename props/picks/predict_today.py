@@ -1,12 +1,11 @@
-"""Generate today's MLB strikeout predictions and find edges vs PrizePicks lines.
+"""Generate today's MLB predictions across all registered models.
 
-Pipeline:
-  1. Pull today's MLB games + probable pitchers from MLB Stats API
-  2. For each pitcher, build inference feature vector
-  3. Score with trained model
-  4. Convert to full distribution -> P(over X) for each prop line
-  5. Compare to current PrizePicks strikeouts_pitcher lines
-  6. Output ranked edges
+For each model in the registry:
+  - Determine who to predict for (starters if pitcher role, regulars if batter role)
+  - Build feature vectors using the inference module
+  - Score with the model
+  - Convert to Poisson P(over X) for each prop line
+  - Match to standard PrizePicks lines and compute edges
 """
 import json
 from datetime import date, datetime
@@ -20,23 +19,19 @@ from sqlalchemy import text
 
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
-from props.features.inference import build_full_feature_vector
+from props.features.inference import batter_features, pitcher_quality_features
+from props.models.registry import MODELS, ModelEntry
 
 
-MODEL_PATH = Path("models/strikeouts_v1.txt")
-META_PATH = Path("models/strikeouts_v1_meta.json")
-
-
-def load_model():
-    log.info("loading_model", path=str(MODEL_PATH))
-    model = lgb.Booster(model_file=str(MODEL_PATH))
-    with open(META_PATH) as f:
+def load_model(entry):
+    log.info("loading_model", name=entry.name)
+    model = lgb.Booster(model_file=str(entry.model_path))
+    with open(entry.meta_path) as f:
         meta = json.load(f)
     return model, meta
 
 
-def fetch_todays_schedule_with_pitchers(target_date: date) -> list[dict]:
-    """MLB Stats API exposes probable pitchers in the schedule."""
+def fetch_todays_schedule_with_pitchers(target_date):
     url = "https://statsapi.mlb.com/api/v1/schedule"
     params = {
         "sportId": 1,
@@ -66,8 +61,7 @@ def fetch_todays_schedule_with_pitchers(target_date: date) -> list[dict]:
     return games
 
 
-def resolve_external_to_internal_ids(games: list[dict]) -> list[dict]:
-    """Translate MLB Stats API external IDs to our internal player_id / team_id."""
+def resolve_external_to_internal_ids(games):
     pitcher_ext_ids = set()
     team_ext_ids = set()
     for g in games:
@@ -87,14 +81,20 @@ def resolve_external_to_internal_ids(games: list[dict]) -> list[dict]:
             SELECT external_id, team_id FROM teams
             WHERE sport_code='mlb' AND external_id = ANY(:ids)
         """), {"ids": list(team_ext_ids)}).all()
+        game_rows = session.execute(text("""
+            SELECT external_id, game_id FROM games
+            WHERE sport_code='mlb' AND external_id = ANY(:ids)
+        """), {"ids": [g["external_id"] for g in games]}).all()
 
     pid_map = {row[0]: row[1] for row in pitcher_rows}
     tid_map = {row[0]: row[1] for row in team_rows}
+    gid_map = {row[0]: row[1] for row in game_rows}
 
     resolved = []
     for g in games:
         resolved.append({
             **g,
+            "game_id": gid_map.get(g["external_id"]),
             "home_pitcher_id": pid_map.get(g["home_pitcher_external_id"]),
             "away_pitcher_id": pid_map.get(g["away_pitcher_external_id"]),
             "home_team_id": tid_map.get(g["home_team_external_id"]),
@@ -103,48 +103,8 @@ def resolve_external_to_internal_ids(games: list[dict]) -> list[dict]:
     return resolved
 
 
-def build_pitcher_features_for_today(games: list[dict], target_date: date,
-                                     season: str, feature_keys: list[str]):
-    """For each scheduled pitcher, build inference features.
-
-    Pitchers here are predicting their OWN K count, so the "opposing team"
-    in build_full_feature_vector is irrelevant -- we use the offensive team
-    they're facing for opposing_lineup features instead. We compute those
-    separately because inference.py is currently batter-oriented.
-    """
-    rows = []
-    for g in games:
-        for side in ["home", "away"]:
-            pid = g[f"{side}_pitcher_id"]
-            if pid is None:
-                continue
-            opposing_side = "away" if side == "home" else "home"
-            opp_team_id = g[f"{opposing_side}_team_id"]
-            if opp_team_id is None:
-                continue
-
-            # Build pitcher's own rolling features using the batter_features helper
-            # (it iterates over ALL_STATS, which includes pitching stats too).
-            from props.features.inference import batter_features
-            feats = batter_features(pid, target_date, season)
-
-            # Add opposing-lineup features (the missing piece for pitchers).
-            opp_feats = _opposing_lineup_features(opp_team_id, target_date)
-            feats.update(opp_feats)
-
-            rows.append({
-                "pitcher_id": pid,
-                "pitcher_name": g[f"{side}_pitcher_name"],
-                "game_external_id": g["external_id"],
-                "opponent_team_id": opp_team_id,
-                "side": side,
-                **{k: feats.get(k, 0) for k in feature_keys},
-            })
-    return pd.DataFrame(rows)
-
-
-def _opposing_lineup_features(team_id: int, before_date: date) -> dict:
-    """Compute the opposing team's rolling K rate and offense over their prior games."""
+def _opposing_lineup_features(team_id, before_date):
+    """Compute opposing-team rolling K rate and offense over prior games."""
     sql = """
         SELECT g.game_date,
                SUM((pg.stats->>'strikeouts')::int) AS team_k,
@@ -166,16 +126,13 @@ def _opposing_lineup_features(team_id: int, before_date: date) -> dict:
     if df.empty:
         return {f"lineup_last_{w}_{k}": 0 for w in [10, 20]
                 for k in ["k_rate", "avg_runs", "avg_tb", "walk_rate"]}
-
     feats = {}
     for w in [10, 20]:
         win = df.iloc[-w:]
         sum_k = win["team_k"].sum()
         sum_pa = win["team_pa"].sum()
         n = len(win)
-        feats[f"lineup_last_{w}_k_rate"] = (
-            round(sum_k / sum_pa, 4) if sum_pa > 0 else 0
-        )
+        feats[f"lineup_last_{w}_k_rate"] = round(sum_k / sum_pa, 4) if sum_pa > 0 else 0
         feats[f"lineup_last_{w}_avg_runs"] = round(win["team_runs"].sum() / n, 4)
         feats[f"lineup_last_{w}_avg_tb"] = round(win["team_tb"].sum() / n, 4)
         feats[f"lineup_last_{w}_walk_rate"] = (
@@ -184,55 +141,120 @@ def _opposing_lineup_features(team_id: int, before_date: date) -> dict:
     return feats
 
 
-def predict_and_score(model, feature_df: pd.DataFrame,
-                     feature_keys: list[str]) -> pd.DataFrame:
+def _likely_batters_for_team(team_id, target_date, season, top_n=9):
+    """Pull the team's recent regulars (most PAs in the last 30 days)."""
+    sql = """
+        SELECT pg.player_id, p.full_name, COUNT(*) AS games,
+               SUM((pg.stats->>'plate_appearances')::int) AS total_pa
+        FROM player_games pg
+        JOIN players p USING (player_id)
+        JOIN games g USING (game_id)
+        WHERE pg.team_id = :tid
+          AND g.sport_code='mlb'
+          AND g.game_date >= :start
+          AND g.game_date < :end
+          AND (pg.stats->>'plate_appearances')::int >= 3
+        GROUP BY pg.player_id, p.full_name
+        ORDER BY total_pa DESC
+        LIMIT :n
+    """
+    start = pd.Timestamp(target_date) - pd.Timedelta(days=30)
+    df = pd.read_sql(text(sql), engine, params={
+        "tid": team_id, "start": start.date(), "end": target_date, "n": top_n
+    })
+    return df
+
+
+def build_pitcher_feature_rows(games, target_date, season, feature_keys):
+    rows = []
+    for g in games:
+        for side in ["home", "away"]:
+            pid = g[f"{side}_pitcher_id"]
+            if pid is None:
+                continue
+            opposing_side = "away" if side == "home" else "home"
+            opp_team_id = g[f"{opposing_side}_team_id"]
+            if opp_team_id is None:
+                continue
+            feats = batter_features(pid, target_date, season)
+            feats.update(_opposing_lineup_features(opp_team_id, target_date))
+            rows.append({
+                "player_id": pid,
+                "player_name": g[f"{side}_pitcher_name"],
+                "game_id": g["game_id"],
+                **{k: feats.get(k, 0) for k in feature_keys},
+            })
+    return pd.DataFrame(rows)
+
+
+def build_batter_feature_rows(games, target_date, season, feature_keys):
+    rows = []
+    for g in games:
+        for side in ["home", "away"]:
+            team_id = g[f"{side}_team_id"]
+            opposing_side = "away" if side == "home" else "home"
+            opp_pitcher_id = g[f"{opposing_side}_pitcher_id"]
+            if team_id is None:
+                continue
+            batters = _likely_batters_for_team(team_id, target_date, season)
+            for _, row in batters.iterrows():
+                feats = batter_features(int(row["player_id"]), target_date, season)
+                if opp_pitcher_id is not None:
+                    feats.update(pitcher_quality_features(opp_pitcher_id, target_date))
+                rows.append({
+                    "player_id": int(row["player_id"]),
+                    "player_name": row["full_name"],
+                    "game_id": g["game_id"],
+                    **{k: feats.get(k, 0) for k in feature_keys},
+                })
+    return pd.DataFrame(rows)
+
+
+def score_and_edge(model, meta, entry, feature_df):
+    if feature_df.empty:
+        return pd.DataFrame()
+    feature_keys = meta["feature_keys"]
     X = feature_df[feature_keys].astype(float)
     pred_lambda = model.predict(X, num_iteration=model.best_iteration)
-    out = feature_df[["pitcher_id", "pitcher_name", "side"]].copy()
-    out["predicted_mean_k"] = np.round(pred_lambda, 3)
-    out["lambda"] = pred_lambda
-    return out
+    preds = feature_df[["player_id", "player_name", "game_id"]].copy()
+    preds["predicted_mean"] = np.round(pred_lambda, 4)
+    preds["lambda"] = pred_lambda
+    preds["stat_type"] = entry.stat_type
+    preds["model_name"] = entry.name
 
-
-def attach_lines_and_edges(predictions: pd.DataFrame) -> pd.DataFrame:
-    """Pull tonight's strikeouts_pitcher lines and compute edge per line."""
-    pitcher_ids = predictions["pitcher_id"].tolist()
-    sql = """
-        SELECT DISTINCT ON (player_id, line_value, line_variant)
-            player_id, line_value, line_variant, snapshot_at
+    pitcher_ids = preds["player_id"].tolist()
+    lines = pd.read_sql(text("""
+        SELECT DISTINCT ON (player_id, line_value)
+            line_id, player_id, game_id, line_value, snapshot_at
         FROM prop_lines
-        WHERE sportsbook='prizepicks'
-          AND sport_code='mlb'
-          AND stat_type='strikeouts_pitcher'
+        WHERE sportsbook='prizepicks' AND sport_code='mlb'
+          AND stat_type=:stat AND line_variant='standard'
           AND player_id = ANY(:ids)
-        ORDER BY player_id, line_value, line_variant, snapshot_at DESC
-    """
-    lines = pd.read_sql(text(sql), engine, params={"ids": pitcher_ids})
+        ORDER BY player_id, line_value, snapshot_at DESC
+    """), engine, params={"stat": entry.stat_type, "ids": pitcher_ids})
 
     if lines.empty:
-        log.info("no_strikeouts_lines_in_db")
         return pd.DataFrame()
 
-    merged = lines.merge(predictions, left_on="player_id", right_on="pitcher_id")
-    # P(actual > line) under Poisson with predicted lambda
+    merged = lines.merge(preds, on=["player_id", "game_id"], how="inner")
+    if merged.empty:
+        merged = lines.merge(preds, on="player_id", how="inner",
+                              suffixes=("_line", "_pred"))
+        merged["game_id"] = merged["game_id_line"]
+
     merged["p_over"] = 1 - scipy_stats.poisson.cdf(
         merged["line_value"].astype(int), merged["lambda"]
     )
     merged["p_under"] = 1 - merged["p_over"]
-    # Edge = how far model's prob is from 50% (PrizePicks pickem implied prob)
-    merged["edge_over"] = merged["p_over"] - 0.5
-    merged["edge_under"] = merged["p_under"] - 0.5
-    merged["recommended"] = np.where(
-        merged["edge_over"].abs() > merged["edge_under"].abs(),
-        np.where(merged["edge_over"] > 0, "OVER", "UNDER"),
-        np.where(merged["edge_under"] > 0, "UNDER", "OVER"),
+    merged["direction"] = np.where(merged["p_over"] > 0.5, "over", "under")
+    merged["model_prob"] = np.where(
+        merged["p_over"] > 0.5, merged["p_over"], merged["p_under"]
     )
-    merged["edge_abs"] = np.maximum(merged["edge_over"].abs(),
-                                    merged["edge_under"].abs())
-
-    cols = ["pitcher_name", "line_variant", "line_value", "predicted_mean_k",
-            "p_over", "p_under", "recommended", "edge_abs"]
-    return merged[cols].sort_values("edge_abs", ascending=False)
+    merged["edge"] = merged["model_prob"] - 0.5
+    cols = ["player_name", "stat_type", "line_value", "predicted_mean",
+            "direction", "model_prob", "edge", "model_name",
+            "line_id", "player_id", "game_id"]
+    return merged[cols].sort_values("edge", ascending=False)
 
 
 def main():
@@ -241,29 +263,35 @@ def main():
     season = str(today.year)
     log.info("predicting_for_date", date=today.isoformat())
 
-    model, meta = load_model()
-    feature_keys = meta["feature_keys"]
-
     games = fetch_todays_schedule_with_pitchers(today)
     log.info("scheduled_games", n=len(games))
     games = resolve_external_to_internal_ids(games)
 
-    feature_df = build_pitcher_features_for_today(games, today, season, feature_keys)
-    log.info("built_features", pitchers=len(feature_df))
-    if feature_df.empty:
-        log.warning("no_pitchers_to_predict")
+    all_picks = []
+    for entry in MODELS:
+        log.info("running_model", name=entry.name, role=entry.role)
+        model, meta = load_model(entry)
+        if entry.role == "pitcher":
+            features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
+        else:
+            features = build_batter_feature_rows(games, today, season, meta["feature_keys"])
+        log.info("built_features", model=entry.name, rows=len(features))
+        if features.empty:
+            continue
+        edges = score_and_edge(model, meta, entry, features)
+        if not edges.empty:
+            all_picks.append(edges)
+
+    if not all_picks:
+        log.warning("no_picks_generated")
         return
 
-    predictions = predict_and_score(model, feature_df, feature_keys)
-    print("\n=== Today's pitcher K predictions ===")
-    print(predictions.sort_values("predicted_mean_k", ascending=False).to_string(index=False))
-
-    edges = attach_lines_and_edges(predictions)
-    if edges.empty:
-        print("\n(No PrizePicks strikeouts lines matched current pitchers.)")
-    else:
-        print("\n=== Edges vs PrizePicks ===")
-        print(edges.head(30).to_string(index=False))
+    combined = pd.concat(all_picks, ignore_index=True)
+    combined = combined.sort_values("edge", ascending=False)
+    print("\n=== All edges (sorted by edge size) ===")
+    print(combined[["player_name", "stat_type", "line_value", "predicted_mean",
+                    "direction", "model_prob", "edge"]].head(30).to_string(index=False))
+    return combined
 
 
 if __name__ == "__main__":
