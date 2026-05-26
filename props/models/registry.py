@@ -38,6 +38,30 @@ MODELS = [
         model_path=Path("models/hits_v1.txt"),
         meta_path=Path("models/hits_v1_meta.json"),
     ),
+    ModelEntry(
+        name="nba_points_v1",
+        sport_code="nba",
+        stat_type="points",
+        role="player",
+        model_path=Path("models/nba_points_v1.txt"),
+        meta_path=Path("models/nba_points_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="nba_rebounds_v1",
+        sport_code="nba",
+        stat_type="rebounds",
+        role="player",
+        model_path=Path("models/nba_rebounds_v1.txt"),
+        meta_path=Path("models/nba_rebounds_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="nba_assists_v1",
+        sport_code="nba",
+        stat_type="assists",
+        role="player",
+        model_path=Path("models/nba_assists_v1.txt"),
+        meta_path=Path("models/nba_assists_v1_meta.json"),
+    ),
 ]
 
 

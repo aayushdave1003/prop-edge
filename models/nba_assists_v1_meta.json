@@ -1,0 +1,31 @@
+{
+  "model_path": "models/nba_assists_v1.txt",
+  "target": "assists",
+  "feature_keys": [
+    "last_5_avg_assists",
+    "last_10_avg_assists",
+    "last_20_avg_assists",
+    "season_avg_assists",
+    "last_10_rate_over_2.5_assists",
+    "last_10_rate_over_4.5_assists",
+    "last_10_rate_over_6.5_assists",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "last_20_avg_minutes",
+    "season_avg_minutes",
+    "last_5_avg_turnovers",
+    "last_10_avg_turnovers",
+    "last_10_avg_fg_attempted",
+    "last_10_avg_points",
+    "last_10_avg_threes_attempted",
+    "last_10_avg_rebounds",
+    "last_10_avg_steals",
+    "days_rest",
+    "games_played_season"
+  ],
+  "best_iteration": 153,
+  "train_n": 7227,
+  "val_n": 2537,
+  "test_n": 14889,
+  "trained_date": "2026-05-26"
+}

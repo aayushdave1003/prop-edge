@@ -1,0 +1,32 @@
+{
+  "model_path": "models/nba_rebounds_v1.txt",
+  "target": "rebounds",
+  "feature_keys": [
+    "last_5_avg_rebounds",
+    "last_10_avg_rebounds",
+    "last_20_avg_rebounds",
+    "season_avg_rebounds",
+    "last_10_rate_over_3.5_rebounds",
+    "last_10_rate_over_5.5_rebounds",
+    "last_10_rate_over_7.5_rebounds",
+    "last_5_avg_off_rebounds",
+    "last_10_avg_off_rebounds",
+    "last_5_avg_def_rebounds",
+    "last_10_avg_def_rebounds",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "last_20_avg_minutes",
+    "season_avg_minutes",
+    "last_10_avg_fg_attempted",
+    "last_10_avg_points",
+    "last_10_avg_blocks",
+    "last_10_avg_personal_fouls",
+    "days_rest",
+    "games_played_season"
+  ],
+  "best_iteration": 170,
+  "train_n": 7227,
+  "val_n": 2537,
+  "test_n": 14889,
+  "trained_date": "2026-05-26"
+}
