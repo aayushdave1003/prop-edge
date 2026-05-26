@@ -13,11 +13,16 @@ dependencies = [
     "numpy>=1.26",
     "pybaseball>=2.2",
     "requests>=2.32",
+    "curl_cffi>=0.7",
     "python-dotenv>=1.0",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "tenacity>=8.5",
     "structlog>=24.1",
+    "lightgbm>=4.6",
+    "scikit-learn>=1.5",
+    "joblib>=1.4",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
