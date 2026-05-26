@@ -341,7 +341,8 @@ def _likely_nba_players_for_team(team_id, target_date, top_n=10):
     """Top N players by minutes over the last 14 days for the given team."""
     sql = """
         SELECT pg.player_id, p.full_name,
-               SUM(pg.minutes_played) AS total_min
+               SUM(pg.minutes_played) AS total_min,
+               MAX(g.game_date) AS last_played
         FROM player_games pg
         JOIN players p USING (player_id)
         JOIN games g USING (game_id)
@@ -351,12 +352,15 @@ def _likely_nba_players_for_team(team_id, target_date, top_n=10):
           AND g.game_date < :end
           AND pg.minutes_played >= 5
         GROUP BY pg.player_id, p.full_name
+        HAVING MAX(g.game_date) >= :recent_cutoff
         ORDER BY total_min DESC
         LIMIT :n
     """
     start = pd.Timestamp(target_date) - pd.Timedelta(days=14)
+    recent_cutoff = pd.Timestamp(target_date) - pd.Timedelta(days=4)
     return pd.read_sql(text(sql), engine, params={
-        "tid": team_id, "start": start.date(), "end": target_date, "n": top_n,
+        "tid": team_id, "start": start.date(), "end": target_date,
+        "recent_cutoff": recent_cutoff.date(), "n": top_n,
     })
 
 
