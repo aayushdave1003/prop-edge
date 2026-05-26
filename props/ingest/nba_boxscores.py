@@ -105,7 +105,9 @@ def process_game(session, game: dict, team_ext_to_id: dict):
         for p in team.get("players", []):
             stats = p.get("statistics", {})
             ext_player_id = str(p.get("personId"))
-            full_name = p.get("name") or p.get("nameI") or f"NBA-{ext_player_id}"
+            first = p.get("firstName") or ""
+            family = p.get("familyName") or ""
+            full_name = (first + " " + family).strip() or p.get("nameI") or f"NBA-{ext_player_id}"
             position = p.get("position") or None
 
             player_id = ensure_player(session, ext_player_id, full_name,

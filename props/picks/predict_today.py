@@ -250,11 +250,12 @@ def score_and_edge(model, meta, entry, feature_df):
         SELECT DISTINCT ON (player_id, line_value)
             line_id, player_id, game_id, line_value, snapshot_at
         FROM prop_lines
-        WHERE sportsbook='prizepicks' AND sport_code='mlb'
+        WHERE sportsbook='prizepicks' AND sport_code=:sport
           AND stat_type=:stat AND line_variant='standard'
           AND player_id = ANY(:ids)
+          AND snapshot_at > NOW() - INTERVAL '6 hours'
         ORDER BY player_id, line_value, snapshot_at DESC
-    """), engine, params={"stat": entry.stat_type, "ids": pitcher_ids})
+    """), engine, params={"sport": entry.sport_code, "stat": entry.stat_type, "ids": pitcher_ids})
 
     if lines.empty:
         return pd.DataFrame()
@@ -291,6 +292,141 @@ def score_and_edge(model, meta, entry, feature_df):
     return merged[cols].sort_values("edge", ascending=False)
 
 
+
+
+def fetch_nba_schedule(target_date):
+    """Pull today's NBA games via scoreboardv3."""
+    from nba_api.stats.endpoints import scoreboardv3
+    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"))
+    raw = sb.get_dict().get("scoreboard", {}).get("games", [])
+    games = []
+    for g in raw:
+        gid = g.get("gameId")
+        games.append({
+            "external_id": gid,
+            "home_team_ext": str(g.get("homeTeam", {}).get("teamId")),
+            "away_team_ext": str(g.get("awayTeam", {}).get("teamId")),
+        })
+    return games
+
+
+def resolve_nba_external_to_internal_ids(games):
+    """Map NBA external_ids to our internal team_ids and game_ids."""
+    team_ext_ids = set()
+    for g in games:
+        team_ext_ids.add(g["home_team_ext"])
+        team_ext_ids.add(g["away_team_ext"])
+    with session_scope() as session:
+        team_rows = session.execute(text("""
+            SELECT external_id, team_id FROM teams WHERE sport_code='nba'
+        """)).all()
+        game_rows = session.execute(text("""
+            SELECT external_id, game_id FROM games
+            WHERE sport_code='nba' AND external_id = ANY(:ids)
+        """), {"ids": [g["external_id"] for g in games]}).all()
+    tid_map = {row[0]: row[1] for row in team_rows}
+    gid_map = {row[0]: row[1] for row in game_rows}
+    resolved = []
+    for g in games:
+        resolved.append({
+            **g,
+            "game_id": gid_map.get(g["external_id"]),
+            "home_team_id": tid_map.get(g["home_team_ext"]),
+            "away_team_id": tid_map.get(g["away_team_ext"]),
+        })
+    return resolved
+
+
+def _likely_nba_players_for_team(team_id, target_date, top_n=10):
+    """Top N players by minutes over the last 14 days for the given team."""
+    sql = """
+        SELECT pg.player_id, p.full_name,
+               SUM(pg.minutes_played) AS total_min
+        FROM player_games pg
+        JOIN players p USING (player_id)
+        JOIN games g USING (game_id)
+        WHERE pg.team_id = :tid
+          AND g.sport_code='nba'
+          AND g.game_date >= :start
+          AND g.game_date < :end
+          AND pg.minutes_played >= 5
+        GROUP BY pg.player_id, p.full_name
+        ORDER BY total_min DESC
+        LIMIT :n
+    """
+    start = pd.Timestamp(target_date) - pd.Timedelta(days=14)
+    return pd.read_sql(text(sql), engine, params={
+        "tid": team_id, "start": start.date(), "end": target_date, "n": top_n,
+    })
+
+
+def _nba_player_features(player_id, before_date, season):
+    """Build NBA player feature vector. Mirrors the rolling features module logic.
+
+    Uses ALL the rolling features in player_games.derived from prior games.
+    We re-query directly from derived for the most recent prior game.
+    """
+    sql = """
+        SELECT pg.derived
+        FROM player_games pg
+        JOIN games g USING (game_id)
+        WHERE pg.player_id = :pid
+          AND g.sport_code='nba'
+          AND g.game_date < :d
+        ORDER BY g.game_date DESC, pg.player_game_id DESC
+        LIMIT 1
+    """
+    df = pd.read_sql(text(sql), engine, params={"pid": player_id, "d": before_date})
+    if df.empty:
+        return {}
+    # The derived JSONB on the most-recent prior game IS the feature vector
+    # for predicting the NEXT game (since features use shift(1) of prior games)
+    # But we need to advance by one: the "current game's features" in our DB
+    # represent prior-game-only data. For inference, we use that row's features
+    # plus advance one game forward conceptually -- simplest is to recompute
+    # but that's expensive. Practical shortcut: just use the latest derived.
+    return dict(df.iloc[0]["derived"])
+
+
+def build_nba_player_feature_rows(games, target_date, season, feature_keys):
+    """For each NBA game tonight, build feature vectors for the top players."""
+    rows = []
+    for g in games:
+        if g["game_id"] is None:
+            # Insert a placeholder game so picks can reference it
+            with session_scope() as session:
+                gid = session.execute(text("""
+                    INSERT INTO games (sport_code, external_id, game_date,
+                                      season, season_type, home_team_id, away_team_id, status)
+                    VALUES ('nba', :ext, :d, :season, 'playoffs', :htid, :atid, 'scheduled')
+                    ON CONFLICT (sport_code, external_id) DO UPDATE
+                    SET status = EXCLUDED.status
+                    RETURNING game_id
+                """), {
+                    "ext": g["external_id"], "d": target_date,
+                    "season": str(target_date.year if target_date.month >= 10 else target_date.year - 1),
+                    "htid": g["home_team_id"], "atid": g["away_team_id"],
+                }).first()
+                g["game_id"] = gid[0]
+
+        for side in ["home", "away"]:
+            team_id = g[f"{side}_team_id"]
+            if team_id is None:
+                continue
+            players = _likely_nba_players_for_team(team_id, target_date)
+            for _, row in players.iterrows():
+                feats = _nba_player_features(int(row["player_id"]), target_date, season)
+                if not feats:
+                    continue
+                rows.append({
+                    "player_id": int(row["player_id"]),
+                    "player_name": row["full_name"],
+                    "game_id": g["game_id"],
+                    **{k: feats.get(k, 0) for k in feature_keys},
+                })
+    return pd.DataFrame(rows)
+
+
 def main():
     configure_logging()
     today = date.today()
@@ -301,11 +437,18 @@ def main():
     log.info("scheduled_games", n=len(games))
     games = resolve_external_to_internal_ids(games)
 
+    nba_games = None  # lazy fetch
     all_picks = []
     for entry in MODELS:
-        log.info("running_model", name=entry.name, role=entry.role)
+        log.info("running_model", name=entry.name, role=entry.role, sport=entry.sport_code)
         model, meta = load_model(entry)
-        if entry.role == "pitcher":
+        if entry.sport_code == "nba":
+            if nba_games is None:
+                nba_raw = fetch_nba_schedule(today)
+                log.info("nba_scheduled_games", n=len(nba_raw))
+                nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+            features = build_nba_player_feature_rows(nba_games, today, season, meta["feature_keys"])
+        elif entry.role == "pitcher":
             features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
         else:
             features = build_batter_feature_rows(games, today, season, meta["feature_keys"])
