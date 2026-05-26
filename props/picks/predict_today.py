@@ -91,15 +91,33 @@ def resolve_external_to_internal_ids(games):
     gid_map = {row[0]: row[1] for row in game_rows}
 
     resolved = []
+    unresolved_pitchers = []
+    unresolved_games = []
     for g in games:
+        home_pid = pid_map.get(g["home_pitcher_external_id"])
+        away_pid = pid_map.get(g["away_pitcher_external_id"])
+        gid = gid_map.get(g["external_id"])
+
+        if g["home_pitcher_external_id"] and home_pid is None:
+            unresolved_pitchers.append(g["home_pitcher_name"])
+        if g["away_pitcher_external_id"] and away_pid is None:
+            unresolved_pitchers.append(g["away_pitcher_name"])
+        if gid is None:
+            unresolved_games.append(g["external_id"])
+
         resolved.append({
             **g,
-            "game_id": gid_map.get(g["external_id"]),
-            "home_pitcher_id": pid_map.get(g["home_pitcher_external_id"]),
-            "away_pitcher_id": pid_map.get(g["away_pitcher_external_id"]),
+            "game_id": gid,
+            "home_pitcher_id": home_pid,
+            "away_pitcher_id": away_pid,
             "home_team_id": tid_map.get(g["home_team_external_id"]),
             "away_team_id": tid_map.get(g["away_team_external_id"]),
         })
+
+    if unresolved_pitchers:
+        log.warning("unresolved_probable_pitchers", names=unresolved_pitchers)
+    if unresolved_games:
+        log.warning("unresolved_games", external_ids=unresolved_games)
     return resolved
 
 
@@ -168,6 +186,8 @@ def _likely_batters_for_team(team_id, target_date, season, top_n=9):
 def build_pitcher_feature_rows(games, target_date, season, feature_keys):
     rows = []
     for g in games:
+        if g["game_id"] is None:
+            continue
         for side in ["home", "away"]:
             pid = g[f"{side}_pitcher_id"]
             if pid is None:
@@ -190,6 +210,8 @@ def build_pitcher_feature_rows(games, target_date, season, feature_keys):
 def build_batter_feature_rows(games, target_date, season, feature_keys):
     rows = []
     for g in games:
+        if g["game_id"] is None:
+            continue
         for side in ["home", "away"]:
             team_id = g[f"{side}_team_id"]
             opposing_side = "away" if side == "home" else "home"
