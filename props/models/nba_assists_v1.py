@@ -64,6 +64,9 @@ FEATURE_KEYS = [
     "last_10_avg_assists_away",
     "last_10_avg_minutes_home",
     "last_10_avg_minutes_away",
+    "min_stddev_last_10",
+    "team_last_5_wins",
+    "team_won_last_game",
 ]
 
 
