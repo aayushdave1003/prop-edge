@@ -173,6 +173,13 @@ def _likely_batters_for_team(team_id, target_date, season, top_n=9):
           AND g.game_date >= :start
           AND g.game_date < :end
           AND (pg.stats->>'plate_appearances')::int >= 3
+          AND NOT EXISTS (
+              SELECT 1 FROM player_injuries pi
+              WHERE pi.player_name = p.full_name
+                AND pi.sport_code = 'mlb'
+                AND pi.status IN ('10-Day-IL', '15-Day-IL', '60-Day-IL', '7-Day-IL', 'Out')
+                AND pi.fetched_at > NOW() - INTERVAL '6 hours'
+          )
         GROUP BY pg.player_id, p.full_name
         ORDER BY total_pa DESC
         LIMIT :n
