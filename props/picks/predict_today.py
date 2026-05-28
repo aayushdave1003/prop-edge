@@ -293,6 +293,17 @@ def score_and_edge(model, meta, entry, feature_df):
         merged["p_over"] > 0.5, merged["p_over"], merged["p_under"]
     )
     merged["edge"] = merged["model_prob"] - 0.5
+
+    # Drop low-information hits lines. A 0.5 hits line is "does the batter get
+    # any hit at all" -- almost everyone clears it, so the model trivially calls
+    # OVER and it's a coin flip after payout. Only take hits lines >= 1.5 where
+    # the model's distribution actually carries signal.
+    if entry.stat_type == "hits":
+        before = len(merged)
+        merged = merged[merged["line_value"].astype(float) >= 1.5]
+        log.info("hits_line_floor_applied", dropped=before - len(merged),
+                 kept=len(merged))
+
     cols = ["player_name", "stat_type", "line_value", "predicted_mean",
             "direction", "model_prob", "edge", "model_name",
             "line_id", "player_id", "game_id"]
