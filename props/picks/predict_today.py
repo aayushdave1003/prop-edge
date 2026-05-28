@@ -260,7 +260,7 @@ def score_and_edge(model, meta, entry, feature_df):
         WHERE sportsbook='prizepicks' AND sport_code=:sport
           AND stat_type=:stat AND line_variant='standard'
           AND player_id = ANY(:ids)
-          AND snapshot_at > NOW() - INTERVAL '6 hours'
+          AND snapshot_at > NOW() - INTERVAL '24 hours'
         ORDER BY player_id, line_value, snapshot_at DESC
     """), engine, params={"sport": entry.sport_code, "stat": entry.stat_type, "ids": pitcher_ids})
 
