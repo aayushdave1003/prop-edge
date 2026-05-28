@@ -56,8 +56,42 @@ def settle_one(session, pick_id: int, stat_type: str, direction: str,
     return result
 
 
+def resolve_placeholder_game_ids():
+    """Re-point unsettled picks from placeholder/non-final games to the player's
+    real final game on the same date. Makes the daily settle self-healing so we
+    never have to hand-fix pp_xxx game_ids again.
+
+    Matches each unsettled pick to a player_game where the player actually played
+    a FINAL game within a 2-day window of the pick date (handles UTC date crossover).
+    """
+    with session_scope() as session:
+        result = session.execute(text("""
+            WITH pick_fix AS (
+                SELECT DISTINCT ON (pk.pick_id) pk.pick_id, pg.game_id AS real_game_id
+                FROM picks pk
+                JOIN games cur ON cur.game_id = pk.game_id
+                JOIN player_games pg ON pg.player_id = pk.player_id
+                JOIN games g ON g.game_id = pg.game_id
+                WHERE pk.leg_result IS NULL
+                  AND g.status = 'final'
+                  AND g.sport_code = cur.sport_code
+                  AND g.game_date BETWEEN
+                        (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date - INTERVAL '1 day'
+                    AND (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date + INTERVAL '1 day'
+                  AND g.game_id <> pk.game_id
+                ORDER BY pk.pick_id, g.game_date
+            )
+            UPDATE picks pk
+            SET game_id = pf.real_game_id
+            FROM pick_fix pf
+            WHERE pk.pick_id = pf.pick_id
+        """))
+        log.info("resolved_placeholder_game_ids", repointed=result.rowcount)
+
+
 def run():
     configure_logging()
+    resolve_placeholder_game_ids()
     rows = find_unsettled_picks()
     log.info("found_unsettled", n=len(rows))
 

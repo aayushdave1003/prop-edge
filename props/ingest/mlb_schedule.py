@@ -91,4 +91,10 @@ def run(target_date: date | None = None):
     log.info("ingestion_complete", games=len(games))
 
 if __name__ == "__main__":
-    run()
+    import sys
+    from datetime import datetime
+    if len(sys.argv) > 1:
+        target = datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
+        run(target)
+    else:
+        run()
