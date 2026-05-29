@@ -16,6 +16,7 @@ from scipy import stats as scipy_stats
 
 from props.utils.db import engine
 from props.utils.logging import log, configure_logging
+from props.picks.backtest import run as run_backtest
 
 
 MODEL_DIR = Path("models")
@@ -216,6 +217,12 @@ def main():
     with open(META_PATH, "w") as f:
         json.dump(meta, f, indent=2)
     log.info("model_saved", path=str(MODEL_PATH))
+
+    log.info("running_auto_backtest")
+    try:
+        run_backtest(sport="nba", trigger="retrain")
+    except Exception as e:
+        log.warning("auto_backtest_failed", error=str(e))
 
 
 if __name__ == "__main__":

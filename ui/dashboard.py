@@ -292,6 +292,22 @@ def load_historical_summary():
 
 
 @st.cache_data(ttl=300)
+def load_backtest_trend():
+    """Historical backtest run results for trend chart."""
+    sql = """
+        SELECT run_at::date AS date, sport, n_picks,
+               ROUND(win_rate * 100, 1)      AS win_pct,
+               ROUND(roi_2pick * 100, 1)     AS roi_2pick_pct,
+               ROUND(edge_10_win_rate * 100, 1) AS edge10_win_pct,
+               trigger
+        FROM backtest_runs
+        ORDER BY run_at DESC
+        LIMIT 50
+    """
+    return pd.read_sql(text(sql), engine)
+
+
+@st.cache_data(ttl=300)
 def load_all_settled_picks():
     """Full settled pick history for analytics."""
     sql = """
@@ -736,6 +752,23 @@ with tab_perf:
                   delta_color="normal" if win_pct >= be else "inverse")
         roi_2pick = win_pct**2 * 3 - 1
         c5.metric("2-pick ROI (sim)", f"{roi_2pick:+.1%}")
+
+        # ── Model backtest history ────────────────────────────────────────────
+        bt_trend = load_backtest_trend()
+        if not bt_trend.empty:
+            st.divider()
+            st.subheader("Backtest history — model accuracy over time")
+            st.caption("Each row = one backtest run (after model retrains or weekly Monday run)")
+            bt_display = bt_trend.copy()
+            bt_display.columns = [c.replace("_"," ").title() for c in bt_display.columns]
+            st.dataframe(bt_display, use_container_width=True, hide_index=True)
+
+            nba_bt = bt_trend[bt_trend["sport"] == "nba"].sort_values("date")
+            if len(nba_bt) >= 2:
+                nba_bt = nba_bt.set_index("date")
+                nba_bt["breakeven"] = 57.7
+                st.line_chart(nba_bt[["win_pct","breakeven"]], height=180)
+                st.caption("NBA backtest win rate vs 57.7% breakeven across runs")
 
         st.divider()
 

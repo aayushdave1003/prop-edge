@@ -50,4 +50,10 @@ python -m props.picks.log_picks
 echo "--- Second settle pass: catch tonight's picks for already-final games ---"
 python -m props.picks.settle_picks
 
+echo "--- Weekly backtest (Mondays only) ---"
+if [ "$(date +%u)" = "1" ]; then
+    python -m props.picks.backtest --sport nba --since "$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)" || true
+    python -m props.picks.backtest --sport mlb --since "$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)" || true
+fi
+
 echo "=== Done. Check dashboard: .venv/bin/streamlit run ui/dashboard.py ==="

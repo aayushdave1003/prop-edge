@@ -16,13 +16,13 @@ Usage:
     python3 -m props.picks.backtest --sport nba --since 2025-01-01
 """
 import argparse
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
 
-from props.utils.db import engine
+from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 
 
@@ -288,10 +288,56 @@ def print_report(df: pd.DataFrame):
     print()
 
 
-def run(sport: str = "nba", since: date = None):
+def save_run(sport: str, since: date, df: pd.DataFrame, trigger: str = "manual"):
+    """Persist key backtest metrics to backtest_runs table for trend tracking."""
+    decided = df[df["actual_value"].notna()].copy()
+    if decided.empty:
+        return
+
+    decided["hit"] = decided["actual_value"] > decided["line_value"]
+    n_total = len(decided)
+    win_rate = decided["hit"].mean() if n_total else None
+
+    # 2-pick ROI
+    roi_2pick = win_rate ** 2 * 3 - 1 if win_rate is not None else None
+
+    # Edge 10%+ UNDER picks (our strongest signal)
+    edge10 = decided[decided["model_edge"].abs() >= 0.10]
+    edge10_wr = (edge10["hit"] == False).mean() if len(edge10) >= 5 else None  # UNDER hit
+    edge10_n  = len(edge10)
+
+    # Calibration gap at 60-70% range
+    cal_mask = (decided["model_over_prob"] >= 0.60) & (decided["model_over_prob"] < 0.70)
+    cal_sub  = decided[cal_mask]
+    cal_gap  = (cal_sub["hit"].mean() - cal_sub["model_over_prob"].mean()) if len(cal_sub) >= 5 else None
+
+    with session_scope() as session:
+        session.execute(text("""
+            INSERT INTO backtest_runs
+                (sport, since_date, n_picks, win_rate, roi_2pick,
+                 edge_10_win_rate, edge_10_n, calibration_gap, trigger)
+            VALUES
+                (:sport, :since, :n, :wr, :roi,
+                 :e10_wr, :e10_n, :cal_gap, :trigger)
+        """), {
+            "sport":   sport,
+            "since":   since,
+            "n":       n_total,
+            "wr":      round(float(win_rate), 4) if win_rate is not None else None,
+            "roi":     round(float(roi_2pick), 4) if roi_2pick is not None else None,
+            "e10_wr":  round(float(edge10_wr), 4) if edge10_wr is not None else None,
+            "e10_n":   edge10_n,
+            "cal_gap": round(float(cal_gap), 4) if cal_gap is not None else None,
+            "trigger": trigger,
+        })
+    log.info("backtest_run_saved", sport=sport, n=n_total,
+             win_rate=win_rate, trigger=trigger)
+
+
+def run(sport: str = "nba", since: date = None, trigger: str = "manual"):
     configure_logging()
     if since is None:
-        since = date(2026, 5, 1)
+        since = date.today() - timedelta(days=90)
 
     df = load_backtest_data(sport, since)
     if df.empty:
@@ -300,8 +346,8 @@ def run(sport: str = "nba", since: date = None):
 
     df = add_model_predictions(df, sport)
     print_report(df)
+    save_run(sport, since, df, trigger=trigger)
 
-    # Save detailed results for further analysis
     out_path = f"backtest_{sport}_{since}.csv"
     df[["game_date", "player_name", "stat_type", "line_value",
         "market_over_prob", "model_over_prob", "model_edge",
