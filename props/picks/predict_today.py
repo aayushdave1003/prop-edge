@@ -261,15 +261,24 @@ def score_and_edge(model, meta, entry, feature_df):
     preds["model_name"] = entry.name
 
     pitcher_ids = preds["player_id"].tolist()
+    # Use only lines from the most recent scrape cycle (within 2h of latest snapshot).
+    # The 24h window accumulates every hourly scrape and includes stale/removed lines.
     lines = pd.read_sql(text("""
-        SELECT DISTINCT ON (player_id, line_value)
-            line_id, player_id, game_id, line_value, snapshot_at
-        FROM prop_lines
-        WHERE sportsbook='prizepicks' AND sport_code=:sport
-          AND stat_type=:stat AND line_variant='standard'
-          AND player_id = ANY(:ids)
-          AND snapshot_at > NOW() - INTERVAL '24 hours'
-        ORDER BY player_id, line_value, snapshot_at DESC
+        WITH latest AS (
+            SELECT MAX(snapshot_at) AS max_snap
+            FROM prop_lines
+            WHERE sportsbook='prizepicks' AND sport_code=:sport
+              AND stat_type=:stat AND line_variant='standard'
+              AND player_id = ANY(:ids)
+        )
+        SELECT DISTINCT ON (pl.player_id, pl.line_value)
+            pl.line_id, pl.player_id, pl.game_id, pl.line_value, pl.snapshot_at
+        FROM prop_lines pl, latest
+        WHERE pl.sportsbook='prizepicks' AND pl.sport_code=:sport
+          AND pl.stat_type=:stat AND pl.line_variant='standard'
+          AND pl.player_id = ANY(:ids)
+          AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
+        ORDER BY pl.player_id, pl.line_value, pl.snapshot_at DESC
     """), engine, params={"sport": entry.sport_code, "stat": entry.stat_type, "ids": pitcher_ids})
 
     if lines.empty:
