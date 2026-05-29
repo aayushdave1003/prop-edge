@@ -11,7 +11,7 @@ from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
 
 
-MIN_EDGE_TO_LOG = 0.05
+MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn below that
 
 
 def ensure_model_version(model_name, stat_type):
@@ -55,9 +55,18 @@ def store_prediction_row(session, mv_id, player_id, game_id, stat_type, predicte
     return result[0]
 
 
+def _ensure_market_edge_column():
+    """Add market_edge column to picks if it doesn't exist yet."""
+    with session_scope() as session:
+        session.execute(text("""
+            ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_edge numeric(6,4)
+        """))
+
+
 def main():
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
+    _ensure_market_edge_column()
     edges = predict_main()
     if edges is None or edges.empty:
         log.warning("no_edges_to_log")
@@ -105,15 +114,27 @@ def main():
             if already:
                 skipped += 1
                 continue
+            model_prob   = round(float(row["model_prob"]), 4)
+            edge_val     = round(float(row["edge"]), 4)
+            # Half-Kelly for a 2-pick PrizePicks parlay at 3x payout:
+            #   f* = (3p - 1) / 2,  half_kelly = f* / 2 = (3p - 1) / 4
+            # Replaces the old (incorrect) edge * 2 formula.
+            half_kelly   = round(max(0.0, (3 * model_prob - 1) / 4), 4)
+            _me = row.get("market_edge") if hasattr(row, "get") else None
+            market_edge  = (
+                round(float(_me), 4)
+                if _me is not None and pd.notna(_me)
+                else None
+            )
             session.execute(text("""
                 INSERT INTO picks (
                     parlay_size, sport_code, player_id, game_id, stat_type,
                     line_id, direction, model_version_id, prediction_id,
-                    model_prob, edge, expected_value, picked_at
+                    model_prob, edge, expected_value, market_edge, picked_at
                 ) VALUES (
                     1, :sport, :pid, :gid, :st,
                     :lid, :dir, :mvid, :prid,
-                    :mp, :edge, :ev, NOW()
+                    :mp, :edge, :ev, :me, NOW()
                 )
                 ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
             """), {
@@ -121,9 +142,8 @@ def main():
                 "pid": int(row["player_id"]), "gid": int(row["game_id"]),
                 "st": row["stat_type"], "lid": int(row["line_id"]),
                 "dir": row["direction"], "mvid": mv_id, "prid": pred_id,
-                "mp": round(float(row["model_prob"]), 4),
-                "edge": round(float(row["edge"]), 4),
-                "ev": round(float(row["edge"] * 2), 4),
+                "mp": model_prob, "edge": edge_val, "ev": half_kelly,
+                "me": market_edge,
             })
             inserted += 1
     log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped)

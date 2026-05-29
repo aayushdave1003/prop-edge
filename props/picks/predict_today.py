@@ -22,6 +22,9 @@ from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.features.inference import batter_features, pitcher_quality_features
 from props.models.registry import MODELS, ModelEntry
+from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
+from props.ingest.market_odds import build_market_probs
+from props.picks.build_parlays import build_correlated_parlays, print_parlay_recommendations
 
 
 def load_model(entry):
@@ -246,7 +249,8 @@ def score_and_edge(model, meta, entry, feature_df):
     feature_keys = meta["feature_keys"]
     X = feature_df[feature_keys].astype(float)
     pred_lambda = model.predict(X, num_iteration=model.best_iteration)
-    preds = feature_df[["player_id", "player_name", "game_id"]].copy()
+    extra_cols = [c for c in ["team_id"] if c in feature_df.columns]
+    preds = feature_df[["player_id", "player_name", "game_id"] + extra_cols].copy()
     preds["predicted_mean"] = np.round(pred_lambda, 4)
     preds["lambda"] = pred_lambda
     preds["stat_type"] = entry.stat_type
@@ -307,6 +311,8 @@ def score_and_edge(model, meta, entry, feature_df):
     cols = ["player_name", "stat_type", "line_value", "predicted_mean",
             "direction", "model_prob", "edge", "model_name",
             "line_id", "player_id", "game_id"]
+    if "team_id" in merged.columns:
+        cols.append("team_id")
     return merged[cols].sort_values("edge", ascending=False)
 
 
@@ -353,6 +359,77 @@ def resolve_nba_external_to_internal_ids(games):
             "away_team_id": tid_map.get(g["away_team_ext"]),
         })
     return resolved
+
+
+def detect_injury_expansion(nba_games: list, target_date) -> dict:
+    """Return {player_id: injured_teammate_avg_min} for players whose key teammate is out.
+
+    A player is flagged when a teammate averaging 15+ minutes over the last
+    14 days is listed Out or Doubtful tonight. The value is the sum of avg
+    minutes that injured teammates are losing — a proxy for role expansion.
+    """
+    with session_scope() as session:
+        injured_rows = session.execute(text("""
+            SELECT DISTINCT ON (player_name)
+                player_name, team_name, status
+            FROM player_injuries
+            WHERE status IN ('Out', 'Doubtful')
+              AND fetched_at > NOW() - INTERVAL '12 hours'
+            ORDER BY player_name, fetched_at DESC
+        """)).all()
+
+    if not injured_rows:
+        return {}
+
+    injured_names = {r[0].lower() for r in injured_rows}
+    start = (pd.Timestamp(target_date) - pd.Timedelta(days=14)).date()
+    flags: dict[int, float] = {}
+
+    for g in nba_games:
+        game_id = g.get("game_id")
+        if not game_id:
+            continue
+        for side in ["home", "away"]:
+            team_id = g.get(f"{side}_team_id")
+            if not team_id:
+                continue
+
+            roster = pd.read_sql(text("""
+                SELECT p.player_id, p.full_name,
+                       AVG(pg.minutes_played) AS avg_min
+                FROM player_games pg
+                JOIN players p USING (player_id)
+                JOIN games gm USING (game_id)
+                WHERE pg.team_id = :tid
+                  AND gm.sport_code = 'nba'
+                  AND gm.game_date >= :start
+                  AND gm.game_date < :end
+                  AND pg.minutes_played >= 5
+                GROUP BY p.player_id, p.full_name
+                HAVING COUNT(*) >= 3
+            """), engine, params={"tid": team_id, "start": start, "end": target_date})
+
+            if roster.empty:
+                continue
+
+            injured_min_out = sum(
+                row["avg_min"]
+                for _, row in roster.iterrows()
+                if row["full_name"].lower() in injured_names and row["avg_min"] >= 15
+            )
+
+            if injured_min_out >= 15:
+                healthy_pids = [
+                    int(row["player_id"])
+                    for _, row in roster.iterrows()
+                    if row["full_name"].lower() not in injured_names
+                ]
+                for pid in healthy_pids:
+                    flags[pid] = round(injured_min_out, 1)
+
+    if flags:
+        log.info("injury_expansion_flags", players=len(flags))
+    return flags
 
 
 def _likely_nba_players_for_team(team_id, target_date, top_n=10):
@@ -450,6 +527,7 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
                     "player_id": int(row["player_id"]),
                     "player_name": row["full_name"],
                     "game_id": g["game_id"],
+                    "team_id": team_id,
                     **{k: feats.get(k, 0) for k in feature_keys},
                 })
     return pd.DataFrame(rows)
@@ -493,9 +571,111 @@ def main():
 
     combined = pd.concat(all_picks, ignore_index=True)
     combined = combined.sort_values("edge", ascending=False)
-    print("\n=== All edges (sorted by edge size) ===")
-    print(combined[["player_name", "stat_type", "line_value", "predicted_mean",
-                    "direction", "model_prob", "edge"]].head(30).to_string(index=False))
+
+    # --- Annotate with game context (totals / implied team totals) ---
+    if nba_games:
+        espn_context = fetch_nba_game_context(today)
+        game_ctx_map = map_context_to_game_ids(espn_context, nba_games)
+
+        def _get_total(row):
+            ctx = game_ctx_map.get(row["game_id"])
+            return ctx["total"] if ctx else None
+
+        def _get_implied(row):
+            ctx = game_ctx_map.get(row["game_id"])
+            if not ctx:
+                return None
+            tid = row.get("team_id")
+            if tid == ctx.get("home_team_id"):
+                return ctx.get("implied_home")
+            if tid == ctx.get("away_team_id"):
+                return ctx.get("implied_away")
+            return ctx.get("total")
+
+        combined["game_total"]          = combined.apply(_get_total, axis=1)
+        combined["implied_team_total"]  = combined.apply(_get_implied, axis=1)
+    else:
+        combined["game_total"]         = None
+        combined["implied_team_total"] = None
+
+    # --- Market-edge: compare model prob vs sharp book no-vig midpoint ---
+    market_probs = build_market_probs(today)
+    if market_probs:
+        def _market_implied(row):
+            key = (row["player_name"].lower().strip(), row["stat_type"],
+                   float(row["line_value"]))
+            p = market_probs.get(key)
+            if p is None:
+                return None
+            # Return prob from the perspective of the picked direction
+            return p if row["direction"] == "over" else 1.0 - p
+
+        combined["market_implied"] = combined.apply(_market_implied, axis=1)
+        # market_edge = model advantage over what the sharp market prices in.
+        # Falls back to model_prob - 0.5 (flat pick'em baseline) when no market
+        # line is available for that player/stat/line combo.
+        combined["market_edge"] = combined.apply(
+            lambda r: (
+                r["model_prob"] - r["market_implied"]
+                if pd.notna(r["market_implied"])
+                else r["model_prob"] - 0.5
+            ),
+            axis=1,
+        ).round(4)
+        n_matched = combined["market_implied"].notna().sum()
+        log.info("market_edge_computed", matched=int(n_matched),
+                 total=len(combined))
+    else:
+        combined["market_implied"] = None
+        combined["market_edge"]    = combined["edge"]   # identical to model edge
+
+    # Half-Kelly fraction for a 2-pick parlay at 3x payout (net odds = 2):
+    #   f* = (2p_joint - (1-p_joint)) / 2 = (3p - 1) / 2
+    #   half_kelly = f* / 2 = (3p - 1) / 4
+    # Where p is the individual leg model_prob (assumes pairing with an equal-quality leg).
+    # Negative values → below 2-pick breakeven (57.7%), clip to 0.
+    combined["kelly_fraction"] = (
+        combined["model_prob"].apply(lambda p: max(0.0, round((3 * p - 1) / 4, 4)))
+    )
+
+    # Re-rank by market_edge: best picks first
+    combined = combined.sort_values("market_edge", ascending=False)
+
+    # --- Annotate with injury expansion flags ---
+    if nba_games:
+        injury_flags = detect_injury_expansion(nba_games, today)
+        combined["injury_flag"] = combined["player_id"].map(
+            lambda pid: injury_flags.get(int(pid), 0)
+        )
+    else:
+        combined["injury_flag"] = 0
+
+    # --- Print enriched pick table ---
+    has_market = combined["market_implied"].notna().any()
+    edge_label  = "market_edge" if has_market else "edge"
+    print(f"\n=== All picks (ranked by {edge_label}) ===")
+    display_cols = ["player_name", "stat_type", "line_value", "predicted_mean",
+                    "direction", "model_prob", "market_implied", "market_edge",
+                    "kelly_fraction", "game_total", "implied_team_total", "injury_flag"]
+    print(
+        combined[[c for c in display_cols if c in combined.columns]]
+        .head(30)
+        .to_string(index=False)
+    )
+
+    # Highlight picks below 2-pick breakeven (57.7%) as a warning
+    below_breakeven = combined[combined["model_prob"] < 0.577]
+    if not below_breakeven.empty:
+        print(f"\n  ⚠  {len(below_breakeven)} picks below 2-pick breakeven (57.7%) — "
+              "avoid as parlay legs unless edge vs market is very strong")
+
+    # --- Correlated parlay recommendations (rank combos by market_edge) ---
+    nba_picks = combined[combined["model_name"].str.startswith("nba")].copy()
+    if not nba_picks.empty:
+        # Pass market_edge and game context into legs for display
+        combos = build_correlated_parlays(nba_picks)
+        print_parlay_recommendations(combos)
+
     return combined
 
 
