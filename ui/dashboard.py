@@ -291,6 +291,31 @@ def load_historical_summary():
     return pd.read_sql(text(sql), engine)
 
 
+@st.cache_data(ttl=300)
+def load_all_settled_picks():
+    """Full settled pick history for analytics."""
+    sql = """
+        SELECT
+            pk.pick_id,
+            pk.picked_at::date          AS pick_date,
+            g.sport_code,
+            pk.stat_type,
+            pk.direction,
+            pk.model_prob,
+            COALESCE(pk.market_edge, pk.edge) AS market_edge,
+            pk.edge,
+            pk.leg_result,
+            pk.actual_value,
+            pl.line_value               AS line
+        FROM picks pk
+        JOIN games g     USING (game_id)
+        JOIN prop_lines pl ON pl.line_id = pk.line_id
+        WHERE pk.leg_result IN ('win','loss','push')
+        ORDER BY pk.picked_at
+    """
+    return pd.read_sql(text(sql), engine)
+
+
 @st.cache_data(ttl=120)
 def load_recent_picks(days: int = 7):
     sql = """
@@ -690,46 +715,147 @@ with tab_game:
 
 # ══ TAB 3: Performance ═══════════════════════════════════════════════════════
 with tab_perf:
-    hist = load_historical_summary()
-    if hist.empty:
-        st.info("No settled picks yet.")
-    else:
-        # Summary metrics
-        total_picks = hist["picks"].sum()
-        total_wins  = hist["wins"].sum()
-        total_loss  = hist["losses"].sum()
-        overall_wp  = total_wins / (total_wins + total_loss) * 100 if (total_wins + total_loss) else 0
+    all_picks = load_all_settled_picks()
+    hist      = load_historical_summary()
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Settled", int(total_wins + total_loss))
-        m2.metric("Win Rate", f"{overall_wp:.1f}%")
-        m3.metric("Record", f"{int(total_wins)}W – {int(total_loss)}L")
+    if all_picks.empty:
+        st.info("No settled picks yet — check back after tonight's games.")
+    else:
+        won  = (all_picks["leg_result"] == "win").sum()
+        lost = (all_picks["leg_result"] == "loss").sum()
+        total_decided = won + lost
+        win_pct = won / total_decided if total_decided else 0
+
+        # ── Top metrics ──────────────────────────────────────────────────────
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("Settled Picks", total_decided)
+        c2.metric("Win Rate", f"{win_pct:.1%}")
+        c3.metric("Record", f"{won}W – {lost}L")
+        be = 0.577
+        c4.metric("vs Breakeven", f"{win_pct - be:+.1%}",
+                  delta_color="normal" if win_pct >= be else "inverse")
+        roi_2pick = win_pct**2 * 3 - 1
+        c5.metric("2-pick ROI (sim)", f"{roi_2pick:+.1%}")
 
         st.divider()
-        st.subheader("Win rate by stat + direction")
 
-        display = hist[hist["picks"] >= 5].copy()
-        display["Win %"] = display["win_pct"].apply(
-            lambda x: f"{x:.1f}%" if pd.notna(x) else "—"
-        )
-        display["Record"] = display.apply(
-            lambda r: f"{int(r['wins'])}W {int(r['losses'])}L {int(r['pushes'])}P", axis=1
-        )
-        st.dataframe(
-            display[["sport_code","stat_type","direction","picks","Record","Win %",
-                      "avg_prob","avg_edge"]].rename(columns={
-                "sport_code":"Sport","stat_type":"Stat","direction":"Dir",
-                "picks":"N","avg_prob":"Avg Prob","avg_edge":"Avg Edge"
-            }),
-            use_container_width=True, hide_index=True
-        )
+        # ── Win rate over time ────────────────────────────────────────────────
+        st.subheader("Win rate over time")
+        all_picks["pick_date"] = pd.to_datetime(all_picks["pick_date"])
+        weekly = (all_picks[all_picks["leg_result"].isin(["win","loss"])]
+                  .set_index("pick_date")
+                  .resample("W")["leg_result"]
+                  .agg(wins=lambda s: (s=="win").sum(),
+                       total=lambda s: len(s)))
+        weekly = weekly[weekly["total"] >= 3].copy()
+        if not weekly.empty:
+            weekly["win_pct"] = weekly["wins"] / weekly["total"] * 100
+            weekly["breakeven"] = 57.7
+            st.line_chart(weekly[["win_pct", "breakeven"]], height=200)
+            st.caption("Win rate % per week vs 57.7% breakeven (2-pick parlay)")
+        else:
+            st.info("Need at least 2 weeks of picks for this chart.")
 
-        if not display.empty:
-            chart_df = display.copy()
-            chart_df["label"] = (chart_df["sport_code"] + " "
-                                 + chart_df["stat_type"] + " "
-                                 + chart_df["direction"])
-            st.bar_chart(chart_df.set_index("label")["win_pct"], height=280)
+        st.divider()
+
+        # ── Edge threshold analysis ───────────────────────────────────────────
+        st.subheader("Does higher edge = higher win rate?")
+        buckets = []
+        for lo, hi in [(0, 5), (5, 10), (10, 15), (15, 25), (25, 100)]:
+            mask = (all_picks["market_edge"].abs() * 100 >= lo) & \
+                   (all_picks["market_edge"].abs() * 100 < hi) & \
+                   (all_picks["leg_result"].isin(["win", "loss"]))
+            sub = all_picks[mask]
+            if len(sub) >= 3:
+                wr = (sub["leg_result"] == "win").mean()
+                buckets.append({"Edge bucket": f"{lo}-{hi}%", "N": len(sub),
+                                 "Win rate": round(wr * 100, 1),
+                                 "vs Breakeven": f"{wr*100 - 57.7:+.1f}%"})
+        if buckets:
+            st.dataframe(pd.DataFrame(buckets), use_container_width=True,
+                         hide_index=True)
+        else:
+            st.info("Need more settled picks across edge buckets.")
+
+        st.divider()
+
+        # ── Calibration: model says X%, does X% actually hit? ────────────────
+        st.subheader("Model calibration — is the model's confidence accurate?")
+        cal_data = all_picks[all_picks["leg_result"].isin(["win","loss"])].copy()
+        cal_data["prob_bin"] = pd.cut(cal_data["model_prob"],
+                                       bins=[0,.45,.50,.55,.60,.65,.70,.80,1.0],
+                                       labels=["<45%","45-50%","50-55%","55-60%",
+                                               "60-65%","65-70%","70-80%",">80%"])
+        cal = (cal_data.groupby("prob_bin", observed=True)
+               .agg(n=("leg_result","count"),
+                    avg_prob=("model_prob","mean"),
+                    actual_hit=("leg_result", lambda s: (s=="win").mean()))
+               .reset_index())
+        cal = cal[cal["n"] >= 3].copy()
+        if not cal.empty:
+            cal["Model said"] = (cal["avg_prob"] * 100).round(1).astype(str) + "%"
+            cal["Actual hit"] = (cal["actual_hit"] * 100).round(1).astype(str) + "%"
+            cal["Gap"] = ((cal["actual_hit"] - cal["avg_prob"]) * 100).round(1)
+            cal["Gap str"] = cal["Gap"].apply(lambda x: f"{x:+.1f}%")
+            st.dataframe(
+                cal[["prob_bin","n","Model said","Actual hit","Gap str"]].rename(
+                    columns={"prob_bin":"Prob bucket","n":"N",
+                             "Gap str":"Gap (actual − model)"}),
+                use_container_width=True, hide_index=True)
+            st.caption("Negative gap = model is overconfident (says 70% but only hits 55%)")
+        else:
+            st.info("Need more settled picks for calibration analysis.")
+
+        st.divider()
+
+        # ── Breakdown by stat type ────────────────────────────────────────────
+        st.subheader("Win rate by stat type")
+        if not hist.empty:
+            display = hist[hist["picks"] >= 5].copy()
+            display["Win %"] = display["win_pct"].apply(
+                lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+            display["Record"] = display.apply(
+                lambda r: f"{int(r['wins'])}W-{int(r['losses'])}L", axis=1)
+            display["vs Break"] = display["win_pct"].apply(
+                lambda x: f"{x-57.7:+.1f}%" if pd.notna(x) else "—")
+            st.dataframe(
+                display[["sport_code","stat_type","direction","picks",
+                          "Record","Win %","vs Break","avg_prob","avg_edge"]]
+                .rename(columns={"sport_code":"Sport","stat_type":"Stat",
+                                  "direction":"Dir","picks":"N",
+                                  "avg_prob":"Avg Prob","avg_edge":"Avg Edge",
+                                  "vs Break":"vs 57.7%"}),
+                use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── Recommendations ───────────────────────────────────────────────────
+        st.subheader("Model recommendations")
+        if not hist.empty and total_decided >= 10:
+            recs_keep, recs_drop, recs_watch = [], [], []
+            for _, row in hist[hist["picks"] >= 5].iterrows():
+                label = f"{row['sport_code'].upper()} {row['stat_type']} {row['direction'].upper()}"
+                wp = float(row["win_pct"]) if pd.notna(row["win_pct"]) else 0
+                if wp >= 60:
+                    recs_keep.append(f"✅ **{label}** — {wp:.1f}% win rate ({int(row['wins'])}W-{int(row['losses'])}L)")
+                elif wp < 50:
+                    recs_drop.append(f"🚫 **{label}** — {wp:.1f}% win rate, below 50% ({int(row['wins'])}W-{int(row['losses'])}L)")
+                elif 50 <= wp < 57.7:
+                    recs_watch.append(f"⚠️ **{label}** — {wp:.1f}% win rate, below breakeven")
+
+            if recs_keep:
+                st.markdown("**Keep betting — above breakeven:**")
+                for r in recs_keep: st.markdown(r)
+            if recs_watch:
+                st.markdown("**Watch — close to breakeven:**")
+                for r in recs_watch: st.markdown(r)
+            if recs_drop:
+                st.markdown("**Consider removing — consistently below 50%:**")
+                for r in recs_drop: st.markdown(r)
+            if not recs_keep and not recs_drop and not recs_watch:
+                st.info("Need more picks per category for recommendations (5+ per stat type).")
+        else:
+            st.info(f"Need 10+ settled picks for recommendations. Have {total_decided} so far.")
 
 
 # ══ TAB 4: Recent Picks ══════════════════════════════════════════════════════
