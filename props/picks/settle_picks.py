@@ -137,9 +137,15 @@ def run():
                 continue
 
             if stats_json is None:
-                log.warning("no_player_game_row", pick_id=pick_id,
-                            player=player_name, game_date=str(game_date))
-                missing += 1
+                # Game is final but player has no box score row — they were scratched/DNP.
+                # Void the pick so it doesn't block the unsettled queue forever.
+                session.execute(text("""
+                    UPDATE picks SET leg_result='void', settled_at=NOW()
+                    WHERE pick_id=:pid
+                """), {"pid": pick_id})
+                log.info("voided_dnp", pick_id=pick_id, player=player_name,
+                         game_date=str(game_date))
+                settled += 1
                 continue
 
             actual_raw = _resolve_stat(stats_json, stat_type)
