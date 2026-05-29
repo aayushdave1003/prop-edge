@@ -8,7 +8,7 @@ market-edge comparison) when the key is absent or the API is unavailable.
 
 Free tier: 500 req/month. NBA season typical usage ~5–10 req/day.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import requests
 from props.utils.config import settings
 from props.utils.logging import log
@@ -56,10 +56,9 @@ def fetch_events(target_date: date) -> list[dict]:
     if not key:
         log.info("odds_api_key_missing_skipping_market_odds")
         return []
-    start = datetime(target_date.year, target_date.month, target_date.day,
-                     0, 0, 0, tzinfo=timezone.utc).isoformat()
-    end   = datetime(target_date.year, target_date.month, target_date.day,
-                     23, 59, 59, tzinfo=timezone.utc).isoformat()
+    # NBA games start ~8 PM ET = midnight+ UTC; extend window by 2 days to capture them
+    start = f"{target_date.strftime('%Y-%m-%d')}T00:00:00Z"
+    end   = f"{(target_date + timedelta(days=2)).strftime('%Y-%m-%d')}T23:59:59Z"
     try:
         r = requests.get(
             f"{ODDS_API_BASE}/sports/basketball_nba/events",
