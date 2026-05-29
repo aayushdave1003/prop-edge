@@ -24,6 +24,7 @@ from props.features.inference import batter_features, pitcher_quality_features
 from props.models.registry import MODELS, ModelEntry
 from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
 from props.picks.predict_game import predict_games, print_game_predictions
+from props.picks.predict_mlb_game import predict_mlb_games, print_mlb_game_predictions
 from props.ingest.market_odds import build_market_probs
 from props.picks.build_parlays import (
     build_correlated_parlays, print_parlay_recommendations,
@@ -560,6 +561,17 @@ def main():
     games = fetch_todays_schedule_with_pitchers(today)
     log.info("scheduled_games", n=len(games))
     games = resolve_external_to_internal_ids(games)
+
+    # MLB game winner predictions (runs before prop models)
+    mlb_games_with_ids = [g for g in games if g.get("game_id") and g.get("home_team_id")]
+    if mlb_games_with_ids:
+        with session_scope() as _s:
+            mlb_team_rows = _s.execute(text(
+                "SELECT team_id, COALESCE(city || ' ', '') || name FROM teams WHERE sport_code='mlb'"
+            )).all()
+        mlb_team_names = {r[0]: r[1] for r in mlb_team_rows}
+        mlb_preds = predict_mlb_games(mlb_games_with_ids, today)
+        print_mlb_game_predictions(mlb_preds, mlb_team_names)
 
     nba_games = None  # lazy fetch
     nba_game_ctx_map = {}
