@@ -35,11 +35,17 @@
     "last_10_avg_rebounds_home",
     "last_10_avg_rebounds_away",
     "last_10_avg_minutes_home",
-    "last_10_avg_minutes_away"
+    "last_10_avg_minutes_away",
+    "min_stddev_last_10",
+    "team_last_5_wins",
+    "team_won_last_game",
+    "team_last_10_avg_game_total",
+    "team_last_5_avg_game_total",
+    "team_last_10_avg_pts_scored"
   ],
-  "best_iteration": 151,
+  "best_iteration": 166,
   "train_n": 7227,
   "val_n": 2537,
-  "test_n": 14889,
-  "trained_date": "2026-05-26"
+  "test_n": 14925,
+  "trained_date": "2026-05-29"
 }

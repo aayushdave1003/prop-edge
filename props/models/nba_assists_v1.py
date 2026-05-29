@@ -67,6 +67,9 @@ FEATURE_KEYS = [
     "min_stddev_last_10",
     "team_last_5_wins",
     "team_won_last_game",
+    "team_last_10_avg_game_total",
+    "team_last_5_avg_game_total",
+    "team_last_10_avg_pts_scored",
 ]
 
 
