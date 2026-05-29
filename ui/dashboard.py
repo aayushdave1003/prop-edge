@@ -1,4 +1,4 @@
-"""Streamlit dashboard for prop-edge picks.
+"""prop-edge dashboard — PrizePicks-style UI.
 
 Run: streamlit run ui/dashboard.py
 """
@@ -11,118 +11,709 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine
 
+st.set_page_config(page_title="prop-edge", layout="wide",
+                   initial_sidebar_state="collapsed",
+                   page_icon="⚡")
 
-st.set_page_config(page_title="prop-edge", layout="wide")
-st.title("prop-edge")
-st.caption("Research dashboard - paper-tracking only, not betting advice")
+# ── CSS ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+/* Base */
+[data-testid="stAppViewContainer"] { background: #0f1117; }
+[data-testid="stHeader"] { background: #0f1117; }
+section[data-testid="stSidebar"] { background: #13161e; }
+.block-container { padding-top: 1.5rem !important; }
 
+/* Typography */
+h1, h2, h3 { color: #ffffff !important; }
+p, label, div { color: #c8cdd8; }
+
+/* Metric cards */
+[data-testid="metric-container"] {
+    background: #1a1d2e; border-radius: 12px;
+    padding: 12px 16px; border: 1px solid #2a2d3e;
+}
+[data-testid="stMetricValue"] { color: #ffffff !important; font-size: 1.8rem !important; }
+[data-testid="stMetricLabel"] { color: #8890a4 !important; }
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] { background: #13161e; border-radius: 10px; padding: 4px; }
+.stTabs [data-baseweb="tab"] { color: #8890a4; border-radius: 8px; padding: 8px 20px; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: #5932d9 !important; color: #fff !important;
+}
+
+/* Pick cards */
+.pick-card {
+    background: #1a1d2e;
+    border: 1px solid #2a2d3e;
+    border-radius: 16px;
+    padding: 0;
+    margin-bottom: 16px;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.pick-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(89,50,217,0.25);
+}
+.card-banner {
+    position: relative;
+    height: 110px;
+    background: linear-gradient(135deg, #1e2235 0%, #252840 100%);
+    overflow: hidden;
+}
+.card-banner .team-logo {
+    position: absolute; top: 10px; right: 10px;
+    width: 44px; height: 44px; object-fit: contain; opacity: 0.9;
+}
+.card-banner .player-photo {
+    position: absolute; bottom: 0; left: 12px;
+    height: 105px; width: auto; object-fit: cover;
+    object-position: top; border-radius: 8px 8px 0 0;
+}
+.card-body { padding: 12px 14px 14px 14px; }
+.player-name {
+    font-size: 0.95rem; font-weight: 700;
+    color: #ffffff; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.team-stat { font-size: 0.75rem; color: #8890a4; margin-bottom: 10px; }
+.line-row {
+    display: flex; align-items: center;
+    justify-content: space-between; margin-bottom: 8px;
+}
+.line-value { font-size: 1.6rem; font-weight: 800; color: #ffffff; }
+.badge {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+    padding: 4px 10px; border-radius: 20px;
+}
+.badge.over  { background: rgba(0,212,160,0.15); color: #00d4a0; border: 1px solid #00d4a0; }
+.badge.under { background: rgba(255,77,77,0.15);  color: #ff6b6b; border: 1px solid #ff6b6b; }
+.prob-row {
+    display: flex; align-items: center;
+    justify-content: space-between; margin-bottom: 10px;
+}
+.prob-label { font-size: 0.72rem; color: #8890a4; }
+.prob-value { font-size: 0.85rem; font-weight: 700; color: #ffffff; }
+.edge-bar-bg {
+    height: 4px; background: #2a2d3e; border-radius: 2px; margin-bottom: 10px;
+}
+.edge-bar-fill {
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(90deg, #5932d9, #7c5ce8);
+}
+.form-section { margin-top: 8px; }
+.form-label { font-size: 0.7rem; color: #8890a4; margin-bottom: 4px; }
+.form-dots { display: flex; gap: 5px; align-items: center; margin-bottom: 4px; }
+.dot {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 700;
+}
+.dot.hit   { background: rgba(0,212,160,0.2); color: #00d4a0; border: 1.5px solid #00d4a0; }
+.dot.miss  { background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1.5px solid #ff6b6b; }
+.dot.empty { background: #2a2d3e; color: #5a5f72; border: 1.5px solid #3a3d4e; }
+.form-rate { font-size: 0.72rem; color: #8890a4; }
+.form-rate span { color: #ffffff; font-weight: 600; }
+.inj-badge {
+    font-size: 0.68rem; color: #ffd93d; background: rgba(255,217,61,0.12);
+    border: 1px solid rgba(255,217,61,0.3); border-radius: 6px;
+    padding: 2px 7px; margin-top: 6px; display: inline-block;
+}
+.kelly-row { font-size: 0.7rem; color: #8890a4; margin-top: 4px; }
+.kelly-row span { color: #7c5ce8; font-weight: 600; }
+
+/* Slate card */
+.slate-card {
+    background: linear-gradient(135deg, #1a1d2e, #1e2235);
+    border: 1px solid #5932d9;
+    border-radius: 16px; padding: 20px 24px; margin-bottom: 24px;
+}
+.slate-title { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.slate-meta  { font-size: 0.78rem; color: #8890a4; margin-bottom: 14px; }
+.slate-leg {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-bottom: 1px solid #2a2d3e;
+}
+.slate-leg:last-child { border-bottom: none; }
+.leg-player { font-size: 0.85rem; font-weight: 600; color: #fff; }
+.leg-detail { font-size: 0.78rem; color: #8890a4; }
+.leg-badge  { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; }
+
+/* Game prediction card */
+.game-card {
+    background: #1a1d2e; border: 1px solid #2a2d3e;
+    border-radius: 16px; padding: 20px; margin-bottom: 16px;
+}
+.game-teams { font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+.win-bar-bg {
+    height: 8px; background: #2a2d3e; border-radius: 4px;
+    margin: 8px 0; overflow: hidden; display: flex;
+}
+.win-bar-home { height: 8px; background: #5932d9; border-radius: 4px 0 0 4px; }
+.win-bar-away { height: 8px; background: #8890a4; border-radius: 0 4px 4px 0; }
+.team-prob { display: flex; justify-content: space-between; font-size: 0.8rem; }
+.team-prob .fav { color: #ffffff; font-weight: 700; }
+.team-prob .dog { color: #8890a4; }
+.market-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #2a2d3e;
+    font-size: 0.8rem;
+}
+.rec-strong { color: #00d4a0; font-weight: 700; }
+.rec-lean   { color: #ffd93d; font-weight: 700; }
+.rec-pass   { color: #8890a4; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def player_photo_url(external_id: str, sport: str) -> str:
+    if not external_id or external_id.startswith("pp_"):
+        return "https://cdn.nba.com/headshots/nba/latest/1040x760/fallback.png"
+    if sport == "nba":
+        return f"https://cdn.nba.com/headshots/nba/latest/1040x760/{external_id}.png"
+    if sport == "mlb":
+        return (f"https://img.mlbstatic.com/mlb-photos/image/upload/"
+                f"d_people:generic:headshot:67:current.png/w_213,q_auto:best"
+                f"/v1/people/{external_id}/headshot/67/current")
+    return ""
+
+
+def team_logo_url(team_ext_id: str, sport: str) -> str:
+    if not team_ext_id:
+        return ""
+    if sport == "nba":
+        return f"https://cdn.nba.com/logos/nba/{team_ext_id}/global/L/logo.svg"
+    if sport == "mlb":
+        return f"https://www.mlbstatic.com/team-logos/{team_ext_id}.svg"
+    return ""
+
+
+def form_dots_html(hits: list[bool | None], direction: str) -> str:
+    """hits: list of True/False/None for last N games, most recent last."""
+    dots = []
+    for h in hits:
+        if h is None:
+            dots.append('<span class="dot empty">–</span>')
+        elif (h and direction == "over") or (not h and direction == "under"):
+            dots.append('<span class="dot hit">✓</span>')
+        else:
+            dots.append('<span class="dot miss">✗</span>')
+    return '<div class="form-dots">' + "".join(dots) + "</div>"
+
+
+def edge_bar_html(edge: float) -> str:
+    pct = min(100, max(0, edge * 200))
+    return (f'<div class="edge-bar-bg">'
+            f'<div class="edge-bar-fill" style="width:{pct:.0f}%"></div></div>')
+
+
+# ── Data loading ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=60)
 def load_todays_picks():
     sql = """
-        SELECT pk.pick_id,
-               g.sport_code,
-               p.full_name AS player,
-               pk.stat_type,
-               pl.line_value AS line,
-               pk.direction,
-               pk.model_prob AS model_probability,
-               pk.edge,
-               pk.picked_at,
-               g.external_id AS game,
-               g.status AS game_status,
-               pk.leg_result,
-               pk.actual_value
+        SELECT
+            pk.pick_id, pk.player_id, pk.game_id,
+            g.sport_code,
+            p.full_name       AS player,
+            p.external_id     AS player_ext_id,
+            t.abbreviation    AS team,
+            t.external_id     AS team_ext_id,
+            pk.stat_type,
+            pl.line_value     AS line,
+            pk.direction,
+            pk.model_prob     AS model_prob,
+            pk.edge,
+            COALESCE(pk.market_edge, pk.edge) AS market_edge,
+            pk.expected_value AS kelly,
+            pk.leg_result,
+            pk.actual_value,
+            g.status          AS game_status,
+            ht.abbreviation   AS home_team,
+            at.abbreviation   AS away_team
         FROM picks pk
-        JOIN players p USING (player_id)
-        JOIN games g USING (game_id)
+        JOIN players p   USING (player_id)
+        JOIN teams   t   ON t.team_id = p.current_team_id
+        JOIN games   g   USING (game_id)
         JOIN prop_lines pl ON pl.line_id = pk.line_id
+        LEFT JOIN teams ht ON ht.team_id = g.home_team_id
+        LEFT JOIN teams at ON at.team_id = g.away_team_id
         WHERE pk.picked_at::date = CURRENT_DATE
-        ORDER BY pk.edge DESC
+        ORDER BY COALESCE(pk.market_edge, pk.edge) DESC
     """
     return pd.read_sql(text(sql), engine)
 
 
 @st.cache_data(ttl=300)
+def load_player_form(player_ids: tuple, stat_type: str, sport: str):
+    """Return last 10 actuals per player for a given stat_type."""
+    if not player_ids:
+        return pd.DataFrame()
+    sql = """
+        SELECT pg.player_id, g.game_date,
+               COALESCE((pg.stats->>:stat)::float, 0) AS actual
+        FROM player_games pg
+        JOIN games g USING (game_id)
+        WHERE pg.player_id = ANY(:pids)
+          AND g.sport_code  = :sport
+          AND g.status = 'final'
+          AND g.game_date < CURRENT_DATE
+        ORDER BY pg.player_id, g.game_date DESC
+    """
+    df = pd.read_sql(text(sql), engine,
+                     params={"pids": list(player_ids), "stat": stat_type,
+                             "sport": sport})
+    return df
+
+
+@st.cache_data(ttl=300)
 def load_historical_summary():
     sql = """
-        SELECT g.sport_code,
-               pk.stat_type,
-               pk.direction,
-               COUNT(*) AS picks,
-               COUNT(*) FILTER (WHERE pk.leg_result = 'win') AS wins,
-               COUNT(*) FILTER (WHERE pk.leg_result = 'loss') AS losses,
-               COUNT(*) FILTER (WHERE pk.leg_result = 'push') AS pushes,
+        SELECT g.sport_code, pk.stat_type, pk.direction,
+               COUNT(*)                                                    AS picks,
+               COUNT(*) FILTER (WHERE pk.leg_result = 'win')              AS wins,
+               COUNT(*) FILTER (WHERE pk.leg_result = 'loss')             AS losses,
+               COUNT(*) FILTER (WHERE pk.leg_result = 'push')             AS pushes,
                ROUND(100.0 * COUNT(*) FILTER (WHERE pk.leg_result = 'win')
-                     / NULLIF(COUNT(*) FILTER (WHERE pk.leg_result IN ('win', 'loss')), 0), 1) AS win_pct
-        FROM picks pk
-        JOIN games g USING (game_id)
+                   / NULLIF(COUNT(*) FILTER (
+                       WHERE pk.leg_result IN ('win','loss')), 0), 1)     AS win_pct,
+               ROUND(AVG(pk.model_prob)::numeric, 3)                      AS avg_prob,
+               ROUND(AVG(pk.edge)::numeric, 3)                            AS avg_edge
+        FROM picks pk JOIN games g USING (game_id)
         WHERE pk.leg_result IS NOT NULL
         GROUP BY g.sport_code, pk.stat_type, pk.direction
-        ORDER BY g.sport_code, pk.stat_type, pk.direction
+        ORDER BY picks DESC
     """
     return pd.read_sql(text(sql), engine)
 
 
-# Main picks table
+@st.cache_data(ttl=120)
+def load_recent_picks(days: int = 7):
+    sql = """
+        SELECT pk.picked_at::date AS date, g.sport_code,
+               p.full_name AS player, pk.stat_type, pl.line_value AS line,
+               pk.direction, pk.model_prob, pk.edge, pk.leg_result, pk.actual_value
+        FROM picks pk
+        JOIN players p USING (player_id)
+        JOIN games   g USING (game_id)
+        JOIN prop_lines pl ON pl.line_id = pk.line_id
+        WHERE pk.picked_at >= CURRENT_DATE - :days
+        ORDER BY pk.picked_at DESC
+    """
+    return pd.read_sql(text(sql), engine, params={"days": days})
+
+
+@st.cache_data(ttl=60)
+def load_game_predictions_data():
+    """Fetch today's game predictions if winner model has run."""
+    sql = """
+        SELECT g.game_id,
+               ht.city || ' ' || ht.name AS home_team,
+               at.city || ' ' || at.name AS away_team,
+               ht.external_id AS home_ext, at.external_id AS away_ext,
+               ht.abbreviation AS home_abbr, at.abbreviation AS away_abbr,
+               g.game_date,
+               (g.context->>'home_win_prob')::float  AS home_win_prob,
+               (g.context->>'implied_margin')::float AS implied_margin,
+               (g.context->>'market_spread')::float  AS market_spread,
+               (g.context->>'market_total')::float   AS market_total,
+               (g.context->>'market_edge')::float    AS market_edge
+        FROM games g
+        JOIN teams ht ON ht.team_id = g.home_team_id
+        JOIN teams at ON at.team_id = g.away_team_id
+        WHERE g.game_date = CURRENT_DATE
+          AND g.sport_code = 'nba'
+          AND g.context ? 'home_win_prob'
+        ORDER BY g.game_id
+    """
+    return pd.read_sql(text(sql), engine)
+
+
+# ── Pick card builder ─────────────────────────────────────────────────────────
+
+def build_pick_card(row, form_df: pd.DataFrame) -> str:
+    sport   = row["sport_code"]
+    photo   = player_photo_url(row.get("player_ext_id", ""), sport)
+    logo    = team_logo_url(row.get("team_ext_id", ""), sport)
+    direction = row["direction"]
+    line    = float(row["line"])
+    prob    = float(row["model_prob"])
+    edge    = float(row.get("market_edge") or row.get("edge") or 0)
+    kelly   = float(row.get("kelly") or 0)
+    inj     = float(row.get("injury_flag") or 0)
+
+    # Stat type display name
+    stat_labels = {
+        "points": "Points", "rebounds": "Rebounds", "assists": "Assists",
+        "threes_made": "3-PT Made", "pts_rebs_asts": "PRA",
+        "pts_rebs": "P+R", "pts_asts": "P+A", "rebs_asts": "R+A",
+        "blocks": "Blocks", "steals": "Steals", "turnovers": "Turnovers",
+        "strikeouts_pitcher": "Strikeouts", "hits": "Hits",
+        "total_bases": "Total Bases", "rbis": "RBIs",
+    }
+    stat_label = stat_labels.get(row["stat_type"], row["stat_type"].replace("_", " ").title())
+
+    # Opponent
+    home, away = row.get("home_team", ""), row.get("away_team", "")
+    opp = f"vs {away}" if row.get("team") == home else f"@ {home}" if home else ""
+
+    # Result badge (settled picks)
+    result = row.get("leg_result") or ""
+    result_html = ""
+    if result == "win":
+        result_html = '<span style="float:right;color:#00d4a0;font-size:0.85rem;font-weight:700;">✓ WIN</span>'
+    elif result == "loss":
+        result_html = '<span style="float:right;color:#ff6b6b;font-size:0.85rem;font-weight:700;">✗ LOSS</span>'
+    elif result == "push":
+        result_html = '<span style="float:right;color:#ffd93d;font-size:0.8rem;font-weight:700;">PUSH</span>'
+
+    # Form dots
+    player_id  = int(row["player_id"])
+    stat_type  = row["stat_type"]
+    player_form = form_df[form_df["player_id"] == player_id].head(10)
+
+    hits_l5, hits_l10 = [], []
+    for _, fg in player_form.iterrows():
+        h = fg["actual"] > line
+        if len(hits_l10) < 10:
+            hits_l10.append(h)
+        if len(hits_l5) < 5:
+            hits_l5.append(h)
+
+    # Pad to 5
+    while len(hits_l5) < 5:
+        hits_l5.append(None)
+
+    l5_hit  = sum(1 for h in hits_l5  if h is True)
+    l10_hit = sum(1 for h in hits_l10 if h is True)
+    l5_den  = sum(1 for h in hits_l5  if h is not None)
+    l10_den = sum(1 for h in hits_l10 if h is not None)
+    # From pick direction perspective
+    if direction == "under":
+        l5_hit  = l5_den  - l5_hit
+        l10_hit = l10_den - l10_hit
+
+    dots_html = form_dots_html(hits_l5, direction)
+
+    form_rate_html = ""
+    if l5_den > 0:
+        form_rate_html = (
+            f'<div class="form-rate">'
+            f'L5: <span>{l5_hit}/{l5_den}</span>'
+            + (f' &nbsp; L10: <span>{l10_hit}/{l10_den}</span>' if l10_den >= 6 else '')
+            + '</div>'
+        )
+
+    badge_cls  = "over" if direction == "over" else "under"
+    badge_text = "OVER" if direction == "over" else "UNDER"
+    inj_html   = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
+    kelly_html = f'<div class="kelly-row">Kelly: <span>{kelly*100:.1f}%</span></div>' if kelly > 0 else ""
+
+    return f"""
+<div class="pick-card">
+  <div class="card-banner">
+    <img src="{logo}"  class="team-logo"    onerror="this.style.display='none'">
+    <img src="{photo}" class="player-photo" onerror="this.style.display='none'">
+  </div>
+  <div class="card-body">
+    <div class="player-name">{result_html}{row['player']}</div>
+    <div class="team-stat">{row.get('team','')}{' · ' + opp if opp else ''} · {stat_label}</div>
+    <div class="line-row">
+      <span class="line-value">{line:g}</span>
+      <span class="badge {badge_cls}">{badge_text}</span>
+    </div>
+    <div class="prob-row">
+      <span class="prob-label">Model confidence</span>
+      <span class="prob-value">{prob:.0%}</span>
+    </div>
+    {edge_bar_html(edge)}
+    <div class="form-section">
+      <div class="form-label">Last 5 games vs line</div>
+      {dots_html}
+      {form_rate_html}
+    </div>
+    {inj_html}
+    {kelly_html}
+  </div>
+</div>"""
+
+
+def build_slate_card(picks_df: pd.DataFrame) -> str:
+    """Build the recommended parlay slate card."""
+    if picks_df.empty:
+        return ""
+
+    # Simple slate: top 4 picks by edge
+    top = picks_df.head(4)
+    legs_html = ""
+    for _, row in top.iterrows():
+        direction  = row["direction"]
+        badge_cls  = "over" if direction == "over" else "under"
+        badge_text = "OVER" if direction == "over" else "UNDER"
+        stat_label = row["stat_type"].replace("_", " ").title()
+        legs_html += f"""
+<div class="slate-leg">
+  <div>
+    <div class="leg-player">{row['player']}</div>
+    <div class="leg-detail">{stat_label} · {float(row['line']):g} · {row['model_prob']:.0%}</div>
+  </div>
+  <span class="badge {badge_cls} leg-badge">{badge_text}</span>
+</div>"""
+
+    n      = min(4, len(top))
+    mults  = {2: "3x", 3: "5x", 4: "10x"}
+    return f"""
+<div class="slate-card">
+  <div class="slate-title">⚡ Today's Recommended {n}-Pick Slate ({mults.get(n,'?')} payout)</div>
+  <div class="slate-meta">Ranked by model edge · Confirm injury reports before submitting</div>
+  {legs_html}
+</div>"""
+
+
+# ── Header ────────────────────────────────────────────────────────────────────
+
+st.markdown('<h1 style="font-size:1.8rem;margin-bottom:0">⚡ prop-edge</h1>',
+            unsafe_allow_html=True)
+st.markdown('<p style="color:#8890a4;margin-top:0;margin-bottom:1.5rem;font-size:0.85rem">'
+            'Research dashboard · paper-tracking only</p>', unsafe_allow_html=True)
+
 df = load_todays_picks()
-total = len(df)
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Today's Picks", total)
-col2.metric("MLB", len(df[df["sport_code"] == "mlb"]))
-col3.metric("NBA", len(df[df["sport_code"] == "nba"]))
-col4.metric("Avg Edge", f"{df['edge'].mean():.3f}" if total else "-")
+settled   = df[df["leg_result"].notna()]
+wins      = (settled["leg_result"] == "win").sum()
+total_set = len(settled[settled["leg_result"].isin(["win","loss"])])
+win_pct   = f"{wins/total_set:.0%}" if total_set else "—"
+avg_edge  = f"{df['market_edge'].mean():.1%}" if len(df) else "—"
+above_be  = (df["model_prob"] >= 0.577).sum()
 
-# Filters
-st.divider()
-left, right = st.columns(2)
-with left:
-    sport_filter = st.multiselect(
-        "Sport",
-        options=sorted(df["sport_code"].unique().tolist()),
-        default=sorted(df["sport_code"].unique().tolist()),
-    )
-with right:
-    stat_filter = st.multiselect(
-        "Stat type",
-        options=sorted(df["stat_type"].unique().tolist()),
-        default=sorted(df["stat_type"].unique().tolist()),
-    )
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Today's Picks", len(df))
+c2.metric("Above Breakeven", above_be)
+c3.metric("Avg Edge", avg_edge)
+c4.metric("Settled W/L", f"{wins}/{total_set - wins}")
+c5.metric("Win Rate", win_pct)
 
-filtered = df[
-    df["sport_code"].isin(sport_filter)
-    & df["stat_type"].isin(stat_filter)
-]
 
-# Picks table
-st.subheader(f"Picks ({len(filtered)})")
-display = filtered[[
-    "player", "sport_code", "stat_type", "line", "direction",
-    "model_probability", "edge", "game_status", "leg_result"
-]].copy()
-display.columns = [
-    "Player", "Sport", "Stat", "Line", "Pick",
-    "Model Prob", "Edge", "Game Status", "Result"
-]
-display["Model Prob"] = display["Model Prob"].astype(float).round(3)
-display["Edge"] = display["Edge"].astype(float).round(3)
-st.dataframe(display, use_container_width=True, hide_index=True)
+# ── Tabs ──────────────────────────────────────────────────────────────────────
 
-# Historical results
-st.divider()
-st.subheader("Settled paper-tracking results")
-hist = load_historical_summary()
-if hist.empty:
-    st.info("No settled picks yet. Run settle_picks after games finish.")
-else:
-    st.dataframe(hist, use_container_width=True, hide_index=True)
-    
-    # Pretty bar chart of win rates
-    chart_df = hist[hist["picks"] >= 10].copy()
-    chart_df["label"] = chart_df["sport_code"] + " " + chart_df["stat_type"] + " " + chart_df["direction"]
-    if not chart_df.empty:
-        st.bar_chart(chart_df.set_index("label")["win_pct"], height=300)
+tab_picks, tab_game, tab_perf, tab_recent = st.tabs(
+    ["🃏 Today's Picks", "🏆 Game Predictions", "📊 Performance", "📋 Recent Picks"]
+)
 
-st.divider()
-st.caption("Auto-refresh every 60s. Picks refresh hourly via cron.")
+
+# ══ TAB 1: Today's Picks ═════════════════════════════════════════════════════
+with tab_picks:
+    if df.empty:
+        st.info("No picks logged today. Daily cron runs at 9 AM.")
+    else:
+        # Filters
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            sport_opts = sorted(df["sport_code"].unique())
+            sport_sel  = st.multiselect("Sport", sport_opts, default=sport_opts, key="sp")
+        with fc2:
+            stat_opts  = sorted(df["stat_type"].unique())
+            stat_sel   = st.multiselect("Stat", stat_opts, default=stat_opts, key="st")
+        with fc3:
+            dir_opts   = ["over", "under"]
+            dir_sel    = st.multiselect("Direction", dir_opts, default=dir_opts, key="di")
+
+        filtered = df[
+            df["sport_code"].isin(sport_sel) &
+            df["stat_type"].isin(stat_sel) &
+            df["direction"].isin(dir_sel)
+        ].reset_index(drop=True)
+
+        # Slate card
+        nba_picks = filtered[filtered["sport_code"] == "nba"]
+        if not nba_picks.empty:
+            st.markdown(build_slate_card(nba_picks), unsafe_allow_html=True)
+
+        # Batch load form data per sport/stat group
+        form_cache: dict[tuple, pd.DataFrame] = {}
+        for (sport, stat), grp in filtered.groupby(["sport_code", "stat_type"]):
+            pids = tuple(grp["player_id"].astype(int).unique())
+            form_cache[(sport, stat)] = load_player_form(pids, stat, sport)
+
+        # Card grid (3 per row)
+        cols_per_row = 3
+        rows = [filtered.iloc[i:i+cols_per_row]
+                for i in range(0, len(filtered), cols_per_row)]
+
+        for row_picks in rows:
+            cols = st.columns(cols_per_row)
+            for col, (_, pick) in zip(cols, row_picks.iterrows()):
+                sport  = pick["sport_code"]
+                stat   = pick["stat_type"]
+                fdf    = form_cache.get((sport, stat), pd.DataFrame())
+                with col:
+                    st.markdown(build_pick_card(pick, fdf), unsafe_allow_html=True)
+
+
+# ══ TAB 2: Game Predictions ══════════════════════════════════════════════════
+with tab_game:
+    # Try to load stored predictions from games.context
+    game_preds = load_game_predictions_data()
+
+    if game_preds.empty:
+        st.info("No game predictions stored yet. They are generated during the daily run "
+                "and can also be run manually via `predict_game.py`.")
+
+        # Still try to run live
+        try:
+            from datetime import date
+            from props.picks.predict_game import predict_games, get_team_features
+            from props.picks.predict_today import (fetch_nba_schedule,
+                                                    resolve_nba_external_to_internal_ids)
+            from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
+            from props.utils.db import session_scope
+            from sqlalchemy import text as sqlt
+
+            today     = date.today()
+            nba_raw   = fetch_nba_schedule(today)
+            nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+            espn_raw  = fetch_nba_game_context(today)
+            ctx_map   = map_context_to_game_ids(espn_raw, nba_games)
+
+            with session_scope() as s:
+                trows = s.execute(sqlt(
+                    "SELECT team_id, city, name, abbreviation, external_id, sport_code "
+                    "FROM teams WHERE sport_code='nba'"
+                )).all()
+            team_info = {r[0]: {"name": f"{r[1]} {r[2]}", "abbr": r[3],
+                                 "ext_id": r[4]} for r in trows}
+
+            preds = predict_games(nba_games, today, ctx_map)
+            game_preds = pd.DataFrame(preds) if preds else pd.DataFrame()
+        except Exception as e:
+            st.warning(f"Could not run live predictions: {e}")
+            game_preds = pd.DataFrame()
+
+    if not game_preds.empty:
+        for _, pred in game_preds.iterrows():
+            home_wp  = float(pred.get("home_win_prob") or 0.5)
+            away_wp  = 1 - home_wp
+            margin   = float(pred.get("implied_margin") or 0)
+            ms       = pred.get("market_spread")
+            mt       = pred.get("market_total")
+            me       = pred.get("market_edge")
+            home     = pred.get("home_team", f"Team {pred.get('home_team_id','')}")
+            away     = pred.get("away_team", f"Team {pred.get('away_team_id','')}")
+
+            fav  = home if home_wp >= 0.5 else away
+            conf = max(home_wp, away_wp)
+
+            bar_w_home = int(home_wp * 100)
+            bar_w_away = 100 - bar_w_home
+
+            # Market line display
+            market_html = ""
+            if ms is not None:
+                mfav      = home if ms <= 0 else away
+                ms_display = f"{mfav} -{abs(ms):.1f}"
+                market_html = f"""
+<div class="market-row">
+  <span style="color:#8890a4">Market: {ms_display} &nbsp;|&nbsp; O/U {mt}</span>
+"""
+                if me is not None:
+                    if abs(me) >= 0.10:
+                        bet_team = home if me > 0 else away
+                        bet_line = f"+{abs(ms):.1f}" if (me < 0 and ms <= 0) else f"-{abs(ms):.1f}"
+                        market_html += f'<span class="rec-strong">▲ STRONG: {bet_team} {bet_line} ({me:+.0%})</span>'
+                    elif abs(me) >= 0.05:
+                        bet_team = home if me > 0 else away
+                        market_html += f'<span class="rec-lean">→ LEAN: {bet_team} ({me:+.0%})</span>'
+                    else:
+                        market_html += f'<span class="rec-pass">PASS — no meaningful edge ({me:+.0%})</span>'
+                market_html += "</div>"
+
+            st.markdown(f"""
+<div class="game-card">
+  <div class="game-teams">{away} @ {home}</div>
+  <div class="win-bar-bg">
+    <div class="win-bar-home" style="width:{bar_w_home}%"></div>
+    <div class="win-bar-away" style="width:{bar_w_away}%"></div>
+  </div>
+  <div class="team-prob">
+    <span class="{'fav' if home_wp>=0.5 else 'dog'}">{home} {home_wp:.0%}</span>
+    <span class="{'fav' if away_wp>home_wp else 'dog'}">{away} {away_wp:.0%}</span>
+  </div>
+  <div style="font-size:0.78rem;color:#8890a4;margin-top:6px">
+    Model pick: <strong style="color:#fff">{fav}</strong> wins
+    ({conf:.0%} conf) · Implied spread: {fav} -{abs(margin):.1f}
+  </div>
+  {market_html}
+</div>""", unsafe_allow_html=True)
+
+
+# ══ TAB 3: Performance ═══════════════════════════════════════════════════════
+with tab_perf:
+    hist = load_historical_summary()
+    if hist.empty:
+        st.info("No settled picks yet.")
+    else:
+        # Summary metrics
+        total_picks = hist["picks"].sum()
+        total_wins  = hist["wins"].sum()
+        total_loss  = hist["losses"].sum()
+        overall_wp  = total_wins / (total_wins + total_loss) * 100 if (total_wins + total_loss) else 0
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Settled", int(total_wins + total_loss))
+        m2.metric("Win Rate", f"{overall_wp:.1f}%")
+        m3.metric("Record", f"{int(total_wins)}W – {int(total_loss)}L")
+
+        st.divider()
+        st.subheader("Win rate by stat + direction")
+
+        display = hist[hist["picks"] >= 5].copy()
+        display["Win %"] = display["win_pct"].apply(
+            lambda x: f"{x:.1f}%" if pd.notna(x) else "—"
+        )
+        display["Record"] = display.apply(
+            lambda r: f"{int(r['wins'])}W {int(r['losses'])}L {int(r['pushes'])}P", axis=1
+        )
+        st.dataframe(
+            display[["sport_code","stat_type","direction","picks","Record","Win %",
+                      "avg_prob","avg_edge"]].rename(columns={
+                "sport_code":"Sport","stat_type":"Stat","direction":"Dir",
+                "picks":"N","avg_prob":"Avg Prob","avg_edge":"Avg Edge"
+            }),
+            use_container_width=True, hide_index=True
+        )
+
+        if not display.empty:
+            chart_df = display.copy()
+            chart_df["label"] = (chart_df["sport_code"] + " "
+                                 + chart_df["stat_type"] + " "
+                                 + chart_df["direction"])
+            st.bar_chart(chart_df.set_index("label")["win_pct"], height=280)
+
+
+# ══ TAB 4: Recent Picks ══════════════════════════════════════════════════════
+with tab_recent:
+    days = st.slider("Days back", 1, 30, 7)
+    recent = load_recent_picks(days)
+
+    if recent.empty:
+        st.info("No picks in this range.")
+    else:
+        # Color code results
+        def result_color(val):
+            if val == "win":   return "color: #00d4a0; font-weight:600"
+            if val == "loss":  return "color: #ff6b6b; font-weight:600"
+            if val == "push":  return "color: #ffd93d"
+            return ""
+
+        st.dataframe(
+            recent.style.map(result_color, subset=["leg_result"]),
+            use_container_width=True, hide_index=True, height=600
+        )
+
+st.markdown('<p style="color:#3a3d4e;font-size:0.72rem;text-align:center;margin-top:2rem">'
+            'prop-edge · paper-tracking only · not betting advice</p>',
+            unsafe_allow_html=True)
