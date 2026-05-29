@@ -149,6 +149,111 @@ def build_correlated_parlays(picks: pd.DataFrame, top_n: int = 10) -> list[dict]
     return combos[:top_n]
 
 
+def build_slate(picks: pd.DataFrame, sizes: list[int] = None) -> dict[int, dict]:
+    """Select the best non-redundant combo per parlay size.
+
+    Generates all combos (same as build_correlated_parlays), then for each
+    size picks the highest-EV combo. If the same leg would appear in more
+    than one selected combo, a small redundancy penalty is applied to favour
+    diversification — but only enough to break ties, not override big EV gaps.
+
+    Returns {size: combo_dict} for each requested size.
+    """
+    if sizes is None:
+        sizes = [2, 3, 4]
+
+    if picks.empty:
+        return {}
+
+    if "team_id" not in picks.columns:
+        picks = picks.copy()
+        picks["team_id"] = None
+
+    picks = (
+        picks
+        .sort_values("edge", ascending=False)
+        .drop_duplicates(subset=["player_id", "stat_type", "direction"])
+        .reset_index(drop=True)
+    )
+
+    strong = picks[picks["edge"] >= MIN_EDGE_FOR_LEG]
+    if len(strong) < 2:
+        strong = picks.nlargest(min(MAX_CANDIDATES, len(picks)), "edge")
+    candidates = strong.nlargest(MAX_CANDIDATES, "edge").to_dict("records")
+
+    # Build all combos per size
+    combos_by_size: dict[int, list] = {s: [] for s in sizes}
+    for size in sizes:
+        mult = MULTIPLIERS.get(size)
+        if mult is None or len(candidates) < size:
+            continue
+        for legs in itertools.combinations(candidates, size):
+            p_joint = _joint_prob(legs)
+            ev      = mult * p_joint - 1
+            combos_by_size[size].append({
+                "size":       size,
+                "multiplier": mult,
+                "legs":       legs,
+                "p_joint":    round(p_joint, 4),
+                "ev":         round(ev, 4),
+                "avg_edge":   round(float(np.mean([l["edge"] for l in legs])), 4),
+            })
+
+    # Select greedily: largest size first, apply small penalty for reused legs
+    selected: dict[int, dict] = {}
+    used_leg_keys: set[tuple] = set()
+
+    for size in sorted(sizes, reverse=True):
+        combos = combos_by_size.get(size, [])
+        if not combos:
+            continue
+        combos.sort(key=lambda x: x["ev"], reverse=True)
+        # Score = ev - 0.04 per already-used leg (nudge toward diversity, don't force it)
+        def _score(c):
+            leg_keys = {(l["player_id"], l["stat_type"], l["direction"]) for l in c["legs"]}
+            overlap  = len(leg_keys & used_leg_keys)
+            return c["ev"] - 0.04 * overlap
+
+        best = max(combos, key=_score)
+        selected[size] = best
+        for leg in best["legs"]:
+            used_leg_keys.add((leg["player_id"], leg["stat_type"], leg["direction"]))
+
+    return selected
+
+
+def print_slate(slate: dict[int, dict], title: str = "TODAY'S PICKS", stake: float = 10.0):
+    """Print the recommended slate as a clean, actionable picks card."""
+    if not slate:
+        print("\nNo slate generated.")
+        return
+
+    sep = "═" * 58
+    print(f"\n{sep}")
+    print(f"  {title}")
+    print(sep)
+
+    for size in sorted(slate.keys(), reverse=True):
+        c    = slate[size]
+        mult = c["multiplier"]
+        win  = round(stake * mult, 2)
+        print(f"\n  PLAY — {size}-pick ({mult}x)  │  ${stake:.0f} → ${win:.0f}  │  "
+              f"joint={c['p_joint']:.1%}  EV={c['ev']:+.0%}")
+        print(f"  {'─'*54}")
+        for leg in c["legs"]:
+            inj_str  = "  ⚠" if leg.get("injury_flag") else ""
+            prob_str = f"({leg['model_prob']:.0%})"
+            ctx_str  = f"  O/U {leg['game_total']}" if leg.get("game_total") else ""
+            print(
+                f"    {leg['player_name']:26s}  "
+                f"{leg['stat_type']:14s}  "
+                f"{leg['direction'].upper():5s}  "
+                f"{leg['line_value']:<6}  "
+                f"{prob_str}{ctx_str}{inj_str}"
+            )
+    print(f"\n{sep}\n")
+
+
 def print_parlay_recommendations(combos: list[dict]):
     if not combos:
         print("\nNo parlay recommendations generated.")

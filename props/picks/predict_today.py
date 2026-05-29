@@ -24,7 +24,10 @@ from props.features.inference import batter_features, pitcher_quality_features
 from props.models.registry import MODELS, ModelEntry
 from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
 from props.ingest.market_odds import build_market_probs
-from props.picks.build_parlays import build_correlated_parlays, print_parlay_recommendations
+from props.picks.build_parlays import (
+    build_correlated_parlays, print_parlay_recommendations,
+    build_slate, print_slate,
+)
 
 
 def load_model(entry):
@@ -669,10 +672,14 @@ def main():
         print(f"\n  ⚠  {len(below_breakeven)} picks below 2-pick breakeven (57.7%) — "
               "avoid as parlay legs unless edge vs market is very strong")
 
-    # --- Correlated parlay recommendations (rank combos by market_edge) ---
+    # --- Slate: committed picks card ---
     nba_picks = combined[combined["model_name"].str.startswith("nba")].copy()
     if not nba_picks.empty:
-        # Pass market_edge and game context into legs for display
+        slate = build_slate(nba_picks)
+        print_slate(slate, title=f"TODAY'S PICKS — {today.strftime('%a %b %-d')}")
+
+    # --- Full ranked combo list (detailed analysis) ---
+    if not nba_picks.empty:
         combos = build_correlated_parlays(nba_picks)
         print_parlay_recommendations(combos)
 
