@@ -410,11 +410,13 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
 
     badge_cls  = "over" if direction == "over" else "under"
     badge_text = "OVER" if direction == "over" else "UNDER"
-    inj_html   = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
-    kelly_pct  = round(kelly * 100, 1)
-    kelly_html = (f'<div style="font-size:0.7rem;color:#8890a4;margin-top:4px">'
-                  f'Kelly: <b style="color:#7c5ce8;font-weight:600">{kelly_pct}%</b></div>'
-                  ) if kelly > 0 else ""
+    inj_html  = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
+    kelly_pct = round(kelly * 100, 1)
+    kelly_label = f"Kelly {kelly_pct}%" if kelly > 0 else ""
+    kelly_row = (f'<div class="prob-row" style="margin-top:4px">'
+                 f'<span class="prob-label">Kelly sizing</span>'
+                 f'<span class="prob-value" style="color:#7c5ce8">{kelly_label}</span>'
+                 f'</div>') if kelly > 0 else ""
 
     return f"""
 <div class="pick-card">
@@ -433,6 +435,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
       <span class="prob-label">Model confidence</span>
       <span class="prob-value">{prob:.0%}</span>
     </div>
+    {kelly_row}
     {edge_bar_html(edge)}
     <div class="form-section">
       <div class="form-label">Last 5 games vs line</div>
@@ -440,7 +443,6 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
       {form_rate_html}
     </div>
     {inj_html}
-    {kelly_html}
   </div>
 </div>"""
 
