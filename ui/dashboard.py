@@ -411,7 +411,10 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     badge_cls  = "over" if direction == "over" else "under"
     badge_text = "OVER" if direction == "over" else "UNDER"
     inj_html   = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
-    kelly_html = f'<div class="kelly-row">Kelly: <span>{kelly*100:.1f}%</span></div>' if kelly > 0 else ""
+    kelly_pct  = round(kelly * 100, 1)
+    kelly_html = (f'<div style="font-size:0.7rem;color:#8890a4;margin-top:4px">'
+                  f'Kelly: <b style="color:#7c5ce8;font-weight:600">{kelly_pct}%</b></div>'
+                  ) if kelly > 0 else ""
 
     return f"""
 <div class="pick-card">
