@@ -31,7 +31,11 @@ MARKET_TO_STAT = {
     "player_rebounds_assists":        "rebs_asts",
 }
 
-FETCH_MARKETS = list(MARKET_TO_STAT.keys())
+# Core markets only — each market = 1 API request for historical, so keep tight
+FETCH_MARKETS = [
+    "player_points", "player_rebounds", "player_assists",
+    "player_threes", "player_points_rebounds_assists",
+]
 
 
 def _american_to_implied(price: float) -> float:

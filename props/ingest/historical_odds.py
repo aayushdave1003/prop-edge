@@ -1,20 +1,24 @@
 """Backfill historical market odds from The Odds API into market_odds table.
 
-For each game in our DB, fetches the closing-line player prop odds from
-DraftKings + FanDuel at ~2 hours before tipoff. Stores no-vig over probability
-alongside raw American prices for full audit trail.
+EFFICIENT design:
+  - Groups games by date → 1 events-list request per date (not per game)
+  - Matches each game to its correct Odds API event by team name
+  - Fetches only the matched event's props (not all events on that day)
+  - Fetches only 3 core markets to minimize request cost
 
-Cost: 1 request per events-snapshot + 1 per game = ~2–10 req/game-day.
-With 20k monthly requests this covers all historical data + leaves room.
+Request cost: (1 events + 3 markets × 1 per matched event) per date
+  ~4 requests/date × 200 NBA dates = ~800 requests for full season
+  (vs 19,000+ with the original buggy approach)
 
 Usage:
-    python3 -m props.ingest.historical_odds              # all sports, all history
-    python3 -m props.ingest.historical_odds --sport nba  # NBA only
+    python3 -m props.ingest.historical_odds              # NBA since 2024-10-01
     python3 -m props.ingest.historical_odds --sport mlb --since 2025-04-01
+    python3 -m props.ingest.historical_odds --dry-run    # count games only
 """
 import argparse
 import time
 from datetime import date, datetime, timedelta, timezone
+from collections import defaultdict
 
 import pandas as pd
 import requests
@@ -33,38 +37,21 @@ SPORT_KEY = {
     "mlb": "baseball_mlb",
 }
 
-NBA_MARKETS = [
-    "player_points", "player_rebounds", "player_assists",
-    "player_threes", "player_blocks", "player_steals",
-    "player_points_rebounds_assists",
-    "player_points_rebounds", "player_points_assists",
-    "player_rebounds_assists",
-]
-
-MLB_MARKETS = [
-    "batter_hits", "batter_home_runs", "batter_rbis",
-    "batter_strikeouts", "batter_total_bases",
-    "pitcher_strikeouts", "pitcher_hits_allowed",
-]
+NBA_MARKETS = ["player_points", "player_rebounds", "player_assists",
+               "player_threes", "player_points_rebounds_assists"]
+MLB_MARKETS = ["batter_hits", "batter_home_runs", "batter_total_bases",
+               "pitcher_strikeouts"]
 
 MARKET_TO_STAT = {
     "player_points":                  "points",
     "player_rebounds":                "rebounds",
     "player_assists":                 "assists",
     "player_threes":                  "threes_made",
-    "player_blocks":                  "blocks",
-    "player_steals":                  "steals",
     "player_points_rebounds_assists": "pts_rebs_asts",
-    "player_points_rebounds":         "pts_rebs",
-    "player_points_assists":          "pts_asts",
-    "player_rebounds_assists":        "rebs_asts",
     "batter_hits":                    "hits",
     "batter_home_runs":               "home_runs",
-    "batter_rbis":                    "rbis",
-    "batter_strikeouts":              "strikeouts",
     "batter_total_bases":             "total_bases",
     "pitcher_strikeouts":             "strikeouts_pitcher",
-    "pitcher_hits_allowed":           "hits_allowed",
 }
 
 
@@ -89,10 +76,11 @@ def _get(url: str, params: dict, retries: int = 3) -> dict | None:
         try:
             r = requests.get(url, params=params, timeout=20)
             remaining = int(r.headers.get("x-requests-remaining", 9999))
-            if remaining < 50:
-                log.warning("odds_api_low_quota", remaining=remaining)
+            if remaining < 20:
+                log.warning("odds_api_quota_critical", remaining=remaining)
+                return None
             if r.status_code == 422:
-                return None   # no data for this date/event
+                return None
             r.raise_for_status()
             return r.json()
         except requests.exceptions.RequestException as e:
@@ -104,59 +92,40 @@ def _get(url: str, params: dict, retries: int = 3) -> dict | None:
     return None
 
 
-def fetch_historical_events(sport: str, snapshot_dt: datetime) -> list[dict]:
-    """Events list at a point in time."""
-    url = f"{ODDS_API_BASE}/historical/sports/{SPORT_KEY[sport]}/events"
-    data = _get(url, {"apiKey": _key(), "date": snapshot_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                      "dateFormat": "iso"})
-    if not data:
-        return []
-    return data.get("data", [])
+def _team_nickname(full_name: str) -> str:
+    """Extract last word of team name for fuzzy matching."""
+    return full_name.strip().split()[-1].lower()
 
 
-def fetch_historical_event_props(sport: str, event_id: str,
-                                  snapshot_dt: datetime) -> list[dict]:
-    """Player prop odds for one event at a point in time."""
-    markets = NBA_MARKETS if sport == "nba" else MLB_MARKETS
-    url = f"{ODDS_API_BASE}/historical/sports/{SPORT_KEY[sport]}/events/{event_id}/odds"
-    data = _get(url, {
-        "apiKey":      _key(),
-        "date":        snapshot_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "regions":     "us",
-        "markets":     ",".join(markets),
-        "bookmakers":  ",".join(SHARP_BOOKS),
-        "oddsFormat":  "american",
-    })
-    if not data:
-        return []
-    return data.get("data", {}).get("bookmakers", [])
-
-
-def load_games_to_backfill(sport: str, since: date) -> pd.DataFrame:
-    """Games we have player data for but no market odds yet."""
+def load_games_by_date(sport: str, since: date) -> dict[date, list]:
+    """Group DB games by game_date for efficient date-level API calls."""
     sql = text("""
-        SELECT DISTINCT g.game_id, g.game_date, g.external_id,
-               g.home_team_id, g.away_team_id
+        SELECT g.game_id, g.game_date, g.external_id,
+               g.home_team_id, g.away_team_id,
+               ht.city || ' ' || ht.name AS home_name,
+               at.city || ' ' || at.name AS away_name,
+               ht.name AS home_nickname, at.name AS away_nickname
         FROM games g
-        JOIN player_games pg USING(game_id)
+        JOIN teams ht ON ht.team_id = g.home_team_id
+        JOIN teams at ON at.team_id = g.away_team_id
         WHERE g.sport_code = :sport
           AND g.status = 'final'
           AND g.game_date >= :since
           AND NOT EXISTS (
-              SELECT 1 FROM market_odds mo
-              WHERE mo.game_id = g.game_id
+              SELECT 1 FROM market_odds mo WHERE mo.game_id = g.game_id
           )
-        GROUP BY g.game_id, g.game_date, g.external_id,
-                 g.home_team_id, g.away_team_id
-        ORDER BY g.game_date
+        ORDER BY g.game_date, g.game_id
     """)
     df = pd.read_sql(sql, engine, params={"sport": sport, "since": since})
-    df["game_date"] = pd.to_datetime(df["game_date"])
-    return df
+    df["game_date"] = pd.to_datetime(df["game_date"]).dt.date
+
+    by_date = defaultdict(list)
+    for _, row in df.iterrows():
+        by_date[row["game_date"]].append(row.to_dict())
+    return dict(by_date)
 
 
 def load_player_name_map(sport: str) -> dict:
-    """Lower-cased full_name → player_id lookup."""
     with engine.connect() as conn:
         rows = conn.execute(text(
             "SELECT player_id, LOWER(full_name) AS name FROM players WHERE sport_code=:s"
@@ -164,8 +133,92 @@ def load_player_name_map(sport: str) -> dict:
     return {r[1]: r[0] for r in rows}
 
 
+def match_event_to_game(events: list[dict], game: dict) -> dict | None:
+    """Find the Odds API event matching this DB game by team nickname."""
+    home_nick = game["home_nickname"].strip().lower()
+    away_nick = game["away_nickname"].strip().lower()
+
+    for event in events:
+        api_home = event.get("home_team", "").lower()
+        api_away = event.get("away_team", "").lower()
+        # Match if both nicknames appear in the API team names
+        if home_nick in api_home and away_nick in api_away:
+            return event
+        if away_nick in api_home and home_nick in api_away:
+            return event
+    return None
+
+
+def fetch_events_for_date(sport: str, game_date: date) -> list[dict]:
+    """Fetch events snapshot at 10 PM UTC on game_date (before most tip-offs)."""
+    snapshot = f"{game_date.strftime('%Y-%m-%d')}T22:00:00Z"
+    url  = f"{ODDS_API_BASE}/historical/sports/{SPORT_KEY[sport]}/events"
+    data = _get(url, {"apiKey": _key(), "date": snapshot, "dateFormat": "iso"})
+    if not data:
+        # Try next day midnight for late games
+        next_day = (game_date + timedelta(days=1)).strftime("%Y-%m-%d")
+        data = _get(url, {"apiKey": _key(), "date": f"{next_day}T01:00:00Z",
+                          "dateFormat": "iso"})
+    return (data or {}).get("data", [])
+
+
+def fetch_event_props(sport: str, event_id: str, game_date: date) -> list[dict]:
+    """Fetch props for ONE matched event. Cost: 1 req per market."""
+    markets = NBA_MARKETS if sport == "nba" else MLB_MARKETS
+    snapshot = f"{game_date.strftime('%Y-%m-%d')}T22:00:00Z"
+    url  = f"{ODDS_API_BASE}/historical/sports/{SPORT_KEY[sport]}/events/{event_id}/odds"
+    data = _get(url, {
+        "apiKey":     _key(),
+        "date":       snapshot,
+        "regions":    "us",
+        "markets":    ",".join(markets),
+        "bookmakers": ",".join(SHARP_BOOKS),
+        "oddsFormat": "american",
+    })
+    if not data:
+        return []
+    return (data.get("data") or {}).get("bookmakers", [])
+
+
+def parse_bookmaker_props(bookmakers: list, game_id: int,
+                          name_map: dict) -> list[dict]:
+    rows = []
+    for bm in bookmakers:
+        if bm["key"] not in SHARP_BOOKS:
+            continue
+        bookmaker = bm["key"]
+        for market in bm.get("markets", []):
+            stat = MARKET_TO_STAT.get(market["key"])
+            if not stat:
+                continue
+            pairs: dict[tuple, dict] = {}
+            for o in market.get("outcomes", []):
+                player = o.get("description", "").lower().strip()
+                line   = float(o.get("point", 0))
+                k = (player, line)
+                pairs.setdefault(k, {})
+                pairs[k][o["name"].lower()] = int(o["price"])
+            for (player_name, line), prices in pairs.items():
+                if "over" not in prices or "under" not in prices:
+                    continue
+                player_id = name_map.get(player_name)
+                if player_id is None:
+                    continue
+                rows.append({
+                    "game_id":          game_id,
+                    "player_id":        player_id,
+                    "stat_type":        stat,
+                    "line_value":       line,
+                    "over_price":       prices["over"],
+                    "under_price":      prices["under"],
+                    "market_over_prob": _no_vig_prob(prices["over"], prices["under"]),
+                    "bookmaker":        bookmaker,
+                    "snapshot_time":    datetime.utcnow(),
+                })
+    return rows
+
+
 def upsert_market_odds(rows: list[dict]):
-    """Insert rows, skipping duplicates."""
     if not rows:
         return
     sql = text("""
@@ -186,106 +239,74 @@ def upsert_market_odds(rows: list[dict]):
         session.execute(sql, rows)
 
 
-def process_game(game_row, sport: str, name_map: dict) -> int:
-    """Fetch and store market odds for one game. Returns rows inserted."""
-    game_id   = int(game_row["game_id"])
-    game_date = game_row["game_date"]
-
-    # Snapshot 2 hours before typical tip-off (8 PM ET = midnight UTC, so 22:00 UTC)
-    snapshot_dt = datetime(
-        game_date.year, game_date.month, game_date.day,
-        22, 0, 0, tzinfo=timezone.utc
-    )
-
-    # Find matching event from the Odds API
-    events = fetch_historical_events(sport, snapshot_dt)
-    if not events:
-        # Try next day for late games
-        snapshot_dt = snapshot_dt + timedelta(days=1)
-        events = fetch_historical_events(sport, snapshot_dt)
-    if not events:
-        return 0
-
-    # Match to our game by team names (via external_id isn't reliable cross-source)
-    # We'll fetch all events' props and store by matching player names
-    rows = []
-    for event in events:
-        bookmakers = fetch_historical_event_props(sport, event["id"], snapshot_dt)
-        time.sleep(0.15)  # stay under rate limit
-
-        for bm in bookmakers:
-            if bm["key"] not in SHARP_BOOKS:
-                continue
-            bookmaker = bm["key"]
-            for market in bm.get("markets", []):
-                stat = MARKET_TO_STAT.get(market["key"])
-                if not stat:
-                    continue
-
-                # Group into (player, line) → {over_price, under_price}
-                pairs: dict[tuple, dict] = {}
-                for o in market.get("outcomes", []):
-                    player_name = o.get("description", "").lower().strip()
-                    line        = float(o.get("point", 0))
-                    k = (player_name, line)
-                    pairs.setdefault(k, {})
-                    pairs[k][o["name"].lower()] = int(o["price"])
-
-                for (player_name, line), prices in pairs.items():
-                    if "over" not in prices or "under" not in prices:
-                        continue
-                    player_id = name_map.get(player_name)
-                    if player_id is None:
-                        continue
-                    rows.append({
-                        "game_id":          game_id,
-                        "player_id":        player_id,
-                        "stat_type":        stat,
-                        "line_value":       line,
-                        "over_price":       prices["over"],
-                        "under_price":      prices["under"],
-                        "market_over_prob": _no_vig_prob(prices["over"], prices["under"]),
-                        "bookmaker":        bookmaker,
-                        "snapshot_time":    snapshot_dt,
-                    })
-
-    upsert_market_odds(rows)
-    return len(rows)
-
-
-def run(sport: str = "nba", since: date = None):
+def run(sport: str = "nba", since: date = None, dry_run: bool = False):
     configure_logging()
     if since is None:
-        since = date(2024, 10, 1)  # start of 2024-25 NBA season
+        since = date(2024, 10, 1)
 
-    games = load_games_to_backfill(sport, since)
-    name_map = load_player_name_map(sport)
-    log.info("backfill_start", sport=sport, games=len(games), since=str(since))
+    games_by_date = load_games_by_date(sport, since)
+    name_map      = load_player_name_map(sport)
+
+    total_dates = len(games_by_date)
+    total_games = sum(len(v) for v in games_by_date.values())
+    est_requests = total_dates * 1 + total_games * len(
+        NBA_MARKETS if sport == "nba" else MLB_MARKETS
+    )
+
+    log.info("backfill_plan", sport=sport, dates=total_dates,
+             games=total_games, est_requests=est_requests)
+
+    if dry_run:
+        print(f"\nDry run: {total_dates} dates, {total_games} games, "
+              f"~{est_requests} requests needed")
+        return
 
     total_rows = 0
-    for i, (_, game) in enumerate(games.iterrows()):
-        n = process_game(game, sport, name_map)
-        total_rows += n
+    matched    = 0
+    unmatched  = 0
+
+    for i, (game_date, day_games) in enumerate(sorted(games_by_date.items())):
+        events = fetch_events_for_date(sport, game_date)
+        if not events:
+            unmatched += len(day_games)
+            continue
+
+        for game in day_games:
+            event = match_event_to_game(events, game)
+            if not event:
+                log.debug("no_event_match", game_id=game["game_id"],
+                          home=game["home_nickname"], away=game["away_nickname"])
+                unmatched += 1
+                continue
+
+            bookmakers = fetch_event_props(sport, event["id"], game_date)
+            time.sleep(0.2)
+
+            rows = parse_bookmaker_props(bookmakers, int(game["game_id"]), name_map)
+            upsert_market_odds(rows)
+            total_rows += len(rows)
+            matched += 1
+
         if i % 10 == 0:
-            log.info("backfill_progress", done=i, total=len(games),
-                     rows_so_far=total_rows)
+            log.info("backfill_progress", dates_done=i, total_dates=total_dates,
+                     matched=matched, unmatched=unmatched, rows=total_rows)
         time.sleep(0.1)
 
-    log.info("backfill_complete", sport=sport, games_processed=len(games),
-             total_rows=total_rows)
+    log.info("backfill_complete", sport=sport, dates=total_dates,
+             matched=matched, unmatched=unmatched, total_rows=total_rows)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sport",  default="nba", choices=["nba", "mlb"])
-    parser.add_argument("--since",  default=None,
-                        help="YYYY-MM-DD. Default: 2024-10-01 for NBA, 2024-04-01 for MLB")
+    parser.add_argument("--sport",    default="nba", choices=["nba", "mlb"])
+    parser.add_argument("--since",    default=None)
+    parser.add_argument("--dry-run",  action="store_true")
     args = parser.parse_args()
 
     since_date = None
     if args.since:
         since_date = date.fromisoformat(args.since)
     elif args.sport == "mlb":
-        since_date = date(2024, 4, 1)
+        since_date = date(2025, 4, 1)
 
-    run(sport=args.sport, since=since_date)
+    run(sport=args.sport, since=since_date, dry_run=args.dry_run)

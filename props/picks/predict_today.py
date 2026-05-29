@@ -284,17 +284,21 @@ def score_and_edge(model, meta, entry, feature_df):
     merged["p_over"] = 1 - scipy_stats.poisson.cdf(
         merged["line_value"].astype(int), merged["lambda"]
     )
-    # Apply calibration layer if one exists for this model
+    # Apply calibration. New format: {"global": iso} covers all lines.
+    # Legacy format: {9.5: iso, ...} only covers standard lines.
     calibrator_path = entry.model_path.parent / f"{entry.name}_calibrator.pkl"
     if calibrator_path.exists():
         with open(calibrator_path, "rb") as f:
             calibrators = pickle.load(f)
-        for line in calibrators:
-            mask = merged["line_value"].astype(float) == line
-            if mask.any():
-                merged.loc[mask, "p_over"] = calibrators[line].predict(
-                    merged.loc[mask, "p_over"].values
-                )
+        if "global" in calibrators:
+            merged["p_over"] = calibrators["global"].predict(merged["p_over"].values)
+        else:
+            for line in calibrators:
+                mask = merged["line_value"].astype(float) == line
+                if mask.any():
+                    merged.loc[mask, "p_over"] = calibrators[line].predict(
+                        merged.loc[mask, "p_over"].values
+                    )
     merged["p_under"] = 1 - merged["p_over"]
     merged["direction"] = np.where(merged["p_over"] > 0.5, "over", "under")
     merged["model_prob"] = np.where(

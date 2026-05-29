@@ -162,13 +162,29 @@ def add_model_predictions(df: pd.DataFrame, sport: str) -> pd.DataFrame:
         subset = subset.copy()
         subset["pred_mean"] = pred_mean
 
-        # P(actual > line) using Poisson CDF
-        subset["model_over_prob"] = subset.apply(
+        # Raw Poisson prob
+        subset["raw_over_prob"] = subset.apply(
             lambda r: 1 - scipy_stats.poisson.cdf(
                 int(r["line_value"]), r["pred_mean"]
             ),
             axis=1,
         )
+
+        # Apply global calibration if available
+        cal_path = Path(f"models/{model_name}_calibrator.pkl")
+        if cal_path.exists():
+            import pickle
+            with open(cal_path, "rb") as f:
+                cals = pickle.load(f)
+            if "global" in cals:
+                subset["model_over_prob"] = cals["global"].predict(
+                    subset["raw_over_prob"].values
+                )
+            else:
+                subset["model_over_prob"] = subset["raw_over_prob"]
+        else:
+            subset["model_over_prob"] = subset["raw_over_prob"]
+
         results.append(subset)
 
     if not results:
@@ -227,8 +243,11 @@ def calibration_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def print_report(df: pd.DataFrame):
     print("\n" + "═"*64)
-    print("  BACKTEST REPORT — MODEL vs SHARP MARKET (CLOSING LINE)")
+    print("  BACKTEST REPORT — CALIBRATED MODEL vs SHARP MARKET")
     print("═"*64)
+    calibrated = "model_over_prob" in df.columns and "raw_over_prob" in df.columns
+    if calibrated:
+        print("  ✓ Using calibrated probabilities (global isotonic regression)")
     print(f"\n  Dataset: {len(df):,} player-game prop lines")
     print(f"  Date range: {df['game_date'].min().date()} → {df['game_date'].max().date()}")
     print(f"  Unique players: {df['player_name'].nunique()}")
