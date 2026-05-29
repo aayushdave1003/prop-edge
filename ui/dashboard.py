@@ -555,99 +555,132 @@ with tab_picks:
 
 
 # ══ TAB 2: Game Predictions ══════════════════════════════════════════════════
-with tab_game:
-    # Try to load stored predictions from games.context
-    game_preds = load_game_predictions_data()
-
-    if game_preds.empty:
-        st.info("No game predictions stored yet. They are generated during the daily run "
-                "and can also be run manually via `predict_game.py`.")
-
-        # Still try to run live
-        try:
-            from datetime import date
-            from props.picks.predict_game import predict_games, get_team_features
-            from props.picks.predict_today import (fetch_nba_schedule,
-                                                    resolve_nba_external_to_internal_ids)
-            from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
-            from props.utils.db import session_scope
-            from sqlalchemy import text as sqlt
-
-            today     = date.today()
-            nba_raw   = fetch_nba_schedule(today)
-            nba_games = resolve_nba_external_to_internal_ids(nba_raw)
-            espn_raw  = fetch_nba_game_context(today)
-            ctx_map   = map_context_to_game_ids(espn_raw, nba_games)
-
-            with session_scope() as s:
-                trows = s.execute(sqlt(
-                    "SELECT team_id, city, name, abbreviation, external_id, sport_code "
-                    "FROM teams WHERE sport_code='nba'"
-                )).all()
-            team_info = {r[0]: {"name": f"{r[1]} {r[2]}", "abbr": r[3],
-                                 "ext_id": r[4]} for r in trows}
-
-            preds = predict_games(nba_games, today, ctx_map)
-            game_preds = pd.DataFrame(preds) if preds else pd.DataFrame()
-        except Exception as e:
-            st.warning(f"Could not run live predictions: {e}")
-            game_preds = pd.DataFrame()
-
-    if not game_preds.empty:
-        for _, pred in game_preds.iterrows():
-            home_wp  = float(pred.get("home_win_prob") or 0.5)
-            away_wp  = 1 - home_wp
-            margin   = float(pred.get("implied_margin") or 0)
-            ms       = pred.get("market_spread")
-            mt       = pred.get("market_total")
-            me       = pred.get("market_edge")
-            home     = pred.get("home_team", f"Team {pred.get('home_team_id','')}")
-            away     = pred.get("away_team", f"Team {pred.get('away_team_id','')}")
-
-            fav  = home if home_wp >= 0.5 else away
-            conf = max(home_wp, away_wp)
-
-            bar_w_home = int(home_wp * 100)
-            bar_w_away = 100 - bar_w_home
-
-            # Market line display
-            market_html = ""
-            if ms is not None:
-                mfav      = home if ms <= 0 else away
-                ms_display = f"{mfav} -{abs(ms):.1f}"
-                market_html = f"""
-<div class="market-row">
-  <span style="color:#8890a4">Market: {ms_display} &nbsp;|&nbsp; O/U {mt}</span>
-"""
-                if me is not None:
-                    if abs(me) >= 0.10:
-                        bet_team = home if me > 0 else away
-                        bet_line = f"+{abs(ms):.1f}" if (me < 0 and ms <= 0) else f"-{abs(ms):.1f}"
-                        market_html += f'<span class="rec-strong">▲ STRONG: {bet_team} {bet_line} ({me:+.0%})</span>'
-                    elif abs(me) >= 0.05:
-                        bet_team = home if me > 0 else away
-                        market_html += f'<span class="rec-lean">→ LEAN: {bet_team} ({me:+.0%})</span>'
-                    else:
-                        market_html += f'<span class="rec-pass">PASS — no meaningful edge ({me:+.0%})</span>'
-                market_html += "</div>"
-
-            st.markdown(f"""
+def _game_card_html(home: str, away: str, home_wp: float,
+                    margin: float, extra_html: str = "") -> str:
+    away_wp    = 1 - home_wp
+    fav        = home if home_wp >= 0.5 else away
+    conf       = max(home_wp, away_wp)
+    bar_home   = int(home_wp * 100)
+    bar_away   = 100 - bar_home
+    return f"""
 <div class="game-card">
   <div class="game-teams">{away} @ {home}</div>
   <div class="win-bar-bg">
-    <div class="win-bar-home" style="width:{bar_w_home}%"></div>
-    <div class="win-bar-away" style="width:{bar_w_away}%"></div>
+    <div class="win-bar-home" style="width:{bar_home}%"></div>
+    <div class="win-bar-away" style="width:{bar_away}%"></div>
   </div>
   <div class="team-prob">
     <span class="{'fav' if home_wp>=0.5 else 'dog'}">{home} {home_wp:.0%}</span>
     <span class="{'fav' if away_wp>home_wp else 'dog'}">{away} {away_wp:.0%}</span>
   </div>
   <div style="font-size:0.78rem;color:#8890a4;margin-top:6px">
-    Model pick: <strong style="color:#fff">{fav}</strong> wins
-    ({conf:.0%} conf) · Implied spread: {fav} -{abs(margin):.1f}
+    Model: <strong style="color:#fff">{fav}</strong> wins
+    ({conf:.0%}) · Implied line: {fav} -{abs(margin):.1f}
   </div>
-  {market_html}
-</div>""", unsafe_allow_html=True)
+  {extra_html}
+</div>"""
+
+
+def _market_html(ms, mt, me, home, away) -> str:
+    if ms is None:
+        return ""
+    mfav = home if ms <= 0 else away
+    html = f'<div class="market-row"><span style="color:#8890a4">Market: {mfav} -{abs(ms):.1f} &nbsp;|&nbsp; O/U {mt}</span>'
+    if me is not None:
+        if abs(me) >= 0.10:
+            bet = home if me > 0 else away
+            line = f"+{abs(ms):.1f}" if (me < 0 and ms <= 0) else f"-{abs(ms):.1f}"
+            html += f'<br><span class="rec-strong">▲ STRONG: {bet} {line} ({me:+.0%})</span>'
+        elif abs(me) >= 0.05:
+            bet = home if me > 0 else away
+            html += f'<br><span class="rec-lean">→ LEAN: {bet} ({me:+.0%})</span>'
+        else:
+            html += f'<br><span class="rec-pass">PASS ({me:+.0%})</span>'
+    return html + "</div>"
+
+
+with tab_game:
+    from datetime import date as _date
+    _today = _date.today()
+
+    # ── NBA ───────────────────────────────────────────────────────────────────
+    st.markdown("### 🏀 NBA")
+    game_preds = load_game_predictions_data()
+
+    if game_preds.empty:
+        try:
+            from props.picks.predict_game import predict_games
+            from props.picks.predict_today import (fetch_nba_schedule,
+                                                    resolve_nba_external_to_internal_ids)
+            from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
+            from props.utils.db import session_scope
+            from sqlalchemy import text as sqlt
+
+            nba_raw   = fetch_nba_schedule(_today)
+            nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+            espn_raw  = fetch_nba_game_context(_today)
+            ctx_map   = map_context_to_game_ids(espn_raw, nba_games)
+            preds     = predict_games(nba_games, _today, ctx_map)
+            game_preds = pd.DataFrame(preds) if preds else pd.DataFrame()
+        except Exception as e:
+            st.warning(f"NBA predictions unavailable: {e}")
+            game_preds = pd.DataFrame()
+
+    if game_preds.empty:
+        st.info("No NBA games today.")
+    else:
+        cols = st.columns(min(len(game_preds), 3))
+        for i, (_, pred) in enumerate(game_preds.iterrows()):
+            hwp  = float(pred.get("home_win_prob") or 0.5)
+            margin = float(pred.get("implied_margin") or 0)
+            home = pred.get("home_team", f"Team {pred.get('home_team_id','')}")
+            away = pred.get("away_team", f"Team {pred.get('away_team_id','')}")
+            mkt  = _market_html(pred.get("market_spread"), pred.get("market_total"),
+                                pred.get("market_edge"), home, away)
+            with cols[i % 3]:
+                st.markdown(_game_card_html(home, away, hwp, margin, mkt),
+                            unsafe_allow_html=True)
+
+    # ── MLB ───────────────────────────────────────────────────────────────────
+    st.markdown("### ⚾ MLB")
+    try:
+        from props.picks.predict_today import (fetch_todays_schedule_with_pitchers,
+                                                resolve_external_to_internal_ids)
+        from props.picks.predict_mlb_game import predict_mlb_games
+        from props.utils.db import session_scope
+        from sqlalchemy import text as sqlt
+
+        mlb_sched = fetch_todays_schedule_with_pitchers(_today)
+        mlb_sched = resolve_external_to_internal_ids(mlb_sched)
+        mlb_games_valid = [g for g in mlb_sched if g.get("game_id") and g.get("home_team_id")]
+
+        with session_scope() as s:
+            trows = s.execute(sqlt(
+                "SELECT team_id, COALESCE(city || ' ', '') || name FROM teams WHERE sport_code='mlb'"
+            )).all()
+        mlb_names = {r[0]: r[1] for r in trows}
+
+        mlb_preds = predict_mlb_games(mlb_games_valid, _today) if mlb_games_valid else []
+    except Exception as e:
+        st.warning(f"MLB predictions unavailable: {e}")
+        mlb_preds = []
+
+    if not mlb_preds:
+        st.info("No MLB games today.")
+    else:
+        cols = st.columns(3)
+        for i, pred in enumerate(mlb_preds):
+            hwp    = pred["home_win_prob"]
+            margin = pred["implied_margin"]
+            home   = mlb_names.get(pred["home_team_id"], f"Team {pred['home_team_id']}")
+            away   = mlb_names.get(pred["away_team_id"], f"Team {pred['away_team_id']}")
+            h_sp   = pred.get("home_pitcher", "TBD")
+            a_sp   = pred.get("away_pitcher", "TBD")
+            sp_html = (f'<div style="font-size:0.75rem;color:#8890a4;margin-top:4px">'
+                       f'SP: {a_sp} vs {h_sp}</div>')
+            with cols[i % 3]:
+                st.markdown(_game_card_html(home, away, hwp, margin, sp_html),
+                            unsafe_allow_html=True)
 
 
 # ══ TAB 3: Performance ═══════════════════════════════════════════════════════
