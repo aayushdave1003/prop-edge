@@ -12,6 +12,25 @@ from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
 
+COMBO_STAT_MAP = {
+    "pts_rebs_asts": ["points", "rebounds", "assists"],
+    "pts_rebs":      ["points", "rebounds"],
+    "pts_asts":      ["points", "assists"],
+    "rebs_asts":     ["rebounds", "assists"],
+    "blocks_steals": ["blocks", "steals"],
+}
+
+def _resolve_stat(stats_json: dict, stat_type: str):
+    """Return actual stat value, handling combo stats like pts_rebs_asts."""
+    if stat_type in COMBO_STAT_MAP:
+        parts = COMBO_STAT_MAP[stat_type]
+        values = [stats_json.get(p) for p in parts]
+        if any(v is None for v in values):
+            return None
+        return sum(float(v) for v in values)
+    return stats_json.get(stat_type)
+
+
 def find_unsettled_picks():
     """Return list of picks rows joined to game status and actual stat."""
     with session_scope() as session:
@@ -123,7 +142,7 @@ def run():
                 missing += 1
                 continue
 
-            actual_raw = stats_json.get(stat_type)
+            actual_raw = _resolve_stat(stats_json, stat_type)
             if actual_raw is None:
                 log.warning("stat_not_in_box", pick_id=pick_id,
                             stat=stat_type, player=player_name)

@@ -185,7 +185,7 @@ def _likely_batters_for_team(team_id, target_date, season, top_n=9):
               WHERE pi.player_name = p.full_name
                 AND pi.sport_code = 'mlb'
                 AND pi.status IN ('10-Day-IL', '15-Day-IL', '60-Day-IL', '7-Day-IL', 'Out')
-                AND pi.fetched_at > NOW() - INTERVAL '6 hours'
+                AND pi.fetched_at > NOW() - INTERVAL '30 hours'
           )
         GROUP BY pg.player_id, p.full_name
         ORDER BY total_pa DESC
@@ -391,7 +391,8 @@ def detect_injury_expansion(nba_games: list, target_date) -> dict:
                 player_name, team_name, status
             FROM player_injuries
             WHERE status IN ('Out', 'Doubtful')
-              AND fetched_at > NOW() - INTERVAL '12 hours'
+              AND sport_code = 'nba'
+              AND fetched_at > NOW() - INTERVAL '30 hours'
             ORDER BY player_name, fetched_at DESC
         """)).all()
 
@@ -467,7 +468,7 @@ def _likely_nba_players_for_team(team_id, target_date, top_n=10):
               SELECT 1 FROM player_injuries pi
               WHERE pi.player_name = p.full_name
                 AND pi.status IN ('Out', 'Doubtful')
-                AND pi.fetched_at > NOW() - INTERVAL '6 hours'
+                AND pi.fetched_at > NOW() - INTERVAL '30 hours'
           )
         GROUP BY pg.player_id, p.full_name
         HAVING MAX(g.game_date) >= :recent_cutoff

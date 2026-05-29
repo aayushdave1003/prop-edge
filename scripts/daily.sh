@@ -25,13 +25,18 @@ echo "--- Box scores ---"
 python -m props.ingest.mlb_boxscores
 python -m props.ingest.nba_boxscores
 
-echo "--- Rebuild rolling features after new box scores ---"
+echo "--- Rebuild NBA rolling features ---"
 python -m props.features.nba_rolling
 python -m props.features.nba_opposing_team
 python -m props.features.nba_home_away
 python -m props.features.nba_back_to_back
 python -m props.features.nba_streak
-python -m props.features.mlb_rolling 2>/dev/null || true
+
+echo "--- Rebuild MLB rolling features ---"
+python -m props.features.mlb_rolling
+python -m props.features.mlb_opposing_pitcher
+python -m props.features.mlb_opposing_lineup
+python -m props.features.mlb_batter_vs_pitcher
 
 echo "--- Injuries ---"
 python -m props.ingest.injuries

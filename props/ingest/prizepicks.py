@@ -148,7 +148,6 @@ def parse_projection(proj: dict, included_lookup: dict) -> dict | None:
         "start_time": attrs.get("start_time"),
         "is_promo": attrs.get("is_promo", False),
         "is_live": attrs.get("is_live", False),
-	"is_live": attrs.get("is_live", False),
         "odds_type": attrs.get("odds_type", "standard"),
     }
 
