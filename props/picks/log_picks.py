@@ -56,6 +56,7 @@ def store_prediction_row(session, mv_id, player_id, game_id, stat_type, predicte
 
 
 def main():
+    sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
     edges = predict_main()
     if edges is None or edges.empty:
@@ -80,18 +81,43 @@ def main():
                 int(row["player_id"]), int(row["game_id"]),
                 row["stat_type"], row["predicted_mean"]
             )
+            sport_code = sport_by_model.get(row["model_name"], "mlb")
+            # Dedup guard: PrizePicks re-snapshots create new line_ids for the same
+            # logical line (same value), and the existing unique index keys on
+            # line_id so it can't catch this. Check by (player, stat, direction,
+            # line_value, date) and skip if an equivalent pick already exists.
+            already = session.execute(text("""
+                SELECT 1 FROM picks pk
+                JOIN prop_lines pl ON pl.line_id = pk.line_id
+                WHERE pk.player_id = :pid
+                  AND pk.stat_type = :st
+                  AND pk.direction = :dir
+                  AND pl.line_value = :lv
+                  AND (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
+                      = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+                LIMIT 1
+            """), {
+                "pid": int(row["player_id"]),
+                "st": row["stat_type"],
+                "dir": row["direction"],
+                "lv": float(row["line_value"]),
+            }).first()
+            if already:
+                skipped += 1
+                continue
             session.execute(text("""
                 INSERT INTO picks (
                     parlay_size, sport_code, player_id, game_id, stat_type,
                     line_id, direction, model_version_id, prediction_id,
                     model_prob, edge, expected_value, picked_at
                 ) VALUES (
-                    1, 'mlb', :pid, :gid, :st,
+                    1, :sport, :pid, :gid, :st,
                     :lid, :dir, :mvid, :prid,
                     :mp, :edge, :ev, NOW()
                 )
                 ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
             """), {
+                "sport": sport_code,
                 "pid": int(row["player_id"]), "gid": int(row["game_id"]),
                 "st": row["stat_type"], "lid": int(row["line_id"]),
                 "dir": row["direction"], "mvid": mv_id, "prid": pred_id,

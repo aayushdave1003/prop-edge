@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Daily ritual for prop-edge. Run every morning.
-# Self-healing: re-fetches yesterday + today, auto-resolves placeholder game_ids.
+# Self-healing: re-fetches yesterday + today, auto-resolves placeholder game_ids,
+# rebuilds rolling features after new box scores land, settles before AND after
+# logging new picks so anything for already-final games settles in the same run.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -23,6 +25,14 @@ echo "--- Box scores ---"
 python -m props.ingest.mlb_boxscores
 python -m props.ingest.nba_boxscores
 
+echo "--- Rebuild rolling features after new box scores ---"
+python -m props.features.nba_rolling
+python -m props.features.nba_opposing_team
+python -m props.features.nba_home_away
+python -m props.features.nba_back_to_back
+python -m props.features.nba_streak
+python -m props.features.mlb_rolling 2>/dev/null || true
+
 echo "--- Injuries ---"
 python -m props.ingest.injuries
 
@@ -31,5 +41,8 @@ python -m props.picks.settle_picks
 
 echo "--- Generate + log today's picks ---"
 python -m props.picks.log_picks
+
+echo "--- Second settle pass: catch tonight's picks for already-final games ---"
+python -m props.picks.settle_picks
 
 echo "=== Done. Check dashboard: .venv/bin/streamlit run ui/dashboard.py ==="
