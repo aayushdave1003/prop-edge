@@ -23,6 +23,7 @@ from props.utils.logging import log, configure_logging
 from props.features.inference import batter_features, pitcher_quality_features
 from props.models.registry import MODELS, ModelEntry
 from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
+from props.picks.predict_game import predict_games, print_game_predictions
 from props.ingest.market_odds import build_market_probs
 from props.picks.build_parlays import (
     build_correlated_parlays, print_parlay_recommendations,
@@ -547,6 +548,7 @@ def main():
     games = resolve_external_to_internal_ids(games)
 
     nba_games = None  # lazy fetch
+    nba_game_ctx_map = {}
     all_picks = []
     for entry in MODELS:
         log.info("running_model", name=entry.name, role=entry.role, sport=entry.sport_code)
@@ -556,6 +558,16 @@ def main():
                 nba_raw = fetch_nba_schedule(today)
                 log.info("nba_scheduled_games", n=len(nba_raw))
                 nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+                # Game context + winner predictions up front
+                espn_raw = fetch_nba_game_context(today)
+                nba_game_ctx_map = map_context_to_game_ids(espn_raw, nba_games)
+                with session_scope() as _s:
+                    team_rows = _s.execute(text(
+                        "SELECT team_id, city || ' ' || name FROM teams WHERE sport_code='nba'"
+                    )).all()
+                team_names = {r[0]: r[1] for r in team_rows}
+                game_preds = predict_games(nba_games, today, nba_game_ctx_map)
+                print_game_predictions(game_preds, team_names)
             features = build_nba_player_feature_rows(nba_games, today, season, meta["feature_keys"])
         elif entry.role == "pitcher":
             features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
@@ -577,8 +589,7 @@ def main():
 
     # --- Annotate with game context (totals / implied team totals) ---
     if nba_games:
-        espn_context = fetch_nba_game_context(today)
-        game_ctx_map = map_context_to_game_ids(espn_context, nba_games)
+        game_ctx_map = nba_game_ctx_map  # already fetched above
 
         def _get_total(row):
             ctx = game_ctx_map.get(row["game_id"])

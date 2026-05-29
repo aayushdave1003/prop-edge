@@ -92,16 +92,33 @@ def map_context_to_game_ids(
         )).all()
     abbr_by_tid = {r[0]: r[1].upper() for r in rows}
 
+    # ESPN uses shorter abbreviations for some teams; map to ours
+    ESPN_TO_OURS = {
+        "SA":  "SAS",  # San Antonio
+        "GS":  "GSW",  # Golden State
+        "NO":  "NOP",  # New Orleans
+        "NY":  "NYK",  # New York
+        "PHX": "PHX",  # Phoenix (same)
+    }
+
     result = {}
     for g in nba_games:
-        gid = g.get("game_id")
+        gid  = g.get("game_id")
         htid = g.get("home_team_id")
         atid = g.get("away_team_id")
         if not gid or not htid or not atid:
             continue
         home_abbr = abbr_by_tid.get(htid, "")
         away_abbr = abbr_by_tid.get(atid, "")
+
+        # Try direct match first, then ESPN short-form variants
         ctx = game_context.get((home_abbr, away_abbr))
+        if ctx is None:
+            # Build reverse map: our abbr → possible ESPN abbrs
+            espn_home = next((k for k, v in ESPN_TO_OURS.items() if v == home_abbr), home_abbr)
+            espn_away = next((k for k, v in ESPN_TO_OURS.items() if v == away_abbr), away_abbr)
+            ctx = game_context.get((espn_home, espn_away))
+
         if ctx:
             result[gid] = {**ctx, "home_team_id": htid, "away_team_id": atid}
 
