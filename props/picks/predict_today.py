@@ -94,10 +94,21 @@ def resolve_external_to_internal_ids(games):
             SELECT external_id, game_id FROM games
             WHERE sport_code='mlb' AND external_id = ANY(:ids)
         """), {"ids": [g["external_id"] for g in games]}).all()
+        # Fallback: match by home_team_id + away_team_id + game_date when gamePk drifts
+        # game_datetime from the MLB API looks like "2026-05-30T..." — extract date prefix
+        game_dates = list({g["game_datetime"][:10] for g in games})
+        team_date_rows = session.execute(text("""
+            SELECT home_team_id, away_team_id, game_date::text, game_id
+            FROM games
+            WHERE sport_code='mlb'
+              AND game_date = ANY(:dates)
+        """), {"dates": game_dates}).all()
 
     pid_map = {row[0]: row[1] for row in pitcher_rows}
     tid_map = {row[0]: row[1] for row in team_rows}
     gid_map = {row[0]: row[1] for row in game_rows}
+    # team+date fallback map: (home_team_id, away_team_id, date) -> game_id
+    team_date_map = {(row[0], row[1], row[2]): row[3] for row in team_date_rows}
 
     resolved = []
     unresolved_pitchers = []
@@ -111,8 +122,18 @@ def resolve_external_to_internal_ids(games):
             unresolved_pitchers.append(g["home_pitcher_name"])
         if g["away_pitcher_external_id"] and away_pid is None:
             unresolved_pitchers.append(g["away_pitcher_name"])
+
+        # Fallback: resolve game by team IDs + date if gamePk doesn't match
         if gid is None:
-            unresolved_games.append(g["external_id"])
+            home_tid = tid_map.get(g["home_team_external_id"])
+            away_tid = tid_map.get(g["away_team_external_id"])
+            date_str = g["game_datetime"][:10]
+            gid = team_date_map.get((home_tid, away_tid, date_str))
+            if gid:
+                log.info("game_resolved_by_team_date", external_id=g["external_id"],
+                         home=g.get("home_team_name"), away=g.get("away_team_name"))
+            else:
+                unresolved_games.append(g["external_id"])
 
         resolved.append({
             **g,
@@ -552,9 +573,15 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
     return pd.DataFrame(rows)
 
 
-def main():
+def main(target_date: date = None):
+    import argparse
+    if target_date is None:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--date", default=None, help="Override target date (YYYY-MM-DD)")
+        args, _ = parser.parse_known_args()
+        target_date = date.fromisoformat(args.date) if args.date else date.today()
     configure_logging()
-    today = date.today()
+    today = target_date
     season = str(today.year)
     log.info("predicting_for_date", date=today.isoformat())
 

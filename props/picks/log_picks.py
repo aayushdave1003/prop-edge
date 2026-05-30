@@ -64,10 +64,17 @@ def _ensure_market_edge_column():
 
 
 def main():
+    import argparse
+    from datetime import date as _date
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--date", default=None, help="Target date YYYY-MM-DD (default: today)")
+    args, _ = parser.parse_known_args()
+    target_date = _date.fromisoformat(args.date) if args.date else _date.today()
+
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
     _ensure_market_edge_column()
-    edges = predict_main()
+    edges = predict_main(target_date=target_date)
     if edges is None or edges.empty:
         log.warning("no_edges_to_log")
         return

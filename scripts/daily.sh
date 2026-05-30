@@ -1,59 +1,97 @@
 #!/usr/bin/env bash
-# Daily ritual for prop-edge. Run every morning.
+# prop-edge daily ritual — runs every morning via cron (see scripts/install_cron.sh)
 # Self-healing: re-fetches yesterday + today, auto-resolves placeholder game_ids,
 # rebuilds rolling features after new box scores land, settles before AND after
 # logging new picks so anything for already-final games settles in the same run.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+# Activate venv
 source .venv/bin/activate
+
+# Log everything to a dated file
+LOG_DIR="logs"
+mkdir -p "$LOG_DIR"
+LOGFILE="$LOG_DIR/daily_$(date +%Y-%m-%d).log"
+
+exec > >(tee -a "$LOGFILE") 2>&1
 
 YESTERDAY=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d "yesterday" +%Y-%m-%d)
 TODAY=$(date +%Y-%m-%d)
+TOMORROW=$(date -v+1d +%Y-%m-%d 2>/dev/null || date -d "tomorrow" +%Y-%m-%d)
 
-echo "=== prop-edge daily ritual: $TODAY (also re-fetching $YESTERDAY) ==="
+echo ""
+echo "======================================================"
+echo "  prop-edge daily ritual: $TODAY"
+echo "  Log: $LOGFILE"
+echo "======================================================"
 
-echo "--- MLB schedule (yesterday + today) ---"
+# ── 1. Schedules (yesterday + today + tomorrow for early-morning runs) ──────
+echo "--- MLB schedule ---"
 python -m props.ingest.mlb_schedule "$YESTERDAY"
 python -m props.ingest.mlb_schedule "$TODAY"
+python -m props.ingest.mlb_schedule "$TOMORROW"
 
-echo "--- NBA schedule (yesterday + today) ---"
+echo "--- NBA schedule ---"
 python -m props.ingest.nba_schedule "$YESTERDAY"
 python -m props.ingest.nba_schedule "$TODAY"
+python -m props.ingest.nba_schedule "$TOMORROW"
 
+# ── 2. Box scores ────────────────────────────────────────────────────────────
 echo "--- Box scores ---"
 python -m props.ingest.mlb_boxscores
 python -m props.ingest.nba_boxscores
 
-echo "--- Rebuild NBA rolling features ---"
+# ── 3. Rolling features ──────────────────────────────────────────────────────
+echo "--- NBA rolling features ---"
 python -m props.features.nba_rolling
 python -m props.features.nba_opposing_team
 python -m props.features.nba_home_away
 python -m props.features.nba_back_to_back
 python -m props.features.nba_streak
 
-echo "--- Rebuild MLB rolling features ---"
+echo "--- MLB rolling features ---"
 python -m props.features.mlb_rolling
 python -m props.features.mlb_opposing_pitcher
 python -m props.features.mlb_opposing_lineup
 python -m props.features.mlb_batter_vs_pitcher
 
+# ── 4. Live data refreshes ───────────────────────────────────────────────────
 echo "--- Injuries ---"
 python -m props.ingest.injuries
 
-echo "--- Settle yesterday's picks (auto-resolves placeholders) ---"
+echo "--- PrizePicks lines ---"
+python -m props.ingest.prizepicks --sport nba  || true
+python -m props.ingest.prizepicks --sport mlb  || true
+
+# ── 5. Settle previous picks ─────────────────────────────────────────────────
+echo "--- Settle yesterday's picks ---"
 python -m props.picks.settle_picks
 
-echo "--- Generate + log today's picks ---"
+# ── 6. Generate + log today's picks ─────────────────────────────────────────
+echo "--- Generate and log today's picks ---"
+python -m props.picks.predict_today --date "$TODAY"
 python -m props.picks.log_picks
 
-echo "--- Second settle pass: catch tonight's picks for already-final games ---"
+# ── 7. Second settle pass ────────────────────────────────────────────────────
+echo "--- Second settle pass ---"
 python -m props.picks.settle_picks
 
-echo "--- Weekly backtest (Mondays only) ---"
+# ── 8. Weekly backtest (Mondays) ─────────────────────────────────────────────
 if [ "$(date +%u)" = "1" ]; then
-    python -m props.picks.backtest --sport nba --since "$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)" || true
-    python -m props.picks.backtest --sport mlb --since "$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)" || true
+    echo "--- Weekly backtest (Monday) ---"
+    SINCE_90=$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)
+    python -m props.picks.backtest --sport nba --since "$SINCE_90" || true
+    python -m props.picks.backtest --sport mlb --since "$SINCE_90" || true
 fi
 
-echo "=== Done. Check dashboard: .venv/bin/streamlit run ui/dashboard.py ==="
+# ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
+find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
+
+echo ""
+echo "======================================================"
+echo "  Done: $(date)"
+echo "  Dashboard: streamlit run ui/dashboard.py"
+echo "======================================================"
