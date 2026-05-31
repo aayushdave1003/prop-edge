@@ -75,6 +75,9 @@ echo "--- Generate and log today's picks ---"
 python -m props.picks.predict_today --date "$TODAY"
 python -m props.picks.log_picks
 
+echo "--- Confirm MLB starters (morning check) ---"
+python -m props.picks.confirm_starters --date "$TODAY" || true
+
 # ── 7. Second settle pass ────────────────────────────────────────────────────
 echo "--- Second settle pass ---"
 python -m props.picks.settle_picks

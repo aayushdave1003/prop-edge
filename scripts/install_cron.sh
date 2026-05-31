@@ -3,8 +3,8 @@
 # Jobs installed:
 #   07:00 AM daily  — full daily ritual (box scores + features + picks)
 #   10:00 AM daily  — refresh PrizePicks lines mid-morning
-#   04:00 PM daily  — refresh PrizePicks + injuries before evening games
-#   07:00 PM daily  — final injury + line refresh before tip-off
+#   04:00 PM daily  — refresh PrizePicks + injuries + confirm MLB starters
+#   07:00 PM daily  — final line/injury refresh + confirm MLB starters again
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,8 +15,8 @@ mkdir -p "$LOGDIR"
 # Build cron lines
 DAILY="0 7 * * * cd $REPO && bash scripts/daily.sh >> $LOGDIR/cron.log 2>&1"
 REFRESH_AM="0 10 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1"
-REFRESH_PM="0 16 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1"
-REFRESH_EVE="0 19 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1"
+REFRESH_PM="0 16 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
+REFRESH_EVE="0 19 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
 
 # Remove old prop-edge entries, add new ones
 TMPFILE=$(mktemp)
