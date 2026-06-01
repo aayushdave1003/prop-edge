@@ -76,6 +76,10 @@ FEATURE_KEYS = [
     "is_playoff",
     "series_game_num",
     "series_avg_rebounds",
+    "absent_teammate_avg_pts",
+    "absent_teammate_avg_min",
+    "n_absent_teammates",
+    "expected_usage_bump",
 ]
 
 

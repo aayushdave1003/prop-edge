@@ -22,6 +22,12 @@ YESTERDAY=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d "yesterday" +%Y-%m-%d)
 TODAY=$(date +%Y-%m-%d)
 TOMORROW=$(date -v+1d +%Y-%m-%d 2>/dev/null || date -d "tomorrow" +%Y-%m-%d)
 
+# Use Railway DB for daily operations if configured
+if [ -n "${RAILWAY_DATABASE_URL:-}" ]; then
+    export DATABASE_URL="$RAILWAY_DATABASE_URL"
+    echo "Using Railway DB for daily operations"
+fi
+
 echo ""
 echo "======================================================"
 echo "  prop-edge daily ritual: $TODAY"

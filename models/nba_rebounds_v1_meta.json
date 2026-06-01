@@ -45,9 +45,13 @@
     "market_over_prob",
     "is_playoff",
     "series_game_num",
-    "series_avg_rebounds"
+    "series_avg_rebounds",
+    "absent_teammate_avg_pts",
+    "absent_teammate_avg_min",
+    "n_absent_teammates",
+    "expected_usage_bump"
   ],
-  "best_iteration": 180,
+  "best_iteration": 163,
   "train_n": 7227,
   "val_n": 2537,
   "test_n": 14940,

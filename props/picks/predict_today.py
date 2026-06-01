@@ -577,6 +577,39 @@ def _series_avg_stat(player_id: int, opp_team_id: int, stat: str, before_date) -
     return round(sum(vals) / len(vals), 4) if vals else 0.0
 
 
+def _absent_teammate_stat(player_id: int, team_id: int, stat: str, before_date) -> float:
+    """Return avg stat for the highest-usage absent teammate on this team."""
+    with engine.connect() as conn:
+        # Find highest-avg-minutes player on this team NOT playing today
+        # (use injury report as proxy — absent = flagged in detect_injury_expansion)
+        row = conn.execute(text("""
+            SELECT AVG((pg.stats->:stat)::float) as avg_val
+            FROM player_games pg
+            JOIN players p ON p.player_id = pg.player_id
+            JOIN games g ON g.game_id = pg.game_id
+            WHERE pg.team_id = :tid
+              AND pg.player_id != :pid
+              AND g.sport_code = 'nba'
+              AND g.game_date < :d
+              AND g.game_date >= :d - INTERVAL '21 days'
+              AND pg.minutes_played >= 15
+              AND pg.player_id = (
+                  SELECT pg2.player_id FROM player_games pg2
+                  JOIN games g2 ON g2.game_id = pg2.game_id
+                  WHERE pg2.team_id = :tid
+                    AND pg2.player_id != :pid
+                    AND g2.sport_code = 'nba'
+                    AND g2.game_date < :d
+                    AND g2.game_date >= :d - INTERVAL '21 days'
+                    AND pg2.minutes_played >= 15
+                  GROUP BY pg2.player_id
+                  ORDER BY AVG(pg2.minutes_played) DESC
+                  LIMIT 1
+              )
+        """), {"pid": player_id, "tid": team_id, "stat": stat, "d": before_date}).first()
+    return round(float(row[0]), 4) if row and row[0] is not None else 0.0
+
+
 def _market_over_prob_for_player(player_id: int, game_id: int) -> float:
     """Return average no-vig market_over_prob for this player in this game, or 0.5."""
     with engine.connect() as conn:
@@ -590,7 +623,8 @@ def _market_over_prob_for_player(player_id: int, game_id: int) -> float:
     return 0.5  # neutral prior when no market data available
 
 
-def build_nba_player_feature_rows(games, target_date, season, feature_keys):
+def build_nba_player_feature_rows(games, target_date, season, feature_keys,
+                                   injury_flags: dict = None):
     """For each NBA game tonight, build feature vectors for the top players."""
     rows = []
     for g in games:
@@ -627,7 +661,7 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
                     )
                 # Playoff/series context features
                 if "is_playoff" in feature_keys:
-                    feats["is_playoff"] = 1  # predict_today only runs for active games
+                    feats["is_playoff"] = 1  # predict_today only runs for active playoff games
                 if "series_game_num" in feature_keys:
                     feats["series_game_num"] = _series_game_num(
                         int(row["player_id"]), g.get("away_team_id") if side == "home" else g.get("home_team_id"),
@@ -639,6 +673,15 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
                         feats[sf] = _series_avg_stat(int(row["player_id"]),
                                                       g.get("away_team_id") if side == "home" else g.get("home_team_id"),
                                                       stat, target_date)
+                # Absent teammate usage features
+                if "absent_teammate_avg_pts" in feature_keys:
+                    _flags = injury_flags or {}
+                    bump = _flags.get(int(row["player_id"]), 0)
+                    feats["absent_teammate_avg_pts"]  = _absent_teammate_stat(
+                        int(row["player_id"]), team_id, "points", target_date) if bump > 0 else 0.0
+                    feats["absent_teammate_avg_min"]  = bump if bump > 0 else 0.0
+                    feats["n_absent_teammates"]       = 1 if bump > 0 else 0
+                    feats["expected_usage_bump"]      = round(bump / 240.0, 4) if bump > 0 else 0.0
                 rows.append({
                     "player_id": int(row["player_id"]),
                     "player_name": row["full_name"],
@@ -679,6 +722,7 @@ def main(target_date: date = None):
 
     nba_games = None  # lazy fetch
     nba_game_ctx_map = {}
+    nba_injury_flags = {}
     all_picks = []
     for entry in MODELS:
         log.info("running_model", name=entry.name, role=entry.role, sport=entry.sport_code)
@@ -698,7 +742,10 @@ def main(target_date: date = None):
                 team_names = {r[0]: r[1] for r in team_rows}
                 game_preds = predict_games(nba_games, today, nba_game_ctx_map)
                 print_game_predictions(game_preds, team_names)
-            features = build_nba_player_feature_rows(nba_games, today, season, meta["feature_keys"])
+                nba_injury_flags = detect_injury_expansion(nba_games, today)
+            features = build_nba_player_feature_rows(nba_games, today, season,
+                                                      meta["feature_keys"],
+                                                      injury_flags=nba_injury_flags)
         elif entry.role == "pitcher":
             features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
         else:
@@ -785,14 +832,10 @@ def main(target_date: date = None):
     # Re-rank by market_edge: best picks first
     combined = combined.sort_values("market_edge", ascending=False)
 
-    # --- Annotate with injury expansion flags ---
-    if nba_games:
-        injury_flags = detect_injury_expansion(nba_games, today)
-        combined["injury_flag"] = combined["player_id"].map(
-            lambda pid: injury_flags.get(int(pid), 0)
-        )
-    else:
-        combined["injury_flag"] = 0
+    # --- Annotate with injury expansion flags (already computed above) ---
+    combined["injury_flag"] = combined["player_id"].map(
+        lambda pid: nba_injury_flags.get(int(pid), 0)
+    )
 
     # --- Print enriched pick table ---
     has_market = combined["market_implied"].notna().any()
