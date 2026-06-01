@@ -69,6 +69,7 @@ python -m props.features.nba_opposing_team
 python -m props.features.nba_home_away
 python -m props.features.nba_back_to_back
 python -m props.features.nba_streak
+python -m props.features.nba_teammate_absence
 
 echo "--- WNBA rolling features ---"
 python -m props.features.wnba_rolling
