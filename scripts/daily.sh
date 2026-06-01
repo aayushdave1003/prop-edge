@@ -39,10 +39,22 @@ python -m props.ingest.nba_schedule "$YESTERDAY"
 python -m props.ingest.nba_schedule "$TODAY"
 python -m props.ingest.nba_schedule "$TOMORROW"
 
+echo "--- WNBA schedule ---"
+python -m props.ingest.wnba_schedule "$YESTERDAY"
+python -m props.ingest.wnba_schedule "$TODAY"
+python -m props.ingest.wnba_schedule "$TOMORROW"
+
+echo "--- NHL schedule ---"
+python -m props.ingest.nhl_schedule "$YESTERDAY"
+python -m props.ingest.nhl_schedule "$TODAY"
+python -m props.ingest.nhl_schedule "$TOMORROW"
+
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 echo "--- Box scores ---"
 python -m props.ingest.mlb_boxscores
 python -m props.ingest.nba_boxscores
+python -m props.ingest.wnba_boxscores
+python -m props.ingest.nhl_boxscores
 
 # ── 3. Rolling features ──────────────────────────────────────────────────────
 echo "--- NBA rolling features ---"
@@ -51,6 +63,12 @@ python -m props.features.nba_opposing_team
 python -m props.features.nba_home_away
 python -m props.features.nba_back_to_back
 python -m props.features.nba_streak
+
+echo "--- WNBA rolling features ---"
+python -m props.features.wnba_rolling
+
+echo "--- NHL rolling features ---"
+python -m props.features.nhl_rolling
 
 echo "--- MLB rolling features ---"
 python -m props.features.mlb_rolling
