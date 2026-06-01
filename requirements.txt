@@ -1,0 +1,15 @@
+streamlit==1.57.0
+pandas==3.0.3
+numpy==2.4.6
+sqlalchemy==2.0.41
+psycopg==3.3.4
+psycopg-binary==3.3.4
+lightgbm==4.6.0
+scikit-learn==1.8.0
+scipy==1.17.1
+pydantic==2.13.4
+pydantic-settings==2.14.1
+requests==2.34.2
+structlog==25.5.0
+nba_api==1.11.4
+curl_cffi==0.15.0
