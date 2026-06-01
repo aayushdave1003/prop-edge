@@ -533,6 +533,19 @@ def _nba_player_features(player_id, before_date, season):
     return dict(df.iloc[0]["derived"])
 
 
+def _market_over_prob_for_player(player_id: int, game_id: int) -> float:
+    """Return average no-vig market_over_prob for this player in this game, or 0.5."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT AVG(market_over_prob) as p
+            FROM market_odds
+            WHERE player_id = :pid AND game_id = :gid
+        """), {"pid": player_id, "gid": game_id}).first()
+    if row and row[0] is not None:
+        return float(row[0])
+    return 0.5  # neutral prior when no market data available
+
+
 def build_nba_player_feature_rows(games, target_date, season, feature_keys):
     """For each NBA game tonight, build feature vectors for the top players."""
     rows = []
@@ -563,12 +576,18 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
                 feats = _nba_player_features(int(row["player_id"]), target_date, season)
                 if not feats:
                     continue
+                # Inject market_over_prob from market_odds if feature is requested
+                if "market_over_prob" in feature_keys:
+                    feats["market_over_prob"] = _market_over_prob_for_player(
+                        int(row["player_id"]), g["game_id"]
+                    )
                 rows.append({
                     "player_id": int(row["player_id"]),
                     "player_name": row["full_name"],
                     "game_id": g["game_id"],
                     "team_id": team_id,
-                    **{k: feats.get(k, 0) for k in feature_keys},
+                    **{k: feats.get(k, 0.5 if k == "market_over_prob" else 0)
+                       for k in feature_keys},
                 })
     return pd.DataFrame(rows)
 

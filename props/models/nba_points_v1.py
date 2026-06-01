@@ -79,6 +79,7 @@ FEATURE_KEYS = [
     "team_last_10_avg_game_total",
     "team_last_5_avg_game_total",
     "team_last_10_avg_pts_scored",
+    "market_over_prob",
 ]
 
 
@@ -86,9 +87,17 @@ def load_training_data():
     log.info("loading_nba_training_data")
     sql = """
         SELECT pg.player_game_id, pg.player_id, g.game_date, g.season,
-               pg.derived, pg.stats, pg.minutes_played
+               pg.derived, pg.stats, pg.minutes_played,
+               mo.avg_market_over_prob
         FROM player_games pg
         JOIN games g USING (game_id)
+        LEFT JOIN (
+            SELECT game_id, player_id, stat_type,
+                   AVG(market_over_prob) AS avg_market_over_prob
+            FROM market_odds
+            WHERE stat_type = 'points'
+            GROUP BY game_id, player_id, stat_type
+        ) mo ON mo.game_id = pg.game_id AND mo.player_id = pg.player_id
         WHERE g.sport_code = 'nba'
           AND pg.minutes_played >= 10
     """
@@ -107,7 +116,9 @@ def load_training_data():
         "y": pd.to_numeric(stats[TARGET], errors="coerce").fillna(0).astype(int).values,
     })
     for k in FEATURE_KEYS:
-        if k in derived.columns:
+        if k == "market_over_prob":
+            out[k] = pd.to_numeric(df["avg_market_over_prob"], errors="coerce").fillna(0.5)
+        elif k in derived.columns:
             out[k] = pd.to_numeric(derived[k], errors="coerce").fillna(0)
         else:
             out[k] = 0
