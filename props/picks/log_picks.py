@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import text
 
-from props.utils.db import session_scope
+from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
@@ -84,11 +84,38 @@ def main():
     for entry in MODELS:
         mv_map[entry.name] = ensure_model_version(entry.name, entry.stat_type)
 
+    # Fetch min_stddev_last_10 for all NBA players in this slate to suppress
+    # high-variance bench picks (e.g. Carter Bryant 83% on 2.5 pts)
+    HIGH_VAR_THRESHOLD = 7.0
+    nba_player_ids = edges[edges["sport_code"] == "nba"]["player_id"].unique().tolist()
+    high_var_players = set()
+    if nba_player_ids:
+        with session_scope() as _s:
+            rows_hv = _s.execute(text("""
+                SELECT DISTINCT ON (pg.player_id) pg.player_id,
+                       (pg.derived->>'min_stddev_last_10')::float AS stddev
+                FROM player_games pg
+                JOIN games g ON g.game_id = pg.game_id
+                WHERE pg.player_id = ANY(:ids)
+                  AND g.sport_code = 'nba'
+                  AND pg.derived->>'min_stddev_last_10' IS NOT NULL
+                ORDER BY pg.player_id, g.game_date DESC
+            """), {"ids": [int(p) for p in nba_player_ids]}).fetchall()
+        high_var_players = {r[0] for r in rows_hv if r[1] and r[1] > HIGH_VAR_THRESHOLD}
+        if high_var_players:
+            log.info("high_variance_players_suppressed", n=len(high_var_players))
+
     inserted = 0
     skipped = 0
     with session_scope() as session:
         for _, row in edges.iterrows():
             if abs(row["edge"]) < MIN_EDGE_TO_LOG:
+                skipped += 1
+                continue
+            # Suppress NBA bench players with wildly inconsistent minutes
+            if row.get("sport_code") == "nba" and int(row["player_id"]) in high_var_players:
+                log.info("suppressed_high_var_pick", player=row.get("player_name"),
+                         stat=row["stat_type"])
                 skipped += 1
                 continue
             mv_id = mv_map[row["model_name"]]

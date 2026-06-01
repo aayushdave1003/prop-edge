@@ -58,7 +58,9 @@ def load_player_games() -> pd.DataFrame:
     log.info("loading_nba_player_games")
     sql = """
         SELECT pg.player_game_id, pg.player_id, pg.game_id, g.game_date, g.season,
-               pg.stats, pg.minutes_played
+               pg.stats, pg.minutes_played,
+               pg.opponent_id,
+               g.season_type
         FROM player_games pg
         JOIN games g USING (game_id)
         WHERE g.sport_code = 'nba'
@@ -95,10 +97,29 @@ def compute_rolling_for_player(group: pd.DataFrame) -> pd.DataFrame:
     feats["days_rest"] = days_rest.values
 
     # Games played this season (count of prior games this season, inclusive of THIS one)
-    # We use shift then cumulative count
     season_marker = (g["season"] != g["season"].shift(1)).cumsum()
     games_played = g.groupby(season_marker).cumcount()
     feats["games_played_season"] = games_played.values
+
+    # Playoff context flags
+    feats["is_playoff"] = (g["season_type"].isin(["playoffs", "play_in"])).astype(int).values
+
+    # Series-specific features: rolling avg vs same opponent in current season
+    # series_game_num = how many games vs this opponent so far (shift(1) = prior)
+    series_key = g["season"].astype(str) + "_" + g["opponent_id"].fillna(-1).astype(str)
+    feats["series_game_num"] = g.groupby(series_key).cumcount().values  # 0-indexed prior games
+
+    # Series rolling averages for key stats (points, rebounds, assists)
+    for stat in ["points", "rebounds", "assists"]:
+        if stat not in g.columns:
+            feats[f"series_avg_{stat}"] = np.zeros(len(g))
+            continue
+        series_avgs = np.zeros(len(g))
+        for key in series_key.unique():
+            mask = series_key == key
+            vals = g.loc[mask, stat].shift(1)
+            series_avgs[mask.values] = vals.expanding().mean().fillna(0).values
+        feats[f"series_avg_{stat}"] = series_avgs.round(4)
 
     # All stats: rolling averages over prior games
     all_stat_cols = ROLL_STATS + list(COMBO_STATS.keys())

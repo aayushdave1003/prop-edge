@@ -41,9 +41,12 @@
     "team_last_10_avg_game_total",
     "team_last_5_avg_game_total",
     "team_last_10_avg_pts_scored",
-    "market_over_prob"
+    "market_over_prob",
+    "is_playoff",
+    "series_game_num",
+    "series_avg_assists"
   ],
-  "best_iteration": 170,
+  "best_iteration": 165,
   "train_n": 7227,
   "val_n": 2537,
   "test_n": 14940,

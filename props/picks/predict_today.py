@@ -533,6 +533,50 @@ def _nba_player_features(player_id, before_date, season):
     return dict(df.iloc[0]["derived"])
 
 
+def _series_game_num(player_id: int, opp_team_id: int, before_date) -> int:
+    """Return number of prior games this player has played vs opp_team this season."""
+    if not opp_team_id:
+        return 0
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT COUNT(*) FROM player_games pg
+            JOIN games g ON g.game_id = pg.game_id
+            WHERE pg.player_id = :pid
+              AND pg.opponent_id = :oid
+              AND g.sport_code = 'nba'
+              AND g.game_date < :d
+              AND g.season = (
+                  SELECT season FROM games WHERE game_date < :d
+                  AND sport_code='nba' ORDER BY game_date DESC LIMIT 1
+              )
+        """), {"pid": player_id, "oid": opp_team_id, "d": before_date}).first()
+    return int(row[0]) if row else 0
+
+
+def _series_avg_stat(player_id: int, opp_team_id: int, stat: str, before_date) -> float:
+    """Return player's average for stat in prior games vs opp_team this season."""
+    if not opp_team_id:
+        return 0.0
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT pg.stats->:stat AS val
+            FROM player_games pg
+            JOIN games g ON g.game_id = pg.game_id
+            WHERE pg.player_id = :pid
+              AND pg.opponent_id = :oid
+              AND g.sport_code = 'nba'
+              AND g.game_date < :d
+              AND g.season = (
+                  SELECT season FROM games WHERE game_date < :d
+                  AND sport_code='nba' ORDER BY game_date DESC LIMIT 1
+              )
+            ORDER BY g.game_date DESC
+            LIMIT 7
+        """), {"pid": player_id, "oid": opp_team_id, "stat": stat, "d": before_date}).fetchall()
+    vals = [float(r[0]) for r in rows if r[0] is not None]
+    return round(sum(vals) / len(vals), 4) if vals else 0.0
+
+
 def _market_over_prob_for_player(player_id: int, game_id: int) -> float:
     """Return average no-vig market_over_prob for this player in this game, or 0.5."""
     with engine.connect() as conn:
@@ -581,6 +625,20 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys):
                     feats["market_over_prob"] = _market_over_prob_for_player(
                         int(row["player_id"]), g["game_id"]
                     )
+                # Playoff/series context features
+                if "is_playoff" in feature_keys:
+                    feats["is_playoff"] = 1  # predict_today only runs for active games
+                if "series_game_num" in feature_keys:
+                    feats["series_game_num"] = _series_game_num(
+                        int(row["player_id"]), g.get("away_team_id") if side == "home" else g.get("home_team_id"),
+                        target_date
+                    )
+                for sf in ("series_avg_points", "series_avg_rebounds", "series_avg_assists"):
+                    if sf in feature_keys:
+                        stat = sf.replace("series_avg_", "")
+                        feats[sf] = _series_avg_stat(int(row["player_id"]),
+                                                      g.get("away_team_id") if side == "home" else g.get("home_team_id"),
+                                                      stat, target_date)
                 rows.append({
                     "player_id": int(row["player_id"]),
                     "player_name": row["full_name"],

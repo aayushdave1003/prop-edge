@@ -73,6 +73,9 @@ FEATURE_KEYS = [
     "team_last_5_avg_game_total",
     "team_last_10_avg_pts_scored",
     "market_over_prob",
+    "is_playoff",
+    "series_game_num",
+    "series_avg_rebounds",
 ]
 
 
