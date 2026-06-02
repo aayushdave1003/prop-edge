@@ -194,7 +194,10 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     if not webhook:
         return
 
-    ALERT_THRESHOLD = 0.65  # only show picks ≥ 65% model prob
+    # Derive sport_code from model_name using the registry
+    sport_by_model = {m.name: m.sport_code for m in MODELS}
+
+    ALERT_THRESHOLD = 0.65
     top = (
         edges[edges["model_prob"] >= ALERT_THRESHOLD]
         .sort_values("model_prob", ascending=False)
@@ -205,21 +208,27 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
 
     sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒"}
 
-    fields = []
-    for _, row in top.iterrows():
-        sport = row.get("sport_code", "mlb")
-        emoji = sport_emoji.get(sport, "⚡")
-        direction = row["direction"].upper()
-        prob = int(round(row["model_prob"] * 100))
-        market_edge = row.get("market_edge")
-        edge_str = f" | +{int(market_edge*100)}% vs mkt" if market_edge and pd.notna(market_edge) else ""
-        injury = " ⚠️ teammate out" if row.get("injury_flag", 0) > 0 else ""
+    # Add sport_code column for grouping
+    top = top.copy()
+    top["sport_code"] = top["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
 
-        fields.append({
-            "name": f"{emoji} {row['player_name']}",
-            "value": f"`{direction} {row['line_value']} {row['stat_type']}` — **{prob}%**{edge_str}{injury}",
-            "inline": False,
-        })
+    fields = []
+    for sport_order in ["nba", "wnba", "mlb", "nhl"]:
+        sport_picks = top[top["sport_code"] == sport_order]
+        if sport_picks.empty:
+            continue
+        emoji = sport_emoji.get(sport_order, "⚡")
+        for _, row in sport_picks.iterrows():
+            direction = row["direction"].upper()
+            prob = int(round(row["model_prob"] * 100))
+            market_edge = row.get("market_edge")
+            edge_str = f" | +{int(market_edge*100)}% vs mkt" if market_edge and pd.notna(market_edge) else ""
+            injury = " ⚠️" if row.get("injury_flag", 0) > 0 else ""
+            fields.append({
+                "name": f"{emoji} {row['player_name']}",
+                "value": f"`{direction} {row['line_value']} {row['stat_type']}` — **{prob}%**{edge_str}{injury}",
+                "inline": False,
+            })
 
     # Best 2-pick suggestion
     if len(top) >= 2:
