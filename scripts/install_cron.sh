@@ -15,8 +15,8 @@ mkdir -p "$LOGDIR"
 # Build cron lines
 DAILY="0 7 * * * cd $REPO && bash scripts/daily.sh >> $LOGDIR/cron.log 2>&1"
 REFRESH_AM="0 10 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1"
-REFRESH_PM="0 16 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
-REFRESH_EVE="0 19 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
+REFRESH_PM="0 16 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport wnba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport nhl >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
+REFRESH_EVE="0 19 * * * cd $REPO && source .venv/bin/activate && python -m props.ingest.prizepicks --sport nba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport mlb >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport wnba >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.prizepicks --sport nhl >> $LOGDIR/cron.log 2>&1 && python -m props.ingest.injuries >> $LOGDIR/cron.log 2>&1 && python -m props.picks.confirm_starters >> $LOGDIR/cron.log 2>&1"
 
 # Remove old prop-edge entries, add new ones
 TMPFILE=$(mktemp)

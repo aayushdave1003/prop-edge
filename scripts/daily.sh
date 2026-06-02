@@ -90,6 +90,8 @@ python -m props.ingest.injuries
 echo "--- PrizePicks lines ---"
 python -m props.ingest.prizepicks --sport nba  || true
 python -m props.ingest.prizepicks --sport mlb  || true
+python -m props.ingest.prizepicks --sport wnba || true
+python -m props.ingest.prizepicks --sport nhl  || true
 
 # ── 5. Settle previous picks ─────────────────────────────────────────────────
 echo "--- Settle yesterday's picks ---"
