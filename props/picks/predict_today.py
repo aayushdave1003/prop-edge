@@ -497,8 +497,8 @@ def _likely_nba_players_for_team(team_id, target_date, top_n=10):
         ORDER BY total_min DESC
         LIMIT :n
     """
-    start = pd.Timestamp(target_date) - pd.Timedelta(days=14)
-    recent_cutoff = pd.Timestamp(target_date) - pd.Timedelta(days=4)
+    start = pd.Timestamp(target_date) - pd.Timedelta(days=21)  # 21 days covers Finals break
+    recent_cutoff = pd.Timestamp(target_date) - pd.Timedelta(days=14)  # must have played in last 14d
     return pd.read_sql(text(sql), engine, params={
         "tid": team_id, "start": start.date(), "end": target_date,
         "recent_cutoff": recent_cutoff.date(), "n": top_n,
