@@ -4,8 +4,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
-    railway_database_url: str = ""  # production DB; cron writes here, models train on database_url
+    railway_database_url: str = ""
     odds_api_key: str = ""
+    discord_webhook_url: str = ""
     log_level: str = "INFO"
 
 settings = Settings()

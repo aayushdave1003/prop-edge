@@ -1,5 +1,6 @@
 """Generate today's picks across all models and log them to the picks table."""
 import json
+import requests
 from datetime import date
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
+from props.utils.config import settings
 
 
 MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn below that
@@ -181,6 +183,71 @@ def main():
             })
             inserted += 1
     log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped)
+
+    if inserted > 0:
+        _send_discord_alert(edges, target_date)
+
+
+def _send_discord_alert(edges: pd.DataFrame, target_date):
+    """Post top picks to Discord. Fires only if webhook is configured."""
+    webhook = settings.discord_webhook_url
+    if not webhook:
+        return
+
+    ALERT_THRESHOLD = 0.65  # only show picks ≥ 65% model prob
+    top = (
+        edges[edges["model_prob"] >= ALERT_THRESHOLD]
+        .sort_values("model_prob", ascending=False)
+        .head(8)
+    )
+    if top.empty:
+        return
+
+    sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒"}
+
+    fields = []
+    for _, row in top.iterrows():
+        sport = row.get("sport_code", "mlb")
+        emoji = sport_emoji.get(sport, "⚡")
+        direction = row["direction"].upper()
+        prob = int(round(row["model_prob"] * 100))
+        market_edge = row.get("market_edge")
+        edge_str = f" | +{int(market_edge*100)}% vs mkt" if market_edge and pd.notna(market_edge) else ""
+        injury = " ⚠️ teammate out" if row.get("injury_flag", 0) > 0 else ""
+
+        fields.append({
+            "name": f"{emoji} {row['player_name']}",
+            "value": f"`{direction} {row['line_value']} {row['stat_type']}` — **{prob}%**{edge_str}{injury}",
+            "inline": False,
+        })
+
+    # Best 2-pick suggestion
+    if len(top) >= 2:
+        p1, p2 = top.iloc[0], top.iloc[1]
+        joint = round(p1["model_prob"] * p2["model_prob"] * 100, 1)
+        parlay_note = (f"\n**Best 2-pick:** {p1['player_name']} + {p2['player_name']} "
+                       f"— {joint}% joint ({round(joint * 3 / 100, 2)}x EV)")
+    else:
+        parlay_note = ""
+
+    payload = {
+        "embeds": [{
+            "title": f"⚡ prop-edge picks — {target_date.strftime('%a %b %-d')}",
+            "description": f"{len(top)} picks ≥ 65% confidence{parlay_note}",
+            "color": 0x5932d9,
+            "fields": fields,
+            "footer": {"text": "prop-edge • auto-generated"},
+        }]
+    }
+
+    try:
+        r = requests.post(webhook, json=payload, timeout=10)
+        if r.status_code in (200, 204):
+            log.info("discord_alert_sent", picks=len(top))
+        else:
+            log.warning("discord_alert_failed", status=r.status_code)
+    except Exception as e:
+        log.warning("discord_alert_error", error=str(e))
 
 
 if __name__ == "__main__":
