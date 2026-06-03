@@ -89,6 +89,10 @@ def main():
     # Fetch min_stddev_last_10 for all NBA players in this slate to suppress
     # high-variance bench picks (e.g. Carter Bryant 83% on 2.5 pts)
     HIGH_VAR_THRESHOLD = 7.0
+    sport_by_model = {m.name: m.sport_code for m in MODELS}
+    if "sport_code" not in edges.columns:
+        edges = edges.copy()
+        edges["sport_code"] = edges["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
     nba_player_ids = edges[edges["sport_code"] == "nba"]["player_id"].unique().tolist()
     high_var_players = set()
     if nba_player_ids:
@@ -103,7 +107,24 @@ def main():
                   AND pg.derived->>'min_stddev_last_10' IS NOT NULL
                 ORDER BY pg.player_id, g.game_date DESC
             """), {"ids": [int(p) for p in nba_player_ids]}).fetchall()
-        high_var_players = {r[0] for r in rows_hv if r[1] and r[1] > HIGH_VAR_THRESHOLD}
+        # Only suppress if high variance AND low avg minutes — catches bench DNP risks
+        # (Carter Bryant: stddev=8, avg=7min) without suppressing starters with OT variance
+        # (Wemby: stddev=9.5, avg=33min — keep)
+        high_var_players = set()
+        for r in rows_hv:
+            pid, stddev = r[0], r[1]
+            if stddev and stddev > HIGH_VAR_THRESHOLD:
+                # Also check avg minutes — don't suppress rotation players
+                with session_scope() as _s2:
+                    avg_row = _s2.execute(text("""
+                        SELECT (pg.derived->>'last_10_avg_minutes')::float
+                        FROM player_games pg JOIN games g ON g.game_id = pg.game_id
+                        WHERE pg.player_id = :pid AND g.sport_code = 'nba'
+                        ORDER BY g.game_date DESC LIMIT 1
+                    """), {"pid": pid}).first()
+                avg_min = float(avg_row[0]) if avg_row and avg_row[0] else 0
+                if avg_min < 18:  # only suppress true bench players
+                    high_var_players.add(pid)
         if high_var_players:
             log.info("high_variance_players_suppressed", n=len(high_var_players))
 
