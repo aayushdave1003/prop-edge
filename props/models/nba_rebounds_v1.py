@@ -80,6 +80,19 @@ FEATURE_KEYS = [
     "absent_teammate_avg_min",
     "n_absent_teammates",
     "expected_usage_bump",
+    # Basketball IQ
+    "last_10_avg_usage_rate",
+    "season_avg_usage_rate",
+    "last_10_avg_floor_spacing_score",
+    "last_10_avg_opp_floor_spacing",
+    "last_10_avg_teammate_avg_floor_spacing",
+    "team_close_game_rate",
+    "games_last_7_days",
+    "opp_last10_allowed_rebounds_to_pos",
+    "career_avg_rebounds_vs_opp",
+    "player_isolation_pct",
+    "player_spotup_pct",
+    "team_isolation_rate",
 ]
 
 

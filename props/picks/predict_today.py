@@ -673,6 +673,10 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys,
                         feats[sf] = _series_avg_stat(int(row["player_id"]),
                                                       g.get("away_team_id") if side == "home" else g.get("home_team_id"),
                                                       stat, target_date)
+                # Basketball IQ features — read directly from latest derived
+                # (nba_basketball_iq.py and nba_play_types.py populate these)
+                # They're already in feats dict from _nba_player_features() above
+
                 # Absent teammate usage features
                 if "absent_teammate_avg_pts" in feature_keys:
                     _flags = injury_flags or {}
