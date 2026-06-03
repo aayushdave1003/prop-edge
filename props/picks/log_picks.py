@@ -15,6 +15,24 @@ from props.utils.config import settings
 
 MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn below that
 
+# Minimum line value per stat — filters trivially low lines (OVER 2.5 pts etc.)
+# that are set low for injured/bench players returning and carry no real signal.
+MIN_LINE_BY_STAT = {
+    "points":             5.0,
+    "rebounds":           3.0,
+    "assists":            1.5,
+    "threes_made":        0.5,
+    "pts_rebs_asts":     15.0,
+    "pts_rebs":          10.0,
+    "pts_asts":          10.0,
+    "rebs_asts":          5.0,
+    "blocks":             0.5,
+    "steals":             0.5,
+    "blocks_steals":      1.0,
+    "strikeouts_pitcher": 2.5,
+    "hits":               1.5,
+}
+
 
 def ensure_model_version(model_name, stat_type):
     with session_scope() as session:
@@ -133,6 +151,11 @@ def main():
     with session_scope() as session:
         for _, row in edges.iterrows():
             if abs(row["edge"]) < MIN_EDGE_TO_LOG:
+                skipped += 1
+                continue
+            # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
+            min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
+            if float(row["line_value"]) < min_line:
                 skipped += 1
                 continue
             # Suppress NBA bench players with wildly inconsistent minutes
