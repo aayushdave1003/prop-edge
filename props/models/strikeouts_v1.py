@@ -64,6 +64,18 @@ FEATURE_KEYS = [
     "lineup_last_20_avg_runs",
     "lineup_last_10_avg_tb",
     "lineup_last_10_walk_rate",
+    # Advanced pitcher metrics
+    "last_5_avg_pitcher_bb9",
+    "last_10_avg_pitcher_bb9",
+    "last_5_avg_pitcher_hr9",
+    "last_10_avg_pitcher_hr9",
+    "last_5_avg_pitcher_pitch_eff",
+    "last_10_avg_pitcher_pitch_eff",
+    "last_5_avg_pitcher_command",
+    "last_10_avg_pitcher_command",
+    "season_avg_pitcher_command",
+    "last_10_avg_pitcher_qs_rate",
+    "park_factor",
 ]
 
 

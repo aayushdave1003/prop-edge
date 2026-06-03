@@ -31,11 +31,22 @@
     "lineup_last_10_avg_runs",
     "lineup_last_20_avg_runs",
     "lineup_last_10_avg_tb",
-    "lineup_last_10_walk_rate"
+    "lineup_last_10_walk_rate",
+    "last_5_avg_pitcher_bb9",
+    "last_10_avg_pitcher_bb9",
+    "last_5_avg_pitcher_hr9",
+    "last_10_avg_pitcher_hr9",
+    "last_5_avg_pitcher_pitch_eff",
+    "last_10_avg_pitcher_pitch_eff",
+    "last_5_avg_pitcher_command",
+    "last_10_avg_pitcher_command",
+    "season_avg_pitcher_command",
+    "last_10_avg_pitcher_qs_rate",
+    "park_factor"
   ],
-  "best_iteration": 60,
+  "best_iteration": 54,
   "train_n": 9291,
   "val_n": 72,
-  "test_n": 5205,
-  "trained_date": "2026-05-25"
+  "test_n": 5401,
+  "trained_date": "2026-06-03"
 }

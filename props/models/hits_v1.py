@@ -64,6 +64,21 @@ FEATURE_KEYS = [
     "pitcher_last_10_era",
     "pitcher_last_5_avg_outs",
     "pitcher_last_10_avg_outs",
+    # Advanced batter metrics
+    "last_5_avg_batter_k_rate",
+    "last_10_avg_batter_k_rate",
+    "last_5_avg_batter_bb_rate",
+    "last_10_avg_batter_bb_rate",
+    "last_10_avg_batter_iso",
+    "last_10_avg_batter_slg",
+    "last_10_avg_batter_hard_contact",
+    "last_10_avg_batter_babip",
+    "season_avg_batter_k_rate",
+    "season_avg_batter_hard_contact",
+    # Advanced pitcher metrics (opponent)
+    "last_10_avg_pitcher_command",
+    "last_10_avg_pitcher_bb9",
+    "park_factor",
 ]
 
 

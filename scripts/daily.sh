@@ -75,15 +75,18 @@ python -m props.features.nba_play_types
 
 echo "--- WNBA rolling features ---"
 python -m props.features.wnba_rolling
+python -m props.features.wnba_basketball_iq
 
 echo "--- NHL rolling features ---"
 python -m props.features.nhl_rolling
+python -m props.features.nhl_advanced_stats
 
 echo "--- MLB rolling features ---"
 python -m props.features.mlb_rolling
 python -m props.features.mlb_opposing_pitcher
 python -m props.features.mlb_opposing_lineup
 python -m props.features.mlb_batter_vs_pitcher
+python -m props.features.mlb_advanced_stats
 
 # ── 4. Live data refreshes ───────────────────────────────────────────────────
 echo "--- Injuries ---"
