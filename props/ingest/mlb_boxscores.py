@@ -169,4 +169,9 @@ def run(limit=None):
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Max games to process (default: all)")
+    args, _ = parser.parse_known_args()
+    run(limit=args.limit)

@@ -63,8 +63,14 @@ python -m props.ingest.nhl_schedule "$TODAY"
 python -m props.ingest.nhl_schedule "$TOMORROW"
 
 # ── 2. Box scores ────────────────────────────────────────────────────────────
+# When writing to Railway (remote DB), cap at 30 games to avoid backfilling
+# years of history. Railway only needs recent data for inference.
 echo "--- Box scores ---"
-python -m props.ingest.mlb_boxscores
+if [ -n "${RAILWAY_DATABASE_URL:-}" ] && [ "$DATABASE_URL" = "$RAILWAY_DATABASE_URL" ]; then
+    python -m props.ingest.mlb_boxscores --limit 30
+else
+    python -m props.ingest.mlb_boxscores
+fi
 python -m props.ingest.nba_boxscores
 python -m props.ingest.wnba_boxscores
 python -m props.ingest.nhl_boxscores
