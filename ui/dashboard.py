@@ -516,6 +516,68 @@ def load_game_predictions_data():
     return pd.read_sql(text(sql), engine)
 
 
+def _american_to_prob(odds) -> float | None:
+    try:
+        o = float(odds)
+    except (TypeError, ValueError):
+        return None
+    return (-o) / (-o + 100) if o < 0 else 100 / (o + 100)
+
+
+@st.cache_data(ttl=300)
+def load_market_games(sport_path: str, date_str: str) -> list[dict]:
+    """Market-implied game cards from ESPN's public scoreboard.
+
+    NHL/WNBA have no trained winner model and too little history to train one,
+    so we surface the sportsbook's de-vigged moneyline win probability instead.
+    Clearly market-derived — not a model prediction.
+    """
+    from curl_cffi import requests as cc
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{sport_path}/scoreboard"
+    try:
+        data = cc.get(url, params={"dates": date_str, "limit": 30},
+                      impersonate="chrome120", timeout=15).json()
+    except Exception:
+        return []
+
+    def _ml(side: dict):
+        for k in ("close", "current", "open"):
+            v = (side.get(k) or {}).get("odds")
+            if v not in (None, "", "OFF", "EVEN"):
+                return v
+        return None
+
+    out = []
+    for ev in data.get("events", []):
+        comp = (ev.get("competitions") or [{}])[0]
+        cs = comp.get("competitors", [])
+        h = next((c for c in cs if c.get("homeAway") == "home"), None)
+        a = next((c for c in cs if c.get("homeAway") == "away"), None)
+        if not h or not a:
+            continue
+        state = comp.get("status", {}).get("type", {}).get("state")
+        odds = comp.get("odds") or []
+        home_wp = spread = total = None
+        if odds:
+            o0 = odds[0]
+            spread = o0.get("spread")
+            total = o0.get("overUnder")
+            ml = o0.get("moneyline") or {}
+            hml, aml = _ml(ml.get("home") or {}), _ml(ml.get("away") or {})
+            ph, pa = _american_to_prob(hml), _american_to_prob(aml)
+            if ph is not None and pa is not None and (ph + pa) > 0:
+                home_wp = ph / (ph + pa)   # de-vig
+        out.append({
+            "home": h.get("team", {}).get("displayName", "Home"),
+            "away": a.get("team", {}).get("displayName", "Away"),
+            "home_abbr": h.get("team", {}).get("abbreviation", ""),
+            "away_abbr": a.get("team", {}).get("abbreviation", ""),
+            "home_wp": home_wp, "spread": spread, "total": total,
+            "state": state,
+        })
+    return out
+
+
 # ── Pick card builder ─────────────────────────────────────────────────────────
 
 def build_pick_card(row, form_df: pd.DataFrame) -> str:
@@ -840,6 +902,62 @@ def _market_html(ms, mt, me, home, away) -> str:
     return html + "</div>"
 
 
+def _market_game_card_html(g: dict) -> str:
+    """Game card driven by sportsbook moneyline (no winner model for this sport)."""
+    home, away = g["home"], g["away"]
+    home_wp = g.get("home_wp")
+    spread, total = g.get("spread"), g.get("total")
+
+    if home_wp is None:
+        note = ("Live — odds closed" if g.get("state") == "in"
+                else "Odds not yet posted")
+        return _html(f"""
+<div class="game-card">
+  <div class="game-teams">{away} @ {home}</div>
+  <div style="font-size:0.8rem;color:var(--txt3);margin-top:4px">{note}</div>
+</div>""")
+
+    away_wp  = 1 - home_wp
+    fav      = home if home_wp >= 0.5 else away
+    conf     = max(home_wp, away_wp)
+    bar_home = int(home_wp * 100)
+    line_txt = ""
+    if spread is not None:
+        line_txt = f" · {home if float(spread) <= 0 else away} {abs(float(spread)):g}"
+    ou_txt = f" · O/U {total:g}" if total is not None else ""
+    return _html(f"""
+<div class="game-card">
+  <div class="game-teams">{away} @ {home}</div>
+  <div class="win-bar-bg">
+    <div class="win-bar-home" style="width:{bar_home}%"></div>
+    <div class="win-bar-away" style="width:{100 - bar_home}%"></div>
+  </div>
+  <div class="team-prob">
+    <span class="{'fav' if home_wp>=0.5 else 'dog'}">{home} {home_wp:.0%}</span>
+    <span class="{'fav' if away_wp>home_wp else 'dog'}">{away} {away_wp:.0%}</span>
+  </div>
+  <div style="font-size:0.78rem;color:#8890a4;margin-top:6px">
+    Market favorite: <strong style="color:#fff">{fav}</strong> ({conf:.0%}){line_txt}{ou_txt}
+  </div>
+  <div style="font-size:0.66rem;color:var(--txt3);margin-top:6px;
+              text-transform:uppercase;letter-spacing:0.05em">
+    Sportsbook-implied · no model for this sport yet
+  </div>
+</div>""")
+
+
+def _render_market_section(label: str, emoji: str, sport_path: str, date_str: str):
+    st.markdown(f"### {emoji} {label}")
+    games = load_market_games(sport_path, date_str)
+    if not games:
+        st.info(f"No {label} games today.")
+        return
+    cols = st.columns(min(len(games), 3))
+    for i, g in enumerate(games):
+        with cols[i % 3]:
+            st.markdown(_market_game_card_html(g), unsafe_allow_html=True)
+
+
 with tab_game:
     from datetime import date as _date
     _today = _date.today()
@@ -922,6 +1040,11 @@ with tab_game:
             with cols[i % 3]:
                 st.markdown(_game_card_html(home, away, hwp, margin, sp_html),
                             unsafe_allow_html=True)
+
+    # ── WNBA & NHL (market-implied — no winner model for these sports) ─────────
+    _wnba_nhl_date = _today.strftime("%Y%m%d")
+    _render_market_section("WNBA", "🏀", "basketball/wnba", _wnba_nhl_date)
+    _render_market_section("NHL",  "🏒", "hockey/nhl",      _wnba_nhl_date)
 
 
 # ══ TAB 3: Performance ═══════════════════════════════════════════════════════
