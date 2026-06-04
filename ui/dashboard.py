@@ -232,6 +232,8 @@ def load_todays_picks():
             pk.expected_value AS kelly,
             pk.leg_result,
             pk.actual_value,
+            pk.line_open,
+            pk.line_movement,
             g.status          AS game_status,
             ht.abbreviation   AS home_team,
             at.abbreviation   AS away_team
@@ -393,8 +395,11 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
         "threes_made": "3-PT Made", "pts_rebs_asts": "PRA",
         "pts_rebs": "P+R", "pts_asts": "P+A", "rebs_asts": "R+A",
         "blocks": "Blocks", "steals": "Steals", "turnovers": "Turnovers",
+        "blocks_steals": "Blk+Stl", "def_rebounds": "D-Reb", "off_rebounds": "O-Reb",
         "strikeouts_pitcher": "Strikeouts", "hits": "Hits",
-        "total_bases": "Total Bases", "rbis": "RBIs",
+        "total_bases": "Total Bases", "rbis": "RBIs", "home_runs": "Home Runs",
+        "goals": "Goals", "saves": "Saves",
+        "fantasy_score": "Fantasy",
     }
     stat_label = stat_labels.get(row["stat_type"], row["stat_type"].replace("_", " ").title())
 
@@ -459,6 +464,25 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
                  f'<span class="prob-value" style="color:#7c5ce8">{kelly_label}</span>'
                  f'</div>') if kelly > 0 else ""
 
+    # Line movement signal
+    lm = row.get("line_movement")
+    lo = row.get("line_open")
+    line_move_html = ""
+    if lm is not None and lo is not None and abs(float(lm)) >= 0.05:
+        mv = float(lm)
+        # Positive = line moved up. For OVER picks that's bullish; for UNDER picks bearish.
+        agrees = (mv > 0 and direction == "over") or (mv < 0 and direction == "under")
+        arrow  = "↑" if mv > 0 else "↓"
+        color  = "#00d4a0" if agrees else "#ff6b6b"
+        label  = "sharp $" if agrees else "fading"
+        line_move_html = (
+            f'<div class="prob-row" style="margin-top:2px">'
+            f'<span class="prob-label">Line moved</span>'
+            f'<span class="prob-value" style="color:{color};font-size:0.8rem">'
+            f'{arrow} {abs(mv):+.1f} ({float(lo):g}→{line:g}) {label}'
+            f'</span></div>'
+        )
+
     return f"""
 <div class="pick-card">
   <div class="card-banner">
@@ -477,6 +501,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
       <span class="prob-value">{prob:.0%}</span>
     </div>
     {kelly_row}
+    {line_move_html}
     {edge_bar_html(edge)}
     <div class="form-section">
       <div class="form-label">Last 5 games vs line</div>
@@ -574,10 +599,9 @@ with tab_picks:
             df["direction"].isin(dir_sel)
         ].reset_index(drop=True)
 
-        # Slate card
-        nba_picks = filtered[filtered["sport_code"] == "nba"]
-        if not nba_picks.empty:
-            st.markdown(build_slate_card(nba_picks), unsafe_allow_html=True)
+        # Slate card — top picks across all sports by edge
+        if not filtered.empty:
+            st.markdown(build_slate_card(filtered), unsafe_allow_html=True)
 
         # Batch load form data per sport/stat group
         form_cache: dict[tuple, pd.DataFrame] = {}
