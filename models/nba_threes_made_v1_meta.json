@@ -40,7 +40,7 @@
     "player_spotup_pct",
     "team_isolation_rate"
   ],
-  "best_iteration": 180,
+  "best_iteration": 165,
   "train_n": 7227,
   "val_n": 2537,
   "test_n": 14957,

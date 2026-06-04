@@ -250,14 +250,30 @@ def load_todays_picks():
     return pd.read_sql(text(sql), engine)
 
 
+COMBO_STAT_SQL = {
+    "pts_rebs_asts": "COALESCE((pg.stats->>'points')::float,0) + COALESCE((pg.stats->>'rebounds')::float,0) + COALESCE((pg.stats->>'assists')::float,0)",
+    "pts_rebs":      "COALESCE((pg.stats->>'points')::float,0) + COALESCE((pg.stats->>'rebounds')::float,0)",
+    "pts_asts":      "COALESCE((pg.stats->>'points')::float,0) + COALESCE((pg.stats->>'assists')::float,0)",
+    "rebs_asts":     "COALESCE((pg.stats->>'rebounds')::float,0) + COALESCE((pg.stats->>'assists')::float,0)",
+    "blocks_steals": "COALESCE((pg.stats->>'blocks')::float,0) + COALESCE((pg.stats->>'steals')::float,0)",
+    # NBA box scores use fg3_made for threes
+    "threes_made":   "COALESCE((pg.stats->>'fg3_made')::float,(pg.stats->>'threes_made')::float,0)",
+    # Home runs uses same key
+    "home_runs":     "COALESCE((pg.stats->>'home_runs')::float,0)",
+}
+
 @st.cache_data(ttl=300)
 def load_player_form(player_ids: tuple, stat_type: str, sport: str):
     """Return last 10 actuals per player for a given stat_type."""
     if not player_ids:
         return pd.DataFrame()
-    sql = """
+    actual_expr = COMBO_STAT_SQL.get(
+        stat_type,
+        f"COALESCE((pg.stats->>{repr(stat_type)})::float, 0)"
+    )
+    sql = f"""
         SELECT pg.player_id, g.game_date,
-               COALESCE((pg.stats->>:stat)::float, 0) AS actual
+               {actual_expr} AS actual
         FROM player_games pg
         JOIN games g USING (game_id)
         WHERE pg.player_id = ANY(:pids)
@@ -267,8 +283,7 @@ def load_player_form(player_ids: tuple, stat_type: str, sport: str):
         ORDER BY pg.player_id, g.game_date DESC
     """
     df = pd.read_sql(text(sql), engine,
-                     params={"pids": list(player_ids), "stat": stat_type,
-                             "sport": sport})
+                     params={"pids": list(player_ids), "sport": sport})
     return df
 
 

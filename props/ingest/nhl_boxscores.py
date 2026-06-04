@@ -112,10 +112,17 @@ def process_game(session, game: dict, tid_map: dict) -> int:
             except (ValueError, IndexError):
                 mins = 0.0
 
+            raw_ssa = p.get("saveShotsAgainst", "0/0")
+            try:
+                saves_made = int(str(raw_ssa).split("/")[0])
+                shots_faced = int(str(raw_ssa).split("/")[1])
+            except (ValueError, IndexError, AttributeError):
+                saves_made, shots_faced = 0, 0
+
             stat_dict = {
-                "saves":           p.get("saveShotsAgainst", 0),
+                "saves":           saves_made,
                 "goals_against":   p.get("goalsAgainst", 0),
-                "shots_against":   p.get("shotsAgainst", 0),
+                "shots_against":   shots_faced,
                 "save_pct":        p.get("savePctg", 0.0),
                 "goals":           0, "assists": 0, "points": 0,
                 "shots": 0, "hits": 0, "blocked_shots": 0,

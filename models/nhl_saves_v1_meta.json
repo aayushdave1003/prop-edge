@@ -1,0 +1,29 @@
+{
+  "model_path": "models/nhl_saves_v1.txt",
+  "target": "saves",
+  "feature_keys": [
+    "last_5_avg_saves",
+    "last_10_avg_saves",
+    "last_20_avg_saves",
+    "season_avg_saves",
+    "last_10_rate_over_19.5_saves",
+    "last_10_rate_over_24.5_saves",
+    "last_10_rate_over_29.5_saves",
+    "last_5_avg_shots_against",
+    "last_10_avg_shots_against",
+    "season_avg_shots_against",
+    "last_5_avg_goalie_save_pct",
+    "last_10_avg_goalie_save_pct",
+    "last_5_avg_goalie_workload",
+    "last_10_avg_goalie_workload",
+    "last_5_avg_goals_against",
+    "last_10_avg_goals_against",
+    "days_rest",
+    "games_played_season"
+  ],
+  "best_iteration": 1,
+  "train_n": 10,
+  "val_n": 2,
+  "test_n": 4,
+  "trained_date": "2026-06-04"
+}

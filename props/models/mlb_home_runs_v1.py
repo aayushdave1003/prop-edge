@@ -1,8 +1,9 @@
 """Train MLB home_runs prediction model (batter).
 
-Home runs are sparse (most games: 0), so Poisson still works but expect
-low MAE improvement vs baseline. Primary value: distinguishing HR threats
-from non-threats for OVER 0.5 HR lines.
+Binary classifier: predicts P(home_runs >= 1) directly.
+Poisson objective failed (best_iter=1) because HRs are too sparse —
+binary cross-entropy works much better for rare events.
+Output is P(HR=0.5 OVER) used directly in score_and_edge.
 """
 import json
 from datetime import date
@@ -69,12 +70,14 @@ def load_training_data():
     derived = pd.json_normalize(df["derived"])
     stats   = pd.json_normalize(df["stats"])
 
+    y_raw = pd.to_numeric(stats.get(TARGET, 0), errors="coerce").fillna(0)
     out = pd.DataFrame({
         "player_game_id": df["player_game_id"].values,
         "player_id":      df["player_id"].values,
         "game_date":      df["game_date"].values,
         "season":         df["season"].values,
-        "y": pd.to_numeric(stats.get(TARGET, 0), errors="coerce").fillna(0).astype(int).values,
+        "y": (y_raw >= 1).astype(int).values,  # binary: did the batter hit any HR?
+        "season_avg_home_runs": pd.to_numeric(derived.get("season_avg_home_runs", 0), errors="coerce").fillna(0).values,
     })
     for k in FEATURE_KEYS:
         if k in derived.columns:
@@ -91,15 +94,15 @@ def train_model(train_df, val_df):
     lgb_train = lgb.Dataset(train_df[FEATURE_KEYS], train_df["y"])
     lgb_val   = lgb.Dataset(val_df[FEATURE_KEYS], val_df["y"], reference=lgb_train)
     params = {
-        "objective": "poisson", "metric": ["poisson", "mae"],
-        "learning_rate": 0.04, "num_leaves": 15, "min_data_in_leaf": 200,
+        "objective": "binary", "metric": ["binary_logloss", "auc"],
+        "learning_rate": 0.04, "num_leaves": 31, "min_data_in_leaf": 100,
         "feature_fraction": 0.8, "bagging_fraction": 0.9, "bagging_freq": 5,
-        "lambda_l1": 0.5, "lambda_l2": 1.0,
+        "lambda_l1": 0.3, "lambda_l2": 0.5,
         "verbose": -1, "seed": 42,
     }
-    model = lgb.train(params, lgb_train, num_boost_round=500,
+    model = lgb.train(params, lgb_train, num_boost_round=1000,
                       valid_sets=[lgb_train, lgb_val], valid_names=["train", "val"],
-                      callbacks=[lgb.early_stopping(30), lgb.log_evaluation(50)])
+                      callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])
     log.info("trained", best_iter=model.best_iteration)
     return model
 
@@ -118,15 +121,22 @@ def main():
 
     y_test = test_df["y"].values
     pred   = model.predict(test_df[FEATURE_KEYS], num_iteration=model.best_iteration)
-    mae_m  = np.mean(np.abs(pred - y_test))
-    mae_b  = np.mean(np.abs(test_df["season_avg_home_runs"].values - y_test))
-    log.info("test_metrics", mae_model=round(mae_m, 4), mae_baseline=round(mae_b, 4),
-             mae_improvement_pct=round(100 * (mae_b - mae_m) / max(mae_b, 1e-9), 2))
+    from sklearn.metrics import roc_auc_score, log_loss
+    auc = roc_auc_score(y_test, pred)
+    ll  = log_loss(y_test, pred)
+    # Baseline: always predict season HR rate
+    base_prob = y_test.mean()
+    ll_base = log_loss(y_test, [base_prob] * len(y_test))
+    log.info("test_metrics", auc=round(auc, 4), logloss=round(ll, 4),
+             logloss_baseline=round(ll_base, 4),
+             logloss_improvement_pct=round(100 * (ll_base - ll) / ll_base, 2))
 
     model.save_model(str(MODEL_PATH))
     meta = {"model_path": str(MODEL_PATH), "target": TARGET, "feature_keys": FEATURE_KEYS,
             "best_iteration": model.best_iteration, "train_n": len(fit_df),
-            "val_n": len(val_df), "test_n": len(test_df), "trained_date": date.today().isoformat()}
+            "val_n": len(val_df), "test_n": len(test_df),
+            "prediction_distribution": "binary",
+            "trained_date": date.today().isoformat()}
     with open(META_PATH, "w") as f:
         json.dump(meta, f, indent=2)
     log.info("model_saved", path=str(MODEL_PATH))

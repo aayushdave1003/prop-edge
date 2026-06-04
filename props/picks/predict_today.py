@@ -312,9 +312,20 @@ def score_and_edge(model, meta, entry, feature_df):
                           suffixes=("_line", "_pred"))
     merged["game_id"] = merged["game_id_pred"]
 
-    merged["p_over"] = 1 - scipy_stats.poisson.cdf(
-        merged["line_value"].astype(int), merged["lambda"]
-    )
+    is_binary = meta.get("prediction_distribution") == "binary"
+    if is_binary:
+        # Binary model outputs P(stat >= 1) directly — use as-is for 0.5 lines,
+        # fall back to Poisson-equivalent for higher lines
+        merged["p_over"] = merged.apply(
+            lambda r: float(r["lambda"]) if float(r["line_value"]) < 1
+            else 1 - scipy_stats.poisson.cdf(
+                int(r["line_value"]), -np.log(1 - float(r["lambda"]) + 1e-9)),
+            axis=1,
+        )
+    else:
+        merged["p_over"] = 1 - scipy_stats.poisson.cdf(
+            merged["line_value"].astype(int), merged["lambda"]
+        )
     # Apply calibration. New format: {"global": iso} covers all lines.
     # Legacy format: {9.5: iso, ...} only covers standard lines.
     calibrator_path = entry.model_path.parent / f"{entry.name}_calibrator.pkl"

@@ -93,6 +93,7 @@ MODELS = [
         role="batter",
         model_path=Path("models/mlb_home_runs_v1.txt"),
         meta_path=Path("models/mlb_home_runs_v1_meta.json"),
+        prediction_distribution="binary",
     ),
     ModelEntry(
         name="wnba_points_v1",
@@ -133,6 +134,14 @@ MODELS = [
         role="player",
         model_path=Path("models/nhl_assists_v1.txt"),
         meta_path=Path("models/nhl_assists_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="nhl_saves_v1",
+        sport_code="nhl",
+        stat_type="saves",
+        role="player",
+        model_path=Path("models/nhl_saves_v1.txt"),
+        meta_path=Path("models/nhl_saves_v1_meta.json"),
     ),
 ]
 
