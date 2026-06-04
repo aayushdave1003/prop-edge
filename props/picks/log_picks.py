@@ -258,6 +258,13 @@ def main():
             if float(row["line_value"]) > max_line:
                 skipped += 1
                 continue
+            # Skip near-100% confidence picks — no real single-game prop should
+            # be >97% certain. This catches multi-game lines where the model's
+            # single-game lambda is tiny relative to the inflated line (e.g. reb
+            # avg 6, line 12.5 → P(under) ≈ 100% but the pick is meaningless).
+            if float(row["model_prob"]) > 0.97:
+                skipped += 1
+                continue
             # Suppress players averaging < 12 min (DNP risk)
             if int(row["player_id"]) in low_minute_players:
                 skipped += 1
