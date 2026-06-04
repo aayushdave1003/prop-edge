@@ -177,10 +177,23 @@ def find_or_create_player(session, sport_code, external_id, name, team_abbr) -> 
         {"sc": sport_code, "name": name},
     ).first()
     if result:
-        # Link the PrizePicks ID to this player by inserting a second row?
-        # Simpler: just remember the mapping by creating a new player row with pp_ id.
-        # For now we just return the matched player. We'll lose the explicit pp link.
-        # TODO: consider a separate player_aliases table if collisions get bad.
+        return result[0]
+
+    # Last-name fallback for sports where box score sources use abbreviated first names
+    # (e.g. NHL API returns "Z. Benson" while PrizePicks has "Zach Benson").
+    # Match on the last word of the PrizePicks full name.
+    last_name = name.rsplit(" ", 1)[-1]
+    result = session.execute(
+        text("""
+            SELECT player_id FROM players
+            WHERE sport_code = :sc
+              AND external_id NOT LIKE 'pp_%%'
+              AND full_name LIKE '%%' || :last
+            LIMIT 1
+        """),
+        {"sc": sport_code, "last": last_name},
+    ).first()
+    if result:
         return result[0]
 
     # Create new
