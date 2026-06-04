@@ -8,6 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+# Load .env so cron (which has no environment) picks up RAILWAY_DATABASE_URL
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 # Activate venv
 source .venv/bin/activate
 
