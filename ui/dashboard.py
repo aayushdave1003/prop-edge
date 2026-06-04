@@ -25,6 +25,10 @@ st.set_page_config(page_title="prop-edge", layout="wide",
 st.markdown("""
 <style>
 /* Base */
+html, body, [class*="css"] {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
 [data-testid="stAppViewContainer"] { background: #0f1117; }
 [data-testid="stHeader"] { background: #0f1117; }
 section[data-testid="stSidebar"] { background: #13161e; }
@@ -57,6 +61,9 @@ p, label, div { color: #c8cdd8; }
     padding: 0;
     margin-bottom: 16px;
     overflow: hidden;
+    min-height: 340px;
+    display: flex;
+    flex-direction: column;
     transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .pick-card:hover {
@@ -78,7 +85,7 @@ p, label, div { color: #c8cdd8; }
     height: 105px; width: auto; object-fit: cover;
     object-position: top; border-radius: 8px 8px 0 0;
 }
-.card-body { padding: 12px 14px 14px 14px; }
+.card-body { padding: 12px 14px 14px 14px; flex: 1; }
 .player-name {
     font-size: 0.95rem; font-weight: 700;
     color: #ffffff; margin-bottom: 2px;
@@ -466,15 +473,17 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     stat_type  = row["stat_type"]
     player_form = form_df[form_df["player_id"] == player_id].head(10)
 
+    # player_form is most-recent-first; build over/None (push) per game.
     hits_l5, hits_l10 = [], []
     for _, fg in player_form.iterrows():
-        h = fg["actual"] > line
+        a = float(fg["actual"])
+        h = None if a == line else a > line   # exact line = push, not a hit/miss
         if len(hits_l10) < 10:
             hits_l10.append(h)
         if len(hits_l5) < 5:
             hits_l5.append(h)
 
-    # Pad to 5
+    # Pad to 5 (missing oldest games sit on the left after reversal)
     while len(hits_l5) < 5:
         hits_l5.append(None)
 
@@ -482,12 +491,13 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     l10_hit = sum(1 for h in hits_l10 if h is True)
     l5_den  = sum(1 for h in hits_l5  if h is not None)
     l10_den = sum(1 for h in hits_l10 if h is not None)
-    # From pick direction perspective
+    # From pick direction perspective (pushes already excluded from den)
     if direction == "under":
         l5_hit  = l5_den  - l5_hit
         l10_hit = l10_den - l10_hit
 
-    dots_html = form_dots_html(hits_l5, direction)
+    # Render oldest→newest (most recent on the right), matching "Last 5 games"
+    dots_html = form_dots_html(list(reversed(hits_l5)), direction)
 
     form_rate_html = ""
     if l5_den > 0:
@@ -548,7 +558,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     {line_move_html}
     {edge_bar_html(edge)}
     <div class="form-section">
-      <div class="form-label">Last 5 games vs line</div>
+      <div class="form-label">Last 5 games vs line · old → recent</div>
       {dots_html}
       {form_rate_html}
     </div>
