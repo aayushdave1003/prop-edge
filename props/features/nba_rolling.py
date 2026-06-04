@@ -80,6 +80,11 @@ def explode_stats(df: pd.DataFrame) -> pd.DataFrame:
             out[col] = pd.to_numeric(stats[col], errors="coerce").fillna(0)
         else:
             out[col] = 0
+    # NBA box scores store fg3_made/fg3_attempted; alias to threes_* for consistency
+    if "threes_made" not in stats.columns and "fg3_made" in stats.columns:
+        out["threes_made"] = pd.to_numeric(stats["fg3_made"], errors="coerce").fillna(0)
+    if "threes_attempted" not in stats.columns and "fg3_attempted" in stats.columns:
+        out["threes_attempted"] = pd.to_numeric(stats["fg3_attempted"], errors="coerce").fillna(0)
     # Compute combo stats per game
     for combo_name, components in COMBO_STATS.items():
         out[combo_name] = sum(out[c] for c in components)

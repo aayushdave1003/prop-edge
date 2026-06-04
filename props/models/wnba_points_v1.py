@@ -1,0 +1,175 @@
+"""Train WNBA points prediction model.
+
+Small dataset (single season ~816 rows) so use light regularization.
+Features pulled directly from player_games.derived.
+"""
+import json
+from datetime import date
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import lightgbm as lgb
+from scipy import stats as scipy_stats
+from sqlalchemy import text
+
+from props.utils.db import engine
+from props.utils.logging import log, configure_logging
+
+MODEL_DIR = Path("models")
+MODEL_DIR.mkdir(exist_ok=True)
+MODEL_PATH = MODEL_DIR / "wnba_points_v1.txt"
+META_PATH  = MODEL_DIR / "wnba_points_v1_meta.json"
+
+TARGET = "points"
+
+FEATURE_KEYS = [
+    "last_5_avg_points",
+    "last_10_avg_points",
+    "last_20_avg_points",
+    "season_avg_points",
+    "last_10_rate_over_9.5_points",
+    "last_10_rate_over_14.5_points",
+    "last_10_rate_over_19.5_points",
+    "last_5_avg_fg_attempted",
+    "last_10_avg_fg_attempted",
+    "last_5_avg_fg_made",
+    "last_10_avg_fg_made",
+    "last_5_avg_threes_made",
+    "last_10_avg_threes_made",
+    "last_5_avg_ft_made",
+    "last_10_avg_ft_made",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "last_20_avg_minutes",
+    "season_avg_minutes",
+    "last_10_avg_rebounds",
+    "last_10_avg_assists",
+    "days_rest",
+    "games_played_season",
+    "opp_last10_allowed_points_to_pos",
+    "last_10_avg_usage_rate",
+    "season_avg_usage_rate",
+    "last_10_avg_floor_spacing_score",
+    "last_10_avg_pts_per_fga",
+    "last_10_avg_paint_scoring_pct",
+    "team_close_game_rate",
+    "career_avg_points_vs_opp",
+]
+
+
+def load_training_data():
+    log.info("loading_wnba_training_data")
+    df = pd.read_sql("""
+        SELECT pg.player_game_id, pg.player_id, g.game_date, g.season,
+               pg.derived, pg.stats, pg.minutes_played
+        FROM player_games pg
+        JOIN games g USING (game_id)
+        WHERE g.sport_code = 'wnba'
+          AND pg.minutes_played >= 5
+    """, engine)
+    df["game_date"] = pd.to_datetime(df["game_date"])
+    log.info("raw_rows", n=len(df))
+
+    derived = pd.json_normalize(df["derived"])
+    stats   = pd.json_normalize(df["stats"])
+
+    out = pd.DataFrame({
+        "player_game_id": df["player_game_id"].values,
+        "player_id":      df["player_id"].values,
+        "game_date":      df["game_date"].values,
+        "season":         df["season"].values,
+        "y": pd.to_numeric(stats.get(TARGET, 0), errors="coerce").fillna(0).astype(int).values,
+    })
+    for k in FEATURE_KEYS:
+        out[k] = pd.to_numeric(derived.get(k, 0), errors="coerce").fillna(0)
+
+    out = out[out["last_10_avg_minutes"] > 0].copy()
+    log.info("filtered_rows", n=len(out))
+    return out
+
+
+def train_model(train_df, val_df):
+    X_train = train_df[FEATURE_KEYS]
+    y_train = train_df["y"]
+    X_val   = val_df[FEATURE_KEYS]
+    y_val   = val_df["y"]
+
+    lgb_train = lgb.Dataset(X_train, y_train)
+    lgb_val   = lgb.Dataset(X_val, y_val, reference=lgb_train)
+
+    params = {
+        "objective":       "poisson",
+        "metric":          ["poisson", "mae"],
+        "learning_rate":   0.05,
+        "num_leaves":      15,
+        "min_data_in_leaf": 10,
+        "lambda_l2":        1.0,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq":     5,
+        "verbose":         -1,
+        "seed":            42,
+    }
+
+    model = lgb.train(
+        params, lgb_train,
+        num_boost_round=500,
+        valid_sets=[lgb_train, lgb_val],
+        valid_names=["train", "val"],
+        callbacks=[
+            lgb.early_stopping(stopping_rounds=30),
+            lgb.log_evaluation(period=50),
+        ],
+    )
+    log.info("trained", best_iter=model.best_iteration)
+    return model
+
+
+def evaluate(model, test_df):
+    X_test = test_df[FEATURE_KEYS]
+    y_test = test_df["y"].values
+    pred   = model.predict(X_test, num_iteration=model.best_iteration)
+    baseline = test_df["season_avg_points"].values
+
+    mae_m = np.mean(np.abs(pred - y_test))
+    mae_b = np.mean(np.abs(baseline - y_test))
+    log.info("test_metrics",
+             mae_model=round(mae_m, 4), mae_baseline=round(mae_b, 4),
+             mae_improvement_pct=round(100 * (mae_b - mae_m) / mae_b, 2))
+    return pred
+
+
+def main():
+    configure_logging()
+    df = load_training_data()
+
+    # Single season — use last 20% as test
+    cutoff = df["game_date"].quantile(0.8)
+    train_df = df[df["game_date"] < cutoff].copy()
+    test_df  = df[df["game_date"] >= cutoff].copy()
+    val_cutoff = train_df["game_date"].quantile(0.85)
+    fit_df = train_df[train_df["game_date"] < val_cutoff]
+    val_df = train_df[train_df["game_date"] >= val_cutoff]
+    log.info("split", fit=len(fit_df), val=len(val_df), test=len(test_df))
+
+    model = train_model(fit_df, val_df)
+    evaluate(model, test_df)
+
+    model.save_model(str(MODEL_PATH))
+    meta = {
+        "model_path":    str(MODEL_PATH),
+        "target":        TARGET,
+        "feature_keys":  FEATURE_KEYS,
+        "best_iteration": model.best_iteration,
+        "train_n":       len(fit_df),
+        "val_n":         len(val_df),
+        "test_n":        len(test_df),
+        "trained_date":  date.today().isoformat(),
+    }
+    with open(META_PATH, "w") as f:
+        json.dump(meta, f, indent=2)
+    log.info("model_saved", path=str(MODEL_PATH))
+
+
+if __name__ == "__main__":
+    main()

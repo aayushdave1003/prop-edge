@@ -1,0 +1,28 @@
+{
+  "model_path": "models/nhl_assists_v1.txt",
+  "target": "assists",
+  "feature_keys": [
+    "last_5_avg_assists",
+    "last_10_avg_assists",
+    "last_20_avg_assists",
+    "season_avg_assists",
+    "last_10_rate_over_0.5_assists",
+    "last_10_rate_over_1.5_assists",
+    "last_10_rate_over_2.5_assists",
+    "last_5_avg_shots",
+    "last_10_avg_shots",
+    "last_5_avg_powerplay_points",
+    "last_10_avg_powerplay_points",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "season_avg_minutes",
+    "last_10_avg_points",
+    "days_rest",
+    "games_played_season"
+  ],
+  "best_iteration": 64,
+  "train_n": 191,
+  "val_n": 36,
+  "test_n": 71,
+  "trained_date": "2026-06-04"
+}

@@ -75,7 +75,8 @@ def process_game(session, game: dict) -> int:
                 name   = info.get("displayName", f"WNBA-{ext_id}")
                 stats_list = athlete.get("stats", [])
 
-                # ESPN stats order for WNBA: MIN FG 3PT FT OREB DREB REB AST STL BLK TO PF +/- PTS
+                # ESPN stats order for WNBA: MIN PTS FG 3PT FT REB OREB DREB AST STL BLK TO PF +/-
+                #                             0   1   2   3   4   5    6    7   8   9   10  11  12  13
                 def _s(idx, default=0):
                     try:
                         v = stats_list[idx]
@@ -99,28 +100,28 @@ def process_game(session, game: dict) -> int:
                     except Exception:
                         return 0, 0
 
-                fg_made, fg_att   = _fg(1)
-                fg3_made, fg3_att = _fg(2)
-                ft_made, ft_att   = _fg(3)
+                fg_made, fg_att   = _fg(2)   # total FG (includes 3s)
+                fg3_made, fg3_att = _fg(3)   # 3PT
+                ft_made, ft_att   = _fg(4)   # FT
 
                 stat_dict = {
                     "minutes":        round(mins, 2),
-                    "points":         int(_s(13)),
-                    "rebounds":       int(_s(7)),
-                    "off_rebounds":   int(_s(5)),
-                    "def_rebounds":   int(_s(6)),
+                    "points":         int(_s(1)),
+                    "rebounds":       int(_s(5)),
+                    "off_rebounds":   int(_s(6)),
+                    "def_rebounds":   int(_s(7)),
                     "assists":        int(_s(8)),
                     "steals":         int(_s(9)),
                     "blocks":         int(_s(10)),
                     "turnovers":      int(_s(11)),
                     "personal_fouls": int(_s(12)),
+                    "plus_minus":     _s(13),
                     "fg_made":        fg_made,
                     "fg_attempted":   fg_att,
                     "threes_made":    fg3_made,
                     "threes_attempted": fg3_att,
                     "ft_made":        ft_made,
                     "ft_attempted":   ft_att,
-                    "plus_minus":     _s(len(stats_list) - 2) if len(stats_list) > 13 else 0,
                 }
 
                 pid = ensure_player(session, ext_id, name, team_id)

@@ -1,0 +1,33 @@
+{
+  "model_path": "models/wnba_assists_v1.txt",
+  "target": "assists",
+  "feature_keys": [
+    "last_5_avg_assists",
+    "last_10_avg_assists",
+    "last_20_avg_assists",
+    "season_avg_assists",
+    "last_10_rate_over_2.5_assists",
+    "last_10_rate_over_4.5_assists",
+    "last_10_rate_over_6.5_assists",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "last_20_avg_minutes",
+    "season_avg_minutes",
+    "last_10_avg_turnovers",
+    "last_10_avg_fg_attempted",
+    "last_10_avg_points",
+    "last_10_avg_rebounds",
+    "days_rest",
+    "games_played_season",
+    "opp_last10_allowed_assists_to_pos",
+    "last_10_avg_usage_rate",
+    "last_10_avg_ast_to_pts_ratio",
+    "team_close_game_rate",
+    "career_avg_assists_vs_opp"
+  ],
+  "best_iteration": 6,
+  "train_n": 422,
+  "val_n": 76,
+  "test_n": 148,
+  "trained_date": "2026-06-04"
+}

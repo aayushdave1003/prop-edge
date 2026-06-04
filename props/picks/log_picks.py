@@ -18,6 +18,7 @@ MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn 
 # Minimum line value per stat — filters trivially low lines (OVER 2.5 pts etc.)
 # that are set low for injured/bench players returning and carry no real signal.
 MIN_LINE_BY_STAT = {
+    # NBA / WNBA
     "points":             5.0,
     "rebounds":           3.0,
     "assists":            1.5,
@@ -29,26 +30,30 @@ MIN_LINE_BY_STAT = {
     "blocks":             0.5,
     "steals":             0.5,
     "blocks_steals":      1.0,
+    # MLB
     "strikeouts_pitcher": 2.5,
     "hits":               1.5,
     "rbis":               0.5,
     "total_bases":        1.5,
+    "home_runs":          0.5,
+    # NHL
+    "goals":              0.5,
+    "saves":             15.0,
 }
 
 
-def ensure_model_version(model_name, stat_type):
+def ensure_model_version(model_name, stat_type, sport_code="mlb"):
     with session_scope() as session:
         result = session.execute(text("""
-            SELECT model_version_id FROM model_versions
-            WHERE sport_code='mlb' AND stat_type=:st AND name=:n
-        """), {"st": stat_type, "n": model_name}).first()
+            SELECT model_version_id FROM model_versions WHERE name=:n
+        """), {"n": model_name}).first()
         if result:
             return result[0]
         result = session.execute(text("""
             INSERT INTO model_versions (sport_code, stat_type, name, trained_at, notes)
-            VALUES ('mlb', :st, :n, NOW(), 'Model trained on 2023-2024')
+            VALUES (:sport, :st, :n, NOW(), 'auto-registered')
             RETURNING model_version_id
-        """), {"st": stat_type, "n": model_name}).first()
+        """), {"sport": sport_code, "st": stat_type, "n": model_name}).first()
         return result[0]
 
 
@@ -138,7 +143,9 @@ def main():
     # Build model_version_id per stat_type
     mv_map = {}
     for entry in MODELS:
-        mv_map[entry.name] = ensure_model_version(entry.name, entry.stat_type)
+        mv_map[entry.name] = ensure_model_version(entry.name, entry.stat_type, entry.sport_code)
+    # Combo stat model isn't in registry — register it on demand
+    mv_map["nba_combo_derived"] = ensure_model_version("nba_combo_derived", "combo", "nba")
 
     # Fetch min_stddev_last_10 for all NBA players in this slate to suppress
     # high-variance bench picks (e.g. Carter Bryant 83% on 2.5 pts)
@@ -168,7 +175,6 @@ def main():
         for r in rows_hv:
             pid, stddev = r[0], r[1]
             if stddev and stddev > HIGH_VAR_THRESHOLD:
-                # Also check avg minutes — don't suppress rotation players
                 with session_scope() as _s2:
                     avg_row = _s2.execute(text("""
                         SELECT (pg.derived->>'last_10_avg_minutes')::float
@@ -177,10 +183,34 @@ def main():
                         ORDER BY g.game_date DESC LIMIT 1
                     """), {"pid": pid}).first()
                 avg_min = float(avg_row[0]) if avg_row and avg_row[0] else 0
-                if avg_min < 18:  # only suppress true bench players
+                if avg_min < 18:
                     high_var_players.add(pid)
         if high_var_players:
             log.info("high_variance_players_suppressed", n=len(high_var_players))
+
+    # Hard minimum minutes floor: skip any player averaging < 12 min regardless of edge.
+    # Catches bench DNP risks that slip past the high-variance filter.
+    low_minute_players = set()
+    all_player_ids = edges["player_id"].unique().tolist()
+    if all_player_ids:
+        with session_scope() as _s:
+            rows_min = _s.execute(text("""
+                SELECT DISTINCT ON (pg.player_id)
+                       pg.player_id,
+                       (pg.derived->>'last_10_avg_minutes')::float AS avg_min,
+                       g.sport_code
+                FROM player_games pg
+                JOIN games g ON g.game_id = pg.game_id
+                WHERE pg.player_id = ANY(:ids)
+                  AND pg.derived->>'last_10_avg_minutes' IS NOT NULL
+                ORDER BY pg.player_id, g.game_date DESC
+            """), {"ids": [int(p) for p in all_player_ids]}).fetchall()
+        for r in rows_min:
+            pid, avg_min, sc = r[0], r[1], r[2]
+            if avg_min is not None and avg_min < 12:
+                low_minute_players.add(pid)
+        if low_minute_players:
+            log.info("low_minute_players_suppressed", n=len(low_minute_players))
 
     inserted = 0
     skipped = 0
@@ -192,6 +222,10 @@ def main():
             # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
             min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
             if float(row["line_value"]) < min_line:
+                skipped += 1
+                continue
+            # Suppress players averaging < 12 min (DNP risk)
+            if int(row["player_id"]) in low_minute_players:
                 skipped += 1
                 continue
             # Suppress NBA bench players with wildly inconsistent minutes

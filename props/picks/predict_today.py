@@ -357,6 +357,143 @@ def score_and_edge(model, meta, entry, feature_df):
 
 
 
+def build_derived_player_feature_rows(sport_code: str, feature_keys: list, target_date) -> pd.DataFrame:
+    """Generic inference for sports where features live in player_games.derived.
+
+    Used by WNBA and NHL models. Finds all players with active prop lines for the
+    sport today, fetches their most recent derived feature vector from the DB.
+    """
+    player_rows = pd.read_sql(text("""
+        WITH latest AS (
+            SELECT MAX(snapshot_at) AS max_snap
+            FROM prop_lines
+            WHERE sportsbook='prizepicks' AND sport_code=:sport
+        )
+        SELECT DISTINCT pl.player_id, pl.game_id
+        FROM prop_lines pl, latest
+        WHERE pl.sportsbook='prizepicks' AND pl.sport_code=:sport
+          AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
+    """), engine, params={"sport": sport_code})
+
+    if player_rows.empty:
+        return pd.DataFrame()
+
+    player_ids = player_rows["player_id"].tolist()
+    game_id_by_player = dict(zip(player_rows["player_id"], player_rows["game_id"]))
+
+    rows = []
+    with engine.connect() as conn:
+        for pid in player_ids:
+            result = conn.execute(text("""
+                SELECT pl.full_name, pg.derived
+                FROM player_games pg
+                JOIN games g USING (game_id)
+                JOIN players pl ON pl.player_id = pg.player_id
+                WHERE pg.player_id = :pid
+                  AND g.sport_code = :sport
+                  AND g.game_date < :d
+                ORDER BY g.game_date DESC, pg.player_game_id DESC
+                LIMIT 1
+            """), {"pid": pid, "sport": sport_code, "d": target_date}).first()
+
+            if not result or not result[1]:
+                continue
+
+            player_name, derived = result
+            feats = {
+                "player_id": pid,
+                "player_name": player_name,
+                "game_id": game_id_by_player.get(pid),
+            }
+            for k in feature_keys:
+                feats[k] = float(derived.get(k, 0) or 0)
+            rows.append(feats)
+
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
+COMBO_STAT_COMPONENTS = {
+    "pts_rebs_asts": ["points", "rebounds", "assists"],
+    "pts_rebs":      ["points", "rebounds"],
+    "pts_asts":      ["points", "assists"],
+    "rebs_asts":     ["rebounds", "assists"],
+}
+
+
+def build_nba_combo_edges(nba_pred_by_player: dict) -> pd.DataFrame:
+    """Derive combo stat predictions by summing individual model lambdas.
+
+    For each player who has predictions for all component stats, compute
+    combined_lambda = sum(component_lambdas), then score against combo lines.
+    """
+    combo_rows = []
+    for pid, info in nba_pred_by_player.items():
+        for combo_stat, components in COMBO_STAT_COMPONENTS.items():
+            if all(c in info for c in components):
+                total_lambda = sum(info[c] for c in components)
+                combo_rows.append({
+                    "player_id": pid,
+                    "player_name": info["player_name"],
+                    "game_id": info["game_id"],
+                    "predicted_mean": round(total_lambda, 4),
+                    "lambda": total_lambda,
+                    "stat_type": combo_stat,
+                    "model_name": "nba_combo_derived",
+                })
+
+    if not combo_rows:
+        return pd.DataFrame()
+
+    preds = pd.DataFrame(combo_rows)
+    all_edges = []
+    for combo_stat in COMBO_STAT_COMPONENTS:
+        stat_preds = preds[preds["stat_type"] == combo_stat]
+        if stat_preds.empty:
+            continue
+        player_ids = stat_preds["player_id"].tolist()
+        lines = pd.read_sql(text("""
+            WITH latest AS (
+                SELECT MAX(snapshot_at) AS max_snap
+                FROM prop_lines
+                WHERE sportsbook='prizepicks' AND sport_code='nba'
+                  AND stat_type=:stat AND line_variant='standard'
+                  AND player_id = ANY(:ids)
+            )
+            SELECT DISTINCT ON (pl.player_id, pl.line_value)
+                pl.line_id, pl.player_id, pl.game_id, pl.line_value
+            FROM prop_lines pl, latest
+            WHERE pl.sportsbook='prizepicks' AND pl.sport_code='nba'
+              AND pl.stat_type=:stat AND pl.line_variant='standard'
+              AND pl.player_id = ANY(:ids)
+              AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
+            ORDER BY pl.player_id, pl.line_value, pl.snapshot_at DESC
+        """), engine, params={"stat": combo_stat, "ids": player_ids})
+
+        if lines.empty:
+            continue
+
+        merged = lines.merge(stat_preds, on="player_id", how="inner",
+                             suffixes=("_line", "_pred"))
+        merged["game_id"] = merged["game_id_pred"]
+
+        merged["p_over"] = 1 - scipy_stats.poisson.cdf(
+            merged["line_value"].astype(int), merged["lambda"]
+        )
+        merged["p_under"] = 1 - merged["p_over"]
+        merged["direction"] = np.where(merged["p_over"] > 0.5, "over", "under")
+        merged["model_prob"] = np.where(
+            merged["p_over"] > 0.5, merged["p_over"], merged["p_under"]
+        )
+        merged["edge"] = merged["model_prob"] - 0.5
+
+        cols = ["player_name", "stat_type", "line_value", "predicted_mean",
+                "direction", "model_prob", "edge", "model_name",
+                "line_id", "player_id", "game_id"]
+        all_edges.append(merged[cols])
+
+    return pd.concat(all_edges, ignore_index=True) if all_edges else pd.DataFrame()
+
+
 def fetch_nba_schedule(target_date):
     """Pull today's NBA games via scoreboardv3."""
     from nba_api.stats.endpoints import scoreboardv3
@@ -727,9 +864,13 @@ def main(target_date: date = None):
     nba_games = None  # lazy fetch
     nba_game_ctx_map = {}
     nba_injury_flags = {}
+    nba_pred_by_player = {}  # {player_id: {stat: lambda, player_name, game_id}} for combo stats
     all_picks = []
     for entry in MODELS:
         log.info("running_model", name=entry.name, role=entry.role, sport=entry.sport_code)
+        if not entry.model_path.exists():
+            log.warning("model_file_missing", name=entry.name, path=str(entry.model_path))
+            continue
         model, meta = load_model(entry)
         if entry.sport_code == "nba":
             if nba_games is None:
@@ -750,6 +891,9 @@ def main(target_date: date = None):
             features = build_nba_player_feature_rows(nba_games, today, season,
                                                       meta["feature_keys"],
                                                       injury_flags=nba_injury_flags)
+        elif entry.sport_code in ("wnba", "nhl"):
+            features = build_derived_player_feature_rows(
+                entry.sport_code, meta["feature_keys"], today)
         elif entry.role == "pitcher":
             features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
         else:
@@ -760,6 +904,23 @@ def main(target_date: date = None):
         edges = score_and_edge(model, meta, entry, features)
         if not edges.empty:
             all_picks.append(edges)
+            # Track NBA component predictions for combo stat derivation
+            if entry.sport_code == "nba" and entry.stat_type in ("points", "rebounds", "assists"):
+                for _, row in edges.iterrows():
+                    pid = int(row["player_id"])
+                    if pid not in nba_pred_by_player:
+                        nba_pred_by_player[pid] = {
+                            "player_name": row["player_name"],
+                            "game_id": int(row["game_id"]),
+                        }
+                    nba_pred_by_player[pid][entry.stat_type] = float(row["predicted_mean"])
+
+    # Derive NBA combo stat predictions (pts_rebs_asts, pts_rebs, pts_asts, rebs_asts)
+    if nba_pred_by_player:
+        combo_edges = build_nba_combo_edges(nba_pred_by_player)
+        if not combo_edges.empty:
+            log.info("combo_edges_generated", n=len(combo_edges))
+            all_picks.append(combo_edges)
 
     if not all_picks:
         log.warning("no_picks_generated")

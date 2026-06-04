@@ -92,6 +92,7 @@ def resolve_placeholder_game_ids():
                 JOIN player_games pg ON pg.player_id = pk.player_id
                 JOIN games g ON g.game_id = pg.game_id
                 WHERE pk.leg_result IS NULL
+                  AND cur.external_id LIKE 'pp_%'
                   AND g.status = 'final'
                   AND g.sport_code = cur.sport_code
                   AND g.game_date BETWEEN
@@ -144,6 +145,19 @@ def run():
                     WHERE pick_id=:pid
                 """), {"pid": pick_id})
                 log.info("voided_dnp", pick_id=pick_id, player=player_name,
+                         game_date=str(game_date))
+                settled += 1
+                continue
+
+            # Void pitcher strikeout picks when the player never took the mound.
+            # Two-way players (e.g. Ohtani) have a batting row with batters_faced=0
+            # on days they DH only — don't count 0 Ks as an under win.
+            if stat_type == "strikeouts_pitcher" and stats_json.get("batters_faced", 0) == 0:
+                session.execute(text("""
+                    UPDATE picks SET leg_result='void', settled_at=NOW()
+                    WHERE pick_id=:pid
+                """), {"pid": pick_id})
+                log.info("voided_did_not_pitch", pick_id=pick_id, player=player_name,
                          game_date=str(game_date))
                 settled += 1
                 continue
