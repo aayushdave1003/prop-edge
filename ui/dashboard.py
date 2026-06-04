@@ -24,159 +24,226 @@ st.set_page_config(page_title="prop-edge", layout="wide",
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+/* ── Design tokens ─────────────────────────────────────────────
+   --bg deep base · --surface glass card · --line hairline border
+   --txt/--txt2/--txt3 text ramp · --acc purple accent · over/under */
+:root {
+    --bg:#0a0b10; --surface:#15171f; --surface2:#1b1e28;
+    --line:rgba(255,255,255,0.07); --line2:rgba(255,255,255,0.12);
+    --txt:#f3f5fb; --txt2:#9aa3b8; --txt3:#5f6678;
+    --acc:#7c5cff; --acc2:#9d7bff;
+    --over:#2ee6a6; --under:#ff5d6c; --gold:#ffcf5c;
+}
+
 /* Base */
 html, body, [class*="css"] {
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
-[data-testid="stAppViewContainer"] { background: #0f1117; }
-[data-testid="stHeader"] { background: #0f1117; }
-section[data-testid="stSidebar"] { background: #13161e; }
-.block-container { padding-top: 1.5rem !important; }
+[data-testid="stAppViewContainer"] {
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(124,92,255,0.16), transparent 60%),
+      radial-gradient(800px 500px at 95% 0%, rgba(34,211,238,0.08), transparent 55%),
+      var(--bg);
+}
+[data-testid="stHeader"] { background: transparent; }
+section[data-testid="stSidebar"] { background:#0e1016; }
+.block-container { padding-top: 1.4rem !important; max-width: 1280px; }
 
 /* Typography */
-h1, h2, h3 { color: #ffffff !important; }
-p, label, div { color: #c8cdd8; }
+h1,h2,h3 { color:var(--txt) !important; letter-spacing:-0.02em; font-weight:800; }
+p, label, div { color:var(--txt2); }
+::selection { background: rgba(124,92,255,0.35); }
 
 /* Metric cards */
-[data-testid="metric-container"] {
-    background: #1a1d2e; border-radius: 12px;
-    padding: 12px 16px; border: 1px solid #2a2d3e;
+[data-testid="stMetric"], [data-testid="metric-container"] {
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015));
+    border:1px solid var(--line); border-radius:14px;
+    padding:14px 18px; position:relative; overflow:hidden;
 }
-[data-testid="stMetricValue"] { color: #ffffff !important; font-size: 1.8rem !important; }
-[data-testid="stMetricLabel"] { color: #8890a4 !important; }
+[data-testid="stMetric"]::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background:linear-gradient(180deg,var(--acc),var(--acc2));
+}
+[data-testid="stMetricValue"] {
+    color:var(--txt) !important; font-size:1.7rem !important;
+    font-weight:800 !important; letter-spacing:-0.02em;
+}
+[data-testid="stMetricLabel"] {
+    color:var(--txt3) !important; text-transform:uppercase;
+    letter-spacing:0.06em; font-size:0.7rem !important;
+}
 
 /* Tabs */
-.stTabs [data-baseweb="tab-list"] { background: #13161e; border-radius: 10px; padding: 4px; }
-.stTabs [data-baseweb="tab"] { color: #8890a4; border-radius: 8px; padding: 8px 20px; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: #5932d9 !important; color: #fff !important;
+.stTabs [data-baseweb="tab-list"] {
+    background:rgba(255,255,255,0.03); border:1px solid var(--line);
+    border-radius:14px; padding:5px; gap:4px;
 }
+.stTabs [data-baseweb="tab"] {
+    color:var(--txt2); border-radius:10px; padding:9px 22px;
+    font-weight:600; font-size:0.9rem; transition:all 0.18s ease;
+}
+.stTabs [data-baseweb="tab"]:hover { color:var(--txt); background:rgba(255,255,255,0.04); }
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background:linear-gradient(135deg,var(--acc),var(--acc2)) !important;
+    color:#fff !important; box-shadow:0 4px 16px rgba(124,92,255,0.4);
+}
+.stTabs [data-baseweb="tab-highlight"] { background:transparent !important; }
 
 /* Pick cards */
 .pick-card {
-    background: #1a1d2e;
-    border: 1px solid #2a2d3e;
-    border-radius: 16px;
-    padding: 0;
-    margin-bottom: 16px;
-    overflow: hidden;
-    min-height: 340px;
-    display: flex;
-    flex-direction: column;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    background:linear-gradient(180deg, var(--surface2), var(--surface));
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:0; margin-bottom:18px;
+    overflow:hidden; min-height:344px;
+    display:flex; flex-direction:column;
+    position:relative;
+    transition:transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .2s ease, border-color .2s ease;
 }
 .pick-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(89,50,217,0.25);
+    transform:translateY(-4px);
+    border-color:var(--line2);
+    box-shadow:0 18px 40px rgba(0,0,0,0.45), 0 0 0 1px rgba(124,92,255,0.18);
 }
 .card-banner {
-    position: relative;
-    height: 110px;
-    background: linear-gradient(135deg, #1e2235 0%, #252840 100%);
-    overflow: hidden;
+    position:relative; height:112px; overflow:hidden;
+    background:
+      radial-gradient(120px 120px at 78% 30%, rgba(124,92,255,0.22), transparent 70%),
+      linear-gradient(135deg,#20243a 0%,#171a28 100%);
+    border-bottom:1px solid var(--line);
 }
 .card-banner .team-logo {
-    position: absolute; top: 10px; right: 10px;
-    width: 44px; height: 44px; object-fit: contain; opacity: 0.9;
+    position:absolute; top:12px; right:12px;
+    width:42px; height:42px; object-fit:contain;
+    opacity:0.95; filter:drop-shadow(0 2px 6px rgba(0,0,0,0.5));
 }
 .card-banner .player-photo {
-    position: absolute; bottom: 0; left: 12px;
-    height: 105px; width: auto; object-fit: cover;
-    object-position: top; border-radius: 8px 8px 0 0;
+    position:absolute; bottom:0; left:14px;
+    height:108px; width:auto; object-fit:cover; object-position:top;
+    border-radius:10px 10px 0 0;
+    -webkit-mask-image:linear-gradient(180deg,#000 78%,transparent);
+            mask-image:linear-gradient(180deg,#000 78%,transparent);
 }
-.card-body { padding: 12px 14px 14px 14px; flex: 1; }
+.card-body { padding:13px 15px 15px; flex:1; }
 .player-name {
-    font-size: 0.95rem; font-weight: 700;
-    color: #ffffff; margin-bottom: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size:1rem; font-weight:700; color:var(--txt);
+    margin-bottom:2px; letter-spacing:-0.01em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.team-stat { font-size: 0.75rem; color: #8890a4; margin-bottom: 10px; }
-.line-row {
-    display: flex; align-items: center;
-    justify-content: space-between; margin-bottom: 8px;
+.team-stat {
+    font-size:0.72rem; color:var(--txt3); margin-bottom:12px;
+    text-transform:uppercase; letter-spacing:0.04em; font-weight:500;
 }
-.line-value { font-size: 1.6rem; font-weight: 800; color: #ffffff; }
+.line-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.line-value {
+    font-size:1.75rem; font-weight:900; letter-spacing:-0.03em;
+    background:linear-gradient(180deg,#ffffff,#c7ccdb);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
 .badge {
-    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
-    padding: 4px 10px; border-radius: 20px;
+    font-size:0.68rem; font-weight:800; letter-spacing:0.1em;
+    padding:5px 12px; border-radius:8px; border:1px solid transparent;
 }
-.badge.over  { background: rgba(0,212,160,0.15); color: #00d4a0; border: 1px solid #00d4a0; }
-.badge.under { background: rgba(255,77,77,0.15);  color: #ff6b6b; border: 1px solid #ff6b6b; }
-.prob-row {
-    display: flex; align-items: center;
-    justify-content: space-between; margin-bottom: 10px;
+.badge.over  {
+    color:#0a0b10; background:linear-gradient(135deg,#3df0b2,#16c98c);
+    box-shadow:0 3px 12px rgba(46,230,166,0.3);
 }
-.prob-label { font-size: 0.72rem; color: #8890a4; }
-.prob-value { font-size: 0.85rem; font-weight: 700; color: #ffffff; }
+.badge.under {
+    color:#0a0b10; background:linear-gradient(135deg,#ff7b86,#ff4d5e);
+    box-shadow:0 3px 12px rgba(255,93,108,0.3);
+}
+.prob-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.prob-label { font-size:0.72rem; color:var(--txt3); }
+.prob-value { font-size:0.9rem; font-weight:700; color:var(--txt); }
 .edge-bar-bg {
-    height: 4px; background: #2a2d3e; border-radius: 2px; margin-bottom: 10px;
+    height:5px; background:rgba(255,255,255,0.06); border-radius:3px;
+    margin-bottom:12px; overflow:hidden;
 }
 .edge-bar-fill {
-    height: 4px; border-radius: 2px;
-    background: linear-gradient(90deg, #5932d9, #7c5ce8);
+    height:5px; border-radius:3px;
+    background:linear-gradient(90deg,var(--acc),var(--acc2),#22d3ee);
+    box-shadow:0 0 12px rgba(124,92,255,0.5);
 }
-.form-section { margin-top: 8px; }
-.form-label { font-size: 0.7rem; color: #8890a4; margin-bottom: 4px; }
-.form-dots { display: flex; gap: 5px; align-items: center; margin-bottom: 4px; }
+.form-section { margin-top:10px; }
+.form-label {
+    font-size:0.66rem; color:var(--txt3); margin-bottom:6px;
+    text-transform:uppercase; letter-spacing:0.05em;
+}
+.form-dots { display:flex; gap:5px; align-items:center; margin-bottom:5px; }
 .dot {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.65rem; font-weight: 700;
+    width:22px; height:22px; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:0.64rem; font-weight:800;
 }
-.dot.hit   { background: rgba(0,212,160,0.2); color: #00d4a0; border: 1.5px solid #00d4a0; }
-.dot.miss  { background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1.5px solid #ff6b6b; }
-.dot.empty { background: #2a2d3e; color: #5a5f72; border: 1.5px solid #3a3d4e; }
-.form-rate { font-size: 0.72rem; color: #8890a4; }
-.form-rate span { color: #ffffff; font-weight: 600; }
+.dot.hit   { background:linear-gradient(135deg,rgba(46,230,166,0.28),rgba(46,230,166,0.12)); color:var(--over); border:1px solid rgba(46,230,166,0.5); }
+.dot.miss  { background:linear-gradient(135deg,rgba(255,93,108,0.26),rgba(255,93,108,0.1)); color:var(--under); border:1px solid rgba(255,93,108,0.45); }
+.dot.empty { background:rgba(255,255,255,0.04); color:var(--txt3); border:1px solid var(--line); }
+.form-rate { font-size:0.72rem; color:var(--txt3); }
+.form-rate span { color:var(--txt); font-weight:700; }
 .inj-badge {
-    font-size: 0.68rem; color: #ffd93d; background: rgba(255,217,61,0.12);
-    border: 1px solid rgba(255,217,61,0.3); border-radius: 6px;
-    padding: 2px 7px; margin-top: 6px; display: inline-block;
+    font-size:0.66rem; color:var(--gold); background:rgba(255,207,92,0.1);
+    border:1px solid rgba(255,207,92,0.28); border-radius:7px;
+    padding:3px 8px; margin-top:8px; display:inline-block;
 }
-.kelly-row { font-size: 0.7rem; color: #8890a4; margin-top: 4px; }
-.kelly-row span { color: #7c5ce8; font-weight: 600; }
+.kelly-row { font-size:0.7rem; color:var(--txt3); margin-top:4px; }
+.kelly-row span { color:var(--acc2); font-weight:700; }
 
 /* Slate card */
 .slate-card {
-    background: linear-gradient(135deg, #1a1d2e, #1e2235);
-    border: 1px solid #5932d9;
-    border-radius: 16px; padding: 20px 24px; margin-bottom: 24px;
+    position:relative;
+    background:
+      radial-gradient(600px 200px at 0% 0%, rgba(124,92,255,0.16), transparent 60%),
+      linear-gradient(180deg, var(--surface2), var(--surface));
+    border:1px solid rgba(124,92,255,0.4);
+    border-radius:18px; padding:22px 26px; margin-bottom:26px;
+    box-shadow:0 12px 36px rgba(124,92,255,0.14);
 }
-.slate-title { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
-.slate-meta  { font-size: 0.78rem; color: #8890a4; margin-bottom: 14px; }
+.slate-title { font-size:1.15rem; font-weight:800; color:#fff; margin-bottom:4px; letter-spacing:-0.01em; }
+.slate-meta  { font-size:0.76rem; color:var(--txt3); margin-bottom:16px; }
 .slate-leg {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 1px solid #2a2d3e;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:11px 0; border-bottom:1px solid var(--line);
 }
-.slate-leg:last-child { border-bottom: none; }
-.leg-player { font-size: 0.85rem; font-weight: 600; color: #fff; }
-.leg-detail { font-size: 0.78rem; color: #8890a4; }
-.leg-badge  { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; }
+.slate-leg:last-child { border-bottom:none; }
+.leg-player { font-size:0.88rem; font-weight:600; color:#fff; }
+.leg-detail { font-size:0.76rem; color:var(--txt3); margin-top:2px; }
+.leg-badge  { font-size:0.66rem; padding:3px 10px; border-radius:8px; }
 
 /* Game prediction card */
 .game-card {
-    background: #1a1d2e; border: 1px solid #2a2d3e;
-    border-radius: 16px; padding: 20px; margin-bottom: 16px;
+    background:linear-gradient(180deg, var(--surface2), var(--surface));
+    border:1px solid var(--line);
+    border-radius:18px; padding:22px; margin-bottom:18px;
+    transition:transform .2s ease, border-color .2s ease;
 }
-.game-teams { font-size: 1.05rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+.game-card:hover { transform:translateY(-3px); border-color:var(--line2); }
+.game-teams { font-size:1.05rem; font-weight:700; color:#fff; margin-bottom:14px; letter-spacing:-0.01em; }
 .win-bar-bg {
-    height: 8px; background: #2a2d3e; border-radius: 4px;
-    margin: 8px 0; overflow: hidden; display: flex;
+    height:9px; background:rgba(255,255,255,0.06); border-radius:5px;
+    margin:8px 0; overflow:hidden; display:flex; gap:2px;
 }
-.win-bar-home { height: 8px; background: #5932d9; border-radius: 4px 0 0 4px; }
-.win-bar-away { height: 8px; background: #8890a4; border-radius: 0 4px 4px 0; }
-.team-prob { display: flex; justify-content: space-between; font-size: 0.8rem; }
-.team-prob .fav { color: #ffffff; font-weight: 700; }
-.team-prob .dog { color: #8890a4; }
+.win-bar-home { height:9px; background:linear-gradient(90deg,var(--acc),var(--acc2)); border-radius:5px 0 0 5px; }
+.win-bar-away { height:9px; background:rgba(255,255,255,0.16); border-radius:0 5px 5px 0; }
+.team-prob { display:flex; justify-content:space-between; font-size:0.82rem; }
+.team-prob .fav { color:var(--txt); font-weight:700; }
+.team-prob .dog { color:var(--txt3); }
 .market-row {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-top: 12px; padding-top: 12px; border-top: 1px solid #2a2d3e;
-    font-size: 0.8rem;
+    display:flex; justify-content:space-between; align-items:center;
+    margin-top:14px; padding-top:14px; border-top:1px solid var(--line);
+    font-size:0.8rem;
 }
-.rec-strong { color: #00d4a0; font-weight: 700; }
-.rec-lean   { color: #ffd93d; font-weight: 700; }
-.rec-pass   { color: #8890a4; }
+.rec-strong { color:var(--over); font-weight:700; }
+.rec-lean   { color:var(--gold); font-weight:700; }
+.rec-pass   { color:var(--txt3); }
+
+/* Streamlit chrome polish */
+[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+div[data-baseweb="select"] > div { background:rgba(255,255,255,0.03); border-color:var(--line); border-radius:10px; }
+hr { border-color:var(--line) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -232,6 +299,33 @@ def edge_bar_html(edge: float) -> str:
     pct = min(100, max(0, edge * 200))
     return (f'<div class="edge-bar-bg">'
             f'<div class="edge-bar-fill" style="width:{pct:.0f}%"></div></div>')
+
+
+def _html(s: str) -> str:
+    """Sanitize generated HTML for st.markdown.
+
+    Streamlit runs Markdown over HTML even with unsafe_allow_html=True, so a
+    blank line followed by an indented tag (which happens whenever an optional
+    row like the line-movement block renders empty) gets parsed as a code
+    block. Stripping leading whitespace and dropping blank lines makes the
+    output immune to that.
+    """
+    return "\n".join(ln.strip() for ln in s.splitlines() if ln.strip())
+
+
+def _prediction_notice(sport: str, err: Exception) -> None:
+    """Render a clean, non-alarming notice instead of a raw traceback.
+
+    Live game-model inference can fail on the deploy box (e.g. a missing
+    libgomp for LightGBM); the nightly cron still populates predictions, so
+    point users there rather than leaking the exception text.
+    """
+    import os
+    msg = (f"{sport} game predictions are refreshing — they populate after "
+           "the daily model run. Check back shortly.")
+    if os.getenv("LOG_LEVEL", "").upper() == "DEBUG":
+        msg += f"\n\n`{type(err).__name__}: {err}`"
+    st.info(msg, icon="⏳")
 
 
 # ── Data loading ─────────────────────────────────────────────────────────────
@@ -537,7 +631,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
             f'</span></div>'
         )
 
-    return f"""
+    return _html(f"""
 <div class="pick-card">
   <div class="card-banner">
     <img src="{logo}"  class="team-logo"    onerror="this.style.display='none'">
@@ -558,13 +652,13 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     {line_move_html}
     {edge_bar_html(edge)}
     <div class="form-section">
-      <div class="form-label">Last 5 games vs line · old → recent</div>
+      <div class="form-label">Form · old → recent</div>
       {dots_html}
       {form_rate_html}
     </div>
     {inj_html}
   </div>
-</div>"""
+</div>""")
 
 
 def build_slate_card(picks_df: pd.DataFrame) -> str:
@@ -606,19 +700,24 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     mults = {2: "3×", 3: "5×", 4: "10×"}
     if n < 2:
         return ""  # Don't show slate with fewer than 2 picks
-    return f"""
+    return _html(f"""
 <div class="slate-card">
   <div class="slate-title">⚡ Top {n}-Pick Slate · {mults[n]} payout</div>
   <div class="slate-meta">Ranked by model edge · paper-tracking only, not betting advice</div>
   {legs_html}
-</div>"""
+</div>""")
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
-st.markdown('<h1 style="font-size:1.8rem;margin-bottom:0">⚡ prop-edge</h1>',
-            unsafe_allow_html=True)
-st.markdown('<p style="color:#8890a4;margin-top:0;margin-bottom:1.5rem;font-size:0.85rem">'
+st.markdown(
+    '<h1 style="font-size:2rem;margin-bottom:0;font-weight:900;letter-spacing:-0.03em">'
+    '<span style="background:linear-gradient(135deg,#9d7bff,#22d3ee);'
+    '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">'
+    '⚡ prop-edge</span></h1>',
+    unsafe_allow_html=True)
+st.markdown('<p style="color:#5f6678;margin-top:2px;margin-bottom:1.6rem;font-size:0.82rem;'
+            'text-transform:uppercase;letter-spacing:0.08em">'
             'Research dashboard · paper-tracking only</p>', unsafe_allow_html=True)
 
 df = load_todays_picks()
@@ -704,7 +803,7 @@ def _game_card_html(home: str, away: str, home_wp: float,
     conf       = max(home_wp, away_wp)
     bar_home   = int(home_wp * 100)
     bar_away   = 100 - bar_home
-    return f"""
+    return _html(f"""
 <div class="game-card">
   <div class="game-teams">{away} @ {home}</div>
   <div class="win-bar-bg">
@@ -720,7 +819,7 @@ def _game_card_html(home: str, away: str, home_wp: float,
     ({conf:.0%}) · Implied line: {fav} -{abs(margin):.1f}
   </div>
   {extra_html}
-</div>"""
+</div>""")
 
 
 def _market_html(ms, mt, me, home, away) -> str:
@@ -765,7 +864,7 @@ with tab_game:
             preds     = predict_games(nba_games, _today, ctx_map)
             game_preds = pd.DataFrame(preds) if preds else pd.DataFrame()
         except Exception as e:
-            st.warning(f"NBA predictions unavailable: {e}")
+            _prediction_notice("NBA", e)
             game_preds = pd.DataFrame()
 
     if game_preds.empty:
@@ -804,7 +903,7 @@ with tab_game:
 
         mlb_preds = predict_mlb_games(mlb_games_valid, _today) if mlb_games_valid else []
     except Exception as e:
-        st.warning(f"MLB predictions unavailable: {e}")
+        _prediction_notice("MLB", e)
         mlb_preds = []
 
     if not mlb_preds:
