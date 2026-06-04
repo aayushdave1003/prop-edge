@@ -17,6 +17,34 @@ MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn 
 
 # Minimum line value per stat — filters trivially low lines (OVER 2.5 pts etc.)
 # that are set low for injured/bench players returning and carry no real signal.
+# Maximum line value per stat — filters multi-game cumulative lines that
+# PrizePicks sometimes serves alongside standard single-game lines.
+# A WNBA player scoring 35+ in one game is extremely rare; 37 is impossible as a
+# normal prop. These inflated values are 2-game or fantasy-format accumulations.
+MAX_LINE_BY_STAT = {
+    # Basketball (NBA/WNBA/NHL share keys — use the NBA max as ceiling)
+    "points":             55.0,
+    "rebounds":           22.0,
+    "assists":            20.0,
+    "threes_made":        10.0,
+    "pts_rebs_asts":      80.0,
+    "pts_rebs":           60.0,
+    "pts_asts":           60.0,
+    "rebs_asts":          35.0,
+    "blocks":              8.0,
+    "steals":              8.0,
+    "blocks_steals":      12.0,
+    # MLB
+    "strikeouts_pitcher": 17.0,
+    "home_runs":           4.0,
+    "hits":                6.0,
+    "rbis":               10.0,
+    "total_bases":        14.0,
+    # NHL
+    "goals":               5.0,
+    "saves":              50.0,
+}
+
 MIN_LINE_BY_STAT = {
     # NBA / WNBA
     "points":             5.0,
@@ -222,6 +250,12 @@ def main():
             # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
             min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
             if float(row["line_value"]) < min_line:
+                skipped += 1
+                continue
+            # Skip absurdly high lines — these are multi-game cumulative totals or
+            # fantasy-format lines that PrizePicks serves alongside normal lines.
+            max_line = MAX_LINE_BY_STAT.get(row["stat_type"], float("inf"))
+            if float(row["line_value"]) > max_line:
                 skipped += 1
                 continue
             # Suppress players averaging < 12 min (DNP risk)

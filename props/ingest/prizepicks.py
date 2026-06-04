@@ -131,6 +131,11 @@ def parse_projection(proj: dict, included_lookup: dict) -> dict | None:
     player_name = player_attrs.get("display_name") or player_attrs.get("name", "")
     team_abbr = player_attrs.get("team")
 
+    # Skip combined-player Power Play lines (e.g. "Caitlin Clark + Kelsey Mitchell")
+    # These are multi-player props that look like single-player lines but aren't.
+    if " + " in player_name:
+        return None
+
     # Resolve game
     game_rel = rels.get("game", {}).get("data") or {}
     game_external_id = game_rel.get("id") if game_rel else None
