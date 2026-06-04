@@ -176,16 +176,22 @@ p, label, div { color: #c8cdd8; }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+FALLBACK_PHOTO = "https://cdn.nba.com/headshots/nba/latest/1040x760/fallback.png"
+
 def player_photo_url(external_id: str, sport: str) -> str:
     if not external_id or external_id.startswith("pp_"):
-        return "https://cdn.nba.com/headshots/nba/latest/1040x760/fallback.png"
+        return FALLBACK_PHOTO
     if sport == "nba":
         return f"https://cdn.nba.com/headshots/nba/latest/1040x760/{external_id}.png"
     if sport == "mlb":
         return (f"https://img.mlbstatic.com/mlb-photos/image/upload/"
                 f"d_people:generic:headshot:67:current.png/w_213,q_auto:best"
                 f"/v1/people/{external_id}/headshot/67/current")
-    return ""
+    if sport == "wnba":
+        return f"https://a.espncdn.com/combiner/i?img=/i/headshots/wnba/players/full/{external_id}.png&w=350&h=254"
+    if sport == "nhl":
+        return f"https://assets.nhle.com/mugs/nhl/20242025/{external_id}.png"
+    return FALLBACK_PHOTO
 
 
 def team_logo_url(team_ext_id: str, sport: str) -> str:
@@ -195,6 +201,10 @@ def team_logo_url(team_ext_id: str, sport: str) -> str:
         return f"https://cdn.nba.com/logos/nba/{team_ext_id}/global/L/logo.svg"
     if sport == "mlb":
         return f"https://www.mlbstatic.com/team-logos/{team_ext_id}.svg"
+    if sport == "wnba":
+        return f"https://a.espncdn.com/i/teamlogos/wnba/500/{team_ext_id}.png"
+    if sport == "nhl":
+        return f"https://assets.nhle.com/logos/nhl/svg/{team_ext_id}_light.svg"
     return ""
 
 
@@ -240,13 +250,14 @@ def load_todays_picks():
             pk.actual_value,
             pk.line_open,
             pk.line_movement,
+            0                 AS injury_flag,
             g.status          AS game_status,
             ht.abbreviation   AS home_team,
             at.abbreviation   AS away_team
         FROM picks pk
-        JOIN players p   USING (player_id)
-        JOIN teams   t   ON t.team_id = p.current_team_id
-        JOIN games   g   USING (game_id)
+        JOIN players p    USING (player_id)
+        LEFT JOIN teams t ON t.team_id = p.current_team_id
+        JOIN games   g    USING (game_id)
         JOIN prop_lines pl ON pl.line_id = pk.line_id
         LEFT JOIN teams ht ON ht.team_id = g.home_team_id
         LEFT JOIN teams at ON at.team_id = g.away_team_id
@@ -500,7 +511,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
             f'<div class="prob-row" style="margin-top:2px">'
             f'<span class="prob-label">Line moved</span>'
             f'<span class="prob-value" style="color:{color};font-size:0.8rem">'
-            f'{arrow} {abs(mv):+.1f} ({float(lo):g}→{line:g}) {label}'
+            f'{arrow} {abs(mv):.1f} ({float(lo):g}→{line:g}) · {label}'
             f'</span></div>'
         )
 
@@ -542,26 +553,39 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     # Simple slate: top 4 picks by edge
     top = picks_df.head(4)
     legs_html = ""
+    stat_labels_slate = {
+        "points": "Points", "rebounds": "Rebounds", "assists": "Assists",
+        "threes_made": "3-PT Made", "pts_rebs_asts": "PRA",
+        "pts_rebs": "P+R", "pts_asts": "P+A", "rebs_asts": "R+A",
+        "blocks": "Blocks", "steals": "Steals", "blocks_steals": "Blk+Stl",
+        "strikeouts_pitcher": "Strikeouts", "hits": "Hits",
+        "total_bases": "Total Bases", "rbis": "RBIs", "home_runs": "Home Runs",
+        "goals": "Goals", "saves": "Saves",
+    }
     for _, row in top.iterrows():
         direction  = row["direction"]
         badge_cls  = "over" if direction == "over" else "under"
         badge_text = "OVER" if direction == "over" else "UNDER"
-        stat_label = row["stat_type"].replace("_", " ").title()
+        stat_label = stat_labels_slate.get(row["stat_type"],
+                                           row["stat_type"].replace("_", " ").title())
+        sport_tag  = row.get("sport_code", "").upper()
         legs_html += f"""
 <div class="slate-leg">
   <div>
-    <div class="leg-player">{row['player']}</div>
+    <div class="leg-player">{row['player']} <span style="color:#5a5f72;font-size:0.75rem;font-weight:400">{sport_tag}</span></div>
     <div class="leg-detail">{stat_label} · {float(row['line']):g} · {row['model_prob']:.0%}</div>
   </div>
   <span class="badge {badge_cls} leg-badge">{badge_text}</span>
 </div>"""
 
-    n      = min(4, len(top))
-    mults  = {2: "3x", 3: "5x", 4: "10x"}
+    n     = min(4, len(top))
+    mults = {2: "3×", 3: "5×", 4: "10×"}
+    if n < 2:
+        return ""  # Don't show slate with fewer than 2 picks
     return f"""
 <div class="slate-card">
-  <div class="slate-title">⚡ Today's Recommended {n}-Pick Slate ({mults.get(n,'?')} payout)</div>
-  <div class="slate-meta">Ranked by model edge · Confirm injury reports before submitting</div>
+  <div class="slate-title">⚡ Top {n}-Pick Slate · {mults[n]} payout</div>
+  <div class="slate-meta">Ranked by model edge · paper-tracking only, not betting advice</div>
   {legs_html}
 </div>"""
 
@@ -575,10 +599,12 @@ st.markdown('<p style="color:#8890a4;margin-top:0;margin-bottom:1.5rem;font-size
 
 df = load_todays_picks()
 
-settled   = df[df["leg_result"].notna()]
-wins      = (settled["leg_result"] == "win").sum()
-total_set = len(settled[settled["leg_result"].isin(["win","loss"])])
-win_pct   = f"{wins/total_set:.0%}" if total_set else "—"
+# 7-day rolling W/L for header (today's picks unsettled until evening)
+_recent_7 = load_recent_picks(days=7)
+_settled_7 = _recent_7[_recent_7["leg_result"].isin(["win", "loss"])]
+wins_7    = (_settled_7["leg_result"] == "win").sum()
+losses_7  = (_settled_7["leg_result"] == "loss").sum()
+win_pct_7 = f"{wins_7/(wins_7+losses_7):.0%}" if (wins_7 + losses_7) else "—"
 avg_edge  = f"{df['market_edge'].mean():.1%}" if len(df) else "—"
 above_be  = (df["model_prob"] >= 0.577).sum()
 
@@ -586,8 +612,8 @@ c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Today's Picks", len(df))
 c2.metric("Above Breakeven", above_be)
 c3.metric("Avg Edge", avg_edge)
-c4.metric("Settled W/L", f"{wins}/{total_set - wins}")
-c5.metric("Win Rate", win_pct)
+c4.metric("7-Day W/L", f"{wins_7}W – {losses_7}L")
+c5.metric("7-Day Win Rate", win_pct_7)
 
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
@@ -600,7 +626,7 @@ tab_picks, tab_game, tab_perf, tab_recent = st.tabs(
 # ══ TAB 1: Today's Picks ═════════════════════════════════════════════════════
 with tab_picks:
     if df.empty:
-        st.info("No picks logged today. Daily cron runs at 9 AM.")
+        st.info("No picks logged today. Daily cron runs at 7 AM.")
     else:
         # Filters
         fc1, fc2, fc3 = st.columns(3)
