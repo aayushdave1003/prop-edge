@@ -9,7 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from props.utils.db import engine
+from props.utils.db import engine, session_scope
+
+# Ensure picks table has line movement columns (added 2026-06-04; Railway may lag)
+with session_scope() as _s:
+    for _col, _type in [("line_open", "NUMERIC(8,3)"), ("line_movement", "NUMERIC(6,3)")]:
+        _s.execute(text(f"ALTER TABLE picks ADD COLUMN IF NOT EXISTS {_col} {_type}"))
 
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
