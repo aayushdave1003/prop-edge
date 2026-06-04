@@ -88,7 +88,15 @@ def load_mlb_player_games() -> pd.DataFrame:
                pg.opponent_id, pg.is_home, pg.stats,
                g.game_date, g.season, g.home_team_id,
                p.handedness, p.position,
-               ht.name AS home_team_name
+               ht.name AS home_team_name,
+               -- Opposing pitcher handedness: find the starter for the opponent team
+               (SELECT pl2.handedness FROM player_games pg2
+                JOIN players pl2 ON pl2.player_id = pg2.player_id
+                WHERE pg2.game_id = pg.game_id
+                  AND pg2.team_id = pg.opponent_id
+                  AND (pg2.stats->>'strikeouts_pitcher')::int > 0
+                ORDER BY (pg2.stats->>'outs_recorded')::int DESC NULLS LAST
+                LIMIT 1) AS opp_pitcher_hand
         FROM player_games pg
         JOIN games g USING (game_id)
         JOIN players p ON p.player_id = pg.player_id
@@ -239,10 +247,22 @@ def compute_park_and_platoon(df: pd.DataFrame) -> pd.DataFrame:
             for row in g.itertuples()
         ]
 
-        # Platoon advantage proxy:
-        # Without handedness: use position-based proxy
-        # G (catcher), 1B, etc. vs LHP/RHP — skip for now, default 0
-        feats["platoon_advantage"] = [0.0] * len(g)
+        # Platoon advantage: 1 = batter vs opposite-hand pitcher (advantage)
+        # -1 = same hand (pitcher advantage), 0 = unknown
+        # Batter handedness from players.handedness (R/L/S)
+        # Pitcher handedness comes from player_games context (opponent pitcher)
+        batter_hand = g["handedness"].iloc[0] if "handedness" in g.columns else None
+        platoon_vals = []
+        for row in g.itertuples():
+            opp_hand = getattr(row, "opp_pitcher_hand", None)
+            if batter_hand in ("R", "L") and opp_hand in ("R", "L"):
+                # Opposite hands = batter advantage (e.g. L batter vs R pitcher)
+                platoon_vals.append(1.0 if batter_hand != opp_hand else -1.0)
+            elif batter_hand == "S":
+                platoon_vals.append(0.5)  # switch hitter has slight advantage vs any
+            else:
+                platoon_vals.append(0.0)
+        feats["platoon_advantage"] = platoon_vals
 
         results.append(pd.DataFrame(feats))
 

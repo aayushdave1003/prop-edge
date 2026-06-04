@@ -52,7 +52,7 @@
     "last_10_avg_pitcher_bb9",
     "park_factor"
   ],
-  "best_iteration": 40,
+  "best_iteration": 48,
   "train_n": 84784,
   "val_n": 740,
   "test_n": 47919,

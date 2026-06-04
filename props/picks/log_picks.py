@@ -31,6 +31,8 @@ MIN_LINE_BY_STAT = {
     "blocks_steals":      1.0,
     "strikeouts_pitcher": 2.5,
     "hits":               1.5,
+    "rbis":               0.5,
+    "total_bases":        1.5,
 }
 
 
@@ -75,6 +77,39 @@ def store_prediction_row(session, mv_id, player_id, game_id, stat_type, predicte
     return result[0]
 
 
+def _ensure_line_movement_columns():
+    """Add line_open and line_movement columns to picks if missing."""
+    with session_scope() as session:
+        for col, type_ in [("line_open", "NUMERIC(8,3)"), ("line_movement", "NUMERIC(6,3)")]:
+            try:
+                session.execute(text(f"ALTER TABLE picks ADD COLUMN IF NOT EXISTS {col} {type_}"))
+            except Exception:
+                pass
+
+
+def _get_line_movement(player_id: int, stat_type: str, sport_code: str,
+                        current_line: float) -> tuple:
+    """Return (line_open, line_movement) for this player/stat today."""
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT line_value, snapshot_at
+            FROM prop_lines
+            WHERE player_id = :pid
+              AND stat_type = :stat
+              AND sport_code = :sport
+              AND sportsbook = 'prizepicks'
+              AND line_variant = 'standard'
+              AND snapshot_at >= NOW() - INTERVAL '24 hours'
+            ORDER BY snapshot_at ASC
+            LIMIT 1
+        """), {"pid": player_id, "stat": stat_type, "sport": sport_code}).first()
+    if row:
+        line_open = float(row[0])
+        movement  = round(float(current_line) - line_open, 3)
+        return line_open, movement
+    return None, None
+
+
 def _ensure_market_edge_column():
     """Add market_edge column to picks if it doesn't exist yet."""
     with session_scope() as session:
@@ -94,6 +129,7 @@ def main():
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
     _ensure_market_edge_column()
+    _ensure_line_movement_columns()
     edges = predict_main(target_date=target_date)
     if edges is None or edges.empty:
         log.warning("no_edges_to_log")
@@ -196,6 +232,10 @@ def main():
                 continue
             model_prob   = round(float(row["model_prob"]), 4)
             edge_val     = round(float(row["edge"]), 4)
+            line_open, line_movement = _get_line_movement(
+                int(row["player_id"]), row["stat_type"],
+                sport_code, float(row["line_value"])
+            )
             # Half-Kelly for a 2-pick PrizePicks parlay at 3x payout:
             #   f* = (3p - 1) / 2,  half_kelly = f* / 2 = (3p - 1) / 4
             # Replaces the old (incorrect) edge * 2 formula.
@@ -210,11 +250,13 @@ def main():
                 INSERT INTO picks (
                     parlay_size, sport_code, player_id, game_id, stat_type,
                     line_id, direction, model_version_id, prediction_id,
-                    model_prob, edge, expected_value, market_edge, picked_at
+                    model_prob, edge, expected_value, market_edge,
+                    line_open, line_movement, picked_at
                 ) VALUES (
                     1, :sport, :pid, :gid, :st,
                     :lid, :dir, :mvid, :prid,
-                    :mp, :edge, :ev, :me, NOW()
+                    :mp, :edge, :ev, :me,
+                    :lo, :lm, NOW()
                 )
                 ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
             """), {
@@ -224,6 +266,7 @@ def main():
                 "dir": row["direction"], "mvid": mv_id, "prid": pred_id,
                 "mp": model_prob, "edge": edge_val, "ev": half_kelly,
                 "me": market_edge,
+                "lo": line_open, "lm": line_movement,
             })
             inserted += 1
     log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped)

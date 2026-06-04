@@ -39,6 +39,22 @@ MODELS = [
         meta_path=Path("models/hits_v1_meta.json"),
     ),
     ModelEntry(
+        name="rbis_v1",
+        sport_code="mlb",
+        stat_type="rbis",
+        role="batter",
+        model_path=Path("models/rbis_v1.txt"),
+        meta_path=Path("models/rbis_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="total_bases_v1",
+        sport_code="mlb",
+        stat_type="total_bases",
+        role="batter",
+        model_path=Path("models/total_bases_v1.txt"),
+        meta_path=Path("models/total_bases_v1_meta.json"),
+    ),
+    ModelEntry(
         name="nba_points_v1",
         sport_code="nba",
         stat_type="points",
