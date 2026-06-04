@@ -11,10 +11,11 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 
-# Ensure picks table has line movement columns (added 2026-06-04; Railway may lag)
-with session_scope() as _s:
+# Ensure picks table has line movement columns (added 2026-06-04; Railway may lag).
+# DDL needs autocommit — can't run inside a regular transaction.
+with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as _conn:
     for _col, _type in [("line_open", "NUMERIC(8,3)"), ("line_movement", "NUMERIC(6,3)")]:
-        _s.execute(text(f"ALTER TABLE picks ADD COLUMN IF NOT EXISTS {_col} {_type}"))
+        _conn.execute(text(f"ALTER TABLE picks ADD COLUMN IF NOT EXISTS {_col} {_type}"))
 
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
