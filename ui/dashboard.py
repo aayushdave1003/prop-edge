@@ -261,7 +261,9 @@ def load_todays_picks():
         JOIN prop_lines pl ON pl.line_id = pk.line_id
         LEFT JOIN teams ht ON ht.team_id = g.home_team_id
         LEFT JOIN teams at ON at.team_id = g.away_team_id
-        WHERE pk.picked_at::date = CURRENT_DATE
+        WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
+              = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+          AND (pk.leg_result IS NULL OR pk.leg_result != 'void')
         ORDER BY COALESCE(pk.market_edge, pk.edge) DESC
     """
     return pd.read_sql(text(sql), engine)
@@ -289,15 +291,18 @@ def load_player_form(player_ids: tuple, stat_type: str, sport: str):
         f"COALESCE((pg.stats->>{repr(stat_type)})::float, 0)"
     )
     sql = f"""
-        SELECT pg.player_id, g.game_date,
-               {actual_expr} AS actual
-        FROM player_games pg
-        JOIN games g USING (game_id)
-        WHERE pg.player_id = ANY(:pids)
-          AND g.sport_code  = :sport
-          AND g.status = 'final'
-          AND g.game_date < CURRENT_DATE
-        ORDER BY pg.player_id, g.game_date DESC
+        SELECT player_id, game_date, actual FROM (
+            SELECT pg.player_id, g.game_date,
+                   {actual_expr} AS actual,
+                   ROW_NUMBER() OVER (PARTITION BY pg.player_id ORDER BY g.game_date DESC) AS rn
+            FROM player_games pg
+            JOIN games g USING (game_id)
+            WHERE pg.player_id = ANY(:pids)
+              AND g.sport_code  = :sport
+              AND g.status = 'final'
+              AND g.game_date < CURRENT_DATE
+        ) sub WHERE rn <= 10
+        ORDER BY player_id, game_date DESC
     """
     df = pd.read_sql(text(sql), engine,
                      params={"pids": list(player_ids), "sport": sport})
@@ -318,7 +323,7 @@ def load_historical_summary():
                ROUND(AVG(pk.model_prob)::numeric, 3)                      AS avg_prob,
                ROUND(AVG(pk.edge)::numeric, 3)                            AS avg_edge
         FROM picks pk JOIN games g USING (game_id)
-        WHERE pk.leg_result IS NOT NULL
+        WHERE pk.leg_result IN ('win','loss','push')
         GROUP BY g.sport_code, pk.stat_type, pk.direction
         ORDER BY picks DESC
     """
@@ -376,7 +381,9 @@ def load_recent_picks(days: int = 7):
         JOIN players p USING (player_id)
         JOIN games   g USING (game_id)
         JOIN prop_lines pl ON pl.line_id = pk.line_id
-        WHERE pk.picked_at >= CURRENT_DATE - :days
+        WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
+              >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - :days
+          AND (pk.leg_result IS NULL OR pk.leg_result != 'void')
         ORDER BY pk.picked_at DESC
     """
     return pd.read_sql(text(sql), engine, params={"days": days})
@@ -435,9 +442,14 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
     }
     stat_label = stat_labels.get(row["stat_type"], row["stat_type"].replace("_", " ").title())
 
-    # Opponent
-    home, away = row.get("home_team", ""), row.get("away_team", "")
-    opp = f"vs {away}" if row.get("team") == home else f"@ {home}" if home else ""
+    # Opponent — guard against None from LEFT JOINs
+    home = row.get("home_team") or ""
+    away = row.get("away_team") or ""
+    team = row.get("team") or ""
+    if home and away:
+        opp = f"vs {away}" if team == home else f"@ {home}"
+    else:
+        opp = ""
 
     # Result badge (settled picks)
     result = row.get("leg_result") or ""
@@ -550,8 +562,10 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     if picks_df.empty:
         return ""
 
-    # Simple slate: top 4 picks by edge
-    top = picks_df.head(4)
+    # Top 4 by edge, one leg per player (no correlated double-dip)
+    top = (picks_df
+           .drop_duplicates(subset=["player_id"], keep="first")
+           .head(4))
     legs_html = ""
     stat_labels_slate = {
         "points": "Points", "rebounds": "Rebounds", "assists": "Assists",
@@ -605,7 +619,8 @@ _settled_7 = _recent_7[_recent_7["leg_result"].isin(["win", "loss"])]
 wins_7    = (_settled_7["leg_result"] == "win").sum()
 losses_7  = (_settled_7["leg_result"] == "loss").sum()
 win_pct_7 = f"{wins_7/(wins_7+losses_7):.0%}" if (wins_7 + losses_7) else "—"
-avg_edge  = f"{df['market_edge'].mean():.1%}" if len(df) else "—"
+_valid_edges = df['market_edge'].dropna() if len(df) else pd.Series(dtype=float)
+avg_edge  = f"{_valid_edges.mean():.1%}" if len(_valid_edges) else "—"
 above_be  = (df["model_prob"] >= 0.577).sum()
 
 c1, c2, c3, c4, c5 = st.columns(5)
