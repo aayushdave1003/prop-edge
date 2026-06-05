@@ -11,6 +11,7 @@ from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
 from props.utils.config import settings
+from props.maintenance.migrate import run_migrations
 
 
 MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn below that
@@ -110,16 +111,6 @@ def store_prediction_row(session, mv_id, player_id, game_id, stat_type, predicte
     return result[0]
 
 
-def _ensure_line_movement_columns():
-    """Add line_open and line_movement columns to picks if missing."""
-    with session_scope() as session:
-        for col, type_ in [("line_open", "NUMERIC(8,3)"), ("line_movement", "NUMERIC(6,3)")]:
-            try:
-                session.execute(text(f"ALTER TABLE picks ADD COLUMN IF NOT EXISTS {col} {type_}"))
-            except Exception:
-                pass
-
-
 def _get_line_movement(player_id: int, stat_type: str, sport_code: str,
                         current_line: float) -> tuple:
     """Return (line_open, line_movement) for this player/stat today."""
@@ -143,14 +134,6 @@ def _get_line_movement(player_id: int, stat_type: str, sport_code: str,
     return None, None
 
 
-def _ensure_market_edge_column():
-    """Add market_edge column to picks if it doesn't exist yet."""
-    with session_scope() as session:
-        session.execute(text("""
-            ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_edge numeric(6,4)
-        """))
-
-
 def main():
     import argparse
     from datetime import date as _date
@@ -161,8 +144,7 @@ def main():
 
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
-    _ensure_market_edge_column()
-    _ensure_line_movement_columns()
+    run_migrations()
     edges = predict_main(target_date=target_date)
     if edges is None or edges.empty:
         log.warning("no_edges_to_log")
