@@ -3,7 +3,15 @@
 # Self-healing: re-fetches yesterday + today, auto-resolves placeholder game_ids,
 # rebuilds rolling features after new box scores land, settles before AND after
 # logging new picks so anything for already-final games settles in the same run.
-set -euo pipefail
+#
+# Resilience (E3): we deliberately do NOT use `set -e`. A single failed ingest or
+# feature step (a transient DB blip, an API timeout) must not abort the whole run
+# before pick generation — that's how entire days of picks were lost. Each failure
+# is logged via the ERR trap and the run continues; a final check reports whether
+# picks actually landed.
+set -uo pipefail
+FAILURES=0
+trap 'rc=$?; FAILURES=$((FAILURES+1)); echo "⚠️  daily.sh: step failed (rc=$rc) near line $LINENO — continuing"' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
@@ -133,6 +141,31 @@ if [ "$(date +%u)" = "1" ]; then
     SINCE_90=$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)
     python -m props.picks.backtest --sport nba --since "$SINCE_90" || true
     python -m props.picks.backtest --sport mlb --since "$SINCE_90" || true
+fi
+
+# ── 8b. Health check + alert (E11) ───────────────────────────────────────────
+# Report whether picks actually landed and ping Discord on trouble, so a silent
+# outage (DB down, 0 picks, failed steps) surfaces immediately instead of hours
+# later.
+PICKS_TODAY=$(python - <<'PY'
+from props.utils.db import session_scope
+from sqlalchemy import text
+try:
+    with session_scope() as s:
+        n = s.execute(text(
+            "SELECT COUNT(*) FROM picks pk "
+            "WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date "
+            "      = (NOW() AT TIME ZONE 'America/Los_Angeles')::date")).scalar()
+    print(int(n))
+except Exception:
+    print(-1)
+PY
+)
+echo "Health: picks_today=$PICKS_TODAY  step_failures=$FAILURES"
+if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && { [ "${PICKS_TODAY:-0}" -le 0 ] || [ "$FAILURES" -gt 0 ]; }; then
+    MSG="⚠️ prop-edge daily $TODAY — picks=$PICKS_TODAY, step_failures=$FAILURES. Check logs/daily_$TODAY.log"
+    curl -s -m 10 -H "Content-Type: application/json" \
+         -d "{\"content\": \"$MSG\"}" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 || true
 fi
 
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
