@@ -1,0 +1,18 @@
+# Keep the image lean and avoid copying the macOS virtualenv / local junk.
+.venv
+.git
+.gitignore
+*.log
+*.csv
+**/__pycache__
+*.pyc
+.ipynb_checkpoints
+notebooks
+.streamlit/secrets.toml
+.env
+backfill.log
+nba_backfill.log
+cron.log
+daily_cron.log
+logs/
+props.egg-info
