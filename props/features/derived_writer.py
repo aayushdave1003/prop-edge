@@ -31,10 +31,33 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from props.utils.db import session_scope
+from props.utils.db import engine, session_scope
 from props.utils.logging import log
 
 DEFAULT_RECENT_DAYS = 21
+
+
+def _guard_prod_backfill() -> None:
+    """Refuse a full (DERIVED_BACKFILL_ALL) rewrite against a remote DB.
+
+    A full backfill rewrites every row's derived JSONB and floods WAL — that is
+    exactly what filled the Railway volume and crashed prod on 2026-06-05.
+    Incremental daily writes are tiny and safe; a full backfill belongs on a
+    local DB, or on prod only after confirming disk headroom (override via
+    DERIVED_ALLOW_PROD_BACKFILL=1).
+    """
+    if not os.getenv("DERIVED_BACKFILL_ALL"):
+        return
+    if os.getenv("DERIVED_ALLOW_PROD_BACKFILL"):
+        return
+    host = (engine.url.host or "localhost").lower()
+    if host not in ("localhost", "127.0.0.1", ""):
+        raise RuntimeError(
+            f"Refusing DERIVED_BACKFILL_ALL against remote DB '{host}': a full "
+            "backfill filled the Railway disk and crashed prod. Run incrementally "
+            "(unset the flag), or set DERIVED_ALLOW_PROD_BACKFILL=1 only after "
+            "verifying the volume has headroom."
+        )
 
 
 def feat_dict(row, feature_cols) -> dict:
@@ -70,6 +93,7 @@ def write_derived(items, *, mode: str = "merge", label: str = "derived",
     Returns the number of rows actually written. ``DERIVED_BACKFILL_ALL=1`` in
     the environment forces a full rewrite regardless of ``recent_days``.
     """
+    _guard_prod_backfill()
     items = [(int(pid), feat) for pid, feat in items]
     candidates = len(items)
 

@@ -11,3 +11,6 @@ backfill.log
 cron.log
 nba_backfill.log
 *.log
+# backtest exports + scratch artifacts
+backtest_*.csv
+logs/
