@@ -20,6 +20,7 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 WINDOWS = [5, 10, 20]
 
@@ -322,18 +323,7 @@ def merge_features(feature_dfs: list, batch_size: int = 3000):
                 patch[c] = round(float(v), 4)
         items.append((int(row["player_game_id"]), patch))
 
-    with session_scope() as session:
-        for i in range(0, len(items), batch_size):
-            for pg_id, patch in items[i:i + batch_size]:
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:patch AS JSONB),
-                        updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"patch": json.dumps(patch), "pid": pg_id})
-            if (i // batch_size) % 10 == 0:
-                log.info("merge_progress",
-                         done=min(i + batch_size, len(items)), total=len(items))
+    write_derived(items, mode="merge", label="nba_basketball_iq")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

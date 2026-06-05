@@ -10,6 +10,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 # Stats to compute rolling features for.
 # Each player will have features for all of these — pitchers will have
@@ -136,22 +137,9 @@ def features_to_jsonb_dicts(features_df: pd.DataFrame) -> dict[int, dict]:
     return out
 
 
-def write_features_to_db(feature_map: dict[int, dict], batch_size: int = 5000):
-    """Update player_games.derived with computed features, in batches."""
-    log.info("writing_features", total=len(feature_map))
-    items = list(feature_map.items())
-    with session_scope() as session:
-        for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
-            for pg_id, feat in batch:
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = CAST(:f AS JSONB), updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"f": json.dumps(feat), "pid": pg_id})
-            if (i // batch_size) % 5 == 0:
-                log.info("write_progress", done=min(i + batch_size, len(items)),
-                         total=len(items))
+def write_features_to_db(feature_map: dict[int, dict]):
+    """Update player_games.derived with computed features (batched + resilient)."""
+    write_derived(feature_map.items(), mode="replace", label="mlb_rolling")
 
 
 def run():

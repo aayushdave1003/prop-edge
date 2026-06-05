@@ -21,6 +21,7 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 WINDOWS = [5, 10, 20]
 
@@ -177,19 +178,12 @@ def merge_features(feature_dfs: list, batch_size: int = 1000):
     log.info("merging_nhl_advanced_features", rows=len(combined))
     feat_cols = [c for c in combined.columns if c != "player_game_id"]
 
-    with session_scope() as session:
-        for i, (_, row) in enumerate(combined.iterrows()):
-            patch = {c: round(float(row[c]), 4) for c in feat_cols
-                     if not pd.isna(row[c])}
-            if patch:
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:patch AS JSONB),
-                        updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"patch": json.dumps(patch), "pid": int(row["player_game_id"])})
-            if i % 500 == 0:
-                log.info("merge_progress", done=i, total=len(combined))
+    items = []
+    for _, row in combined.iterrows():
+        patch = {c: round(float(row[c]), 4) for c in feat_cols if not pd.isna(row[c])}
+        if patch:
+            items.append((int(row["player_game_id"]), patch))
+    write_derived(items, mode="merge", label="nhl_advanced_stats")
 
 
 def run():

@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 def run():
@@ -47,20 +48,11 @@ def run():
     )
     log.info("merged", rows=len(merged))
 
-    with session_scope() as session:
-        for i, row in merged.iterrows():
-            existing = row["derived"] or {}
-            if not isinstance(existing, dict):
-                existing = json.loads(existing) if existing else {}
-            existing["team_days_rest"] = int(row["team_days_rest"]) if pd.notna(row["team_days_rest"]) else 7
-            existing["is_back_to_back"] = int(row["is_back_to_back"]) if pd.notna(row["is_back_to_back"]) else 0
-            session.execute(text("""
-                UPDATE player_games
-                SET derived = CAST(:d AS JSONB), updated_at = NOW()
-                WHERE player_game_id = :pid
-            """), {"d": json.dumps(existing), "pid": int(row["player_game_id"])})
-            if i % 5000 == 0 and i > 0:
-                log.info("write_progress", done=i, total=len(merged))
+    items = [(int(row["player_game_id"]), {
+        "team_days_rest": int(row["team_days_rest"]) if pd.notna(row["team_days_rest"]) else 7,
+        "is_back_to_back": int(row["is_back_to_back"]) if pd.notna(row["is_back_to_back"]) else 0,
+    }) for _, row in merged.iterrows()]
+    write_derived(items, mode="merge", label="nba_back_to_back")
 
     log.info("nba_back_to_back_complete", rows=len(merged))
 

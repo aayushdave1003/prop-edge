@@ -20,6 +20,7 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 def load_nba_game_rosters() -> pd.DataFrame:
@@ -164,26 +165,13 @@ def compute_absence_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def merge_into_derived(feature_df: pd.DataFrame, batch_size: int = 2000):
+def merge_into_derived(feature_df: pd.DataFrame):
     """Merge absence features into existing player_games.derived JSONB."""
-    log.info("merging_absence_features_into_derived", rows=len(feature_df))
     cols = [c for c in feature_df.columns if c != "player_game_id"]
-
-    with session_scope() as session:
-        for i in range(0, len(feature_df), batch_size):
-            batch = feature_df.iloc[i:i + batch_size]
-            for _, row in batch.iterrows():
-                patch = {c: float(row[c]) if not isinstance(row[c], int)
-                         else int(row[c]) for c in cols}
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:patch AS JSONB),
-                        updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"patch": json.dumps(patch), "pid": int(row["player_game_id"])})
-            if (i // batch_size) % 10 == 0:
-                log.info("merge_progress",
-                         done=min(i + batch_size, len(feature_df)), total=len(feature_df))
+    items = [(int(row["player_game_id"]),
+              {c: (int(row[c]) if isinstance(row[c], int) else float(row[c])) for c in cols})
+             for _, row in feature_df.iterrows()]
+    write_derived(items, mode="merge", label="nba_teammate_absence")
 
 
 def run():

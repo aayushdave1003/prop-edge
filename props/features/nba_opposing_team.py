@@ -16,6 +16,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 WINDOWS = [5, 10]
@@ -159,23 +160,9 @@ def merge_into_player_games(opp_features: pd.DataFrame, pace_features: pd.DataFr
     new_cols = [c for c in merged.columns if c.startswith("opp_last_") or c.startswith("team_last_")]
     items = []
     for _, row in merged.iterrows():
-        existing = row["derived"] or {}
-        if not isinstance(existing, dict):
-            existing = json.loads(existing) if existing else {}
-        for c in new_cols:
-            v = row[c]
-            existing[c] = 0.0 if pd.isna(v) else float(v)
-        items.append((int(row["player_game_id"]), existing))
-
-    with session_scope() as session:
-        for i, (pg_id, derived) in enumerate(items):
-            session.execute(text("""
-                UPDATE player_games
-                SET derived = CAST(:d AS JSONB), updated_at = NOW()
-                WHERE player_game_id = :pid
-            """), {"d": json.dumps(derived), "pid": pg_id})
-            if i % 5000 == 0 and i > 0:
-                log.info("write_progress", done=i, total=len(items))
+        patch = {c: (0.0 if pd.isna(row[c]) else float(row[c])) for c in new_cols}
+        items.append((int(row["player_game_id"]), patch))
+    write_derived(items, mode="merge", label="nba_opposing_team")
 
     log.info("opp_features_written", rows=len(items))
 

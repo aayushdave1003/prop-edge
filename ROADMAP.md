@@ -8,7 +8,9 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 ---
 
 ## 1. Production & Infrastructure
-- ☐ **P0** Fix `libgomp.so.1` on Railway (verify nixpacks installs `libgomp1`, or move to a Dockerfile with `apt-get install libgomp1`). NBA preds + MLB inference currently fail in prod.
+- ✅ **P0** Daily pipeline was dying on Railway connection drops during feature writes (row-by-row UPDATE of all ~28K `player_games.derived` in one ~40-min transaction over the proxy → "server closed the connection" → `pipefail` aborted before pick generation). Fixed: shared `derived_writer.py` (batched executemany, per-batch commit, retry, incremental by game_date) + TCP keepalives in `db.py`. Full backfill 40min→27s; daily writes 36K→~430 rows. *(2026-06-05)*
+- ☐ **P0** Fix `libgomp.so.1` on Railway (verify nixpacks installs `libgomp1`, or move to a Dockerfile with `apt-get install libgomp1`). NBA preds + MLB inference (in the dashboard's live-render path) currently fail in prod.
+- ☐ **P1** One-time: run a full derived backfill on prod (`DERIVED_BACKFILL_ALL=1`) to fill the 06-02/06-03 gaps, then re-run the daily pipeline for today.
 - ☐ **P0** Move game-prediction inference out of the dashboard render into the cron; dashboard reads `games.context` only. Fixes the ~30s slow tab *and* the Railway crash.
 - ☐ **P1** Replace the startup `ALTER TABLE … ADD COLUMN IF NOT EXISTS` hack in `dashboard.py` with a real migration (Alembic or versioned `sql/` migration run on deploy).
 - ☐ **P1** Health-check / alerting: Discord ping if the daily cron fails or produces 0 picks.

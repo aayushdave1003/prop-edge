@@ -15,6 +15,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 WINDOWS = [5, 10]
 
@@ -170,24 +171,9 @@ def build_batter_opposing_features(starters_with_feats: pd.DataFrame) -> dict[in
     return out
 
 
-def merge_into_derived(opp_features: dict[int, dict], batch_size: int = 5000):
+def merge_into_derived(opp_features: dict[int, dict]):
     """Merge new features into the existing derived JSONB without overwriting."""
-    log.info("merging_into_derived", total=len(opp_features))
-    items = list(opp_features.items())
-    with session_scope() as session:
-        for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
-            for pg_id, feat in batch:
-                # Use JSONB || operator to merge
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:f AS JSONB),
-                        updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"f": json.dumps(feat), "pid": pg_id})
-            if (i // batch_size) % 5 == 0:
-                log.info("merge_progress", done=min(i + batch_size, len(items)),
-                         total=len(items))
+    write_derived(opp_features.items(), mode="merge", label="mlb_opposing_pitcher")
 
 
 def run():

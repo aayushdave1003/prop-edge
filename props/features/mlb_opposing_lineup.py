@@ -13,6 +13,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 def load_team_batting_aggregates():
@@ -96,28 +97,14 @@ def attach_to_pitchers(team_rolling: pd.DataFrame):
     return joined
 
 
-def merge_into_derived(features_df: pd.DataFrame, batch_size: int = 5000):
+def merge_into_derived(features_df: pd.DataFrame):
     feature_cols = [c for c in features_df.columns if c.startswith("lineup_last_")]
-    log.info("merging", rows=len(features_df), features=len(feature_cols))
     items = []
     for _, row in features_df.iterrows():
-        feat = {}
-        for col in feature_cols:
-            v = row[col]
-            feat[col] = round(float(v), 4) if pd.notna(v) else 0
+        feat = {col: (round(float(row[col]), 4) if pd.notna(row[col]) else 0)
+                for col in feature_cols}
         items.append((int(row["player_game_id"]), feat))
-    with session_scope() as session:
-        for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
-            for pg_id, feat in batch:
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:f AS JSONB), updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"f": json.dumps(feat), "pid": pg_id})
-            if (i // batch_size) % 5 == 0:
-                log.info("merge_progress", done=min(i + batch_size, len(items)),
-                         total=len(items))
+    write_derived(items, mode="merge", label="mlb_opposing_lineup")
 
 
 def run():

@@ -23,6 +23,7 @@ from sqlalchemy import text
 from nba_api.stats.endpoints import synergyplaytypes
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 PLAY_TYPES = ["Isolation", "PRBallHandler", "SpotUp", "PostUp", "Cut"]
 SEASONS    = ["2024-25", "2025-26"]
@@ -119,29 +120,20 @@ def apply_to_derived(team_map: dict, player_map: dict):
             return "Playoffs"
         return "Regular Season"
 
-    updated = 0
-    with session_scope() as session:
-        for _, row in rows.iterrows():
-            season  = f"20{str(row['season'])[-2:]}-{int(str(row['season'])[-2:])+1:02d}" \
-                      if len(str(row['season'])) == 4 else row['season']
-            stype   = _stype_key(row.get("season_type", ""))
+    items = []
+    for _, row in rows.iterrows():
+        season  = f"20{str(row['season'])[-2:]}-{int(str(row['season'])[-2:])+1:02d}" \
+                  if len(str(row['season'])) == 4 else row['season']
+        stype   = _stype_key(row.get("season_type", ""))
 
-            patch = {}
-            tkey = (str(row["team_ext"]), season, stype)
-            patch.update(team_map.get(tkey, {}))
+        patch = {}
+        patch.update(team_map.get((str(row["team_ext"]), season, stype), {}))
+        patch.update(player_map.get((str(row["player_ext"]), season, stype), {}))
 
-            pkey = (str(row["player_ext"]), season, stype)
-            patch.update(player_map.get(pkey, {}))
+        if patch:
+            items.append((int(row["player_game_id"]), patch))
 
-            if patch:
-                session.execute(text("""
-                    UPDATE player_games
-                    SET derived = derived || CAST(:patch AS JSONB),
-                        updated_at = NOW()
-                    WHERE player_game_id = :pid
-                """), {"patch": json.dumps(patch), "pid": int(row["player_game_id"])})
-                updated += 1
-
+    updated = write_derived(items, mode="merge", label="nba_play_types")
     log.info("play_type_features_applied", updated=updated)
 
 

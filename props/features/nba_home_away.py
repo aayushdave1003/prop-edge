@@ -13,6 +13,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived, feat_dict
 
 
 STATS_TO_SPLIT = ["points", "rebounds", "assists", "threes_made", "minutes"]
@@ -76,35 +77,10 @@ def compute_splits(df):
 
 
 def write_to_derived(feature_df):
-    log.info("writing_home_away_to_derived", rows=len(feature_df))
     feature_cols = [c for c in feature_df.columns if c != "player_game_id"]
-
-    # Pull existing derived
-    with session_scope() as session:
-        existing_rows = session.execute(text("""
-            SELECT pg.player_game_id, pg.derived
-            FROM player_games pg
-            JOIN games g USING (game_id)
-            WHERE g.sport_code = 'nba'
-        """)).all()
-    existing_map = {r[0]: (r[1] or {}) for r in existing_rows}
-
-    with session_scope() as session:
-        for i, row in feature_df.iterrows():
-            pg_id = int(row["player_game_id"])
-            existing = existing_map.get(pg_id, {}).copy() if isinstance(existing_map.get(pg_id), dict) else {}
-            for c in feature_cols:
-                v = row[c]
-                existing[c] = 0.0 if pd.isna(v) else float(v)
-            session.execute(text("""
-                UPDATE player_games
-                SET derived = CAST(:d AS JSONB), updated_at = NOW()
-                WHERE player_game_id = :pid
-            """), {"d": json.dumps(existing), "pid": pg_id})
-            if i % 5000 == 0 and i > 0:
-                log.info("write_progress", done=i, total=len(feature_df))
-
-    log.info("home_away_written", rows=len(feature_df))
+    items = [(int(row["player_game_id"]), feat_dict(row, feature_cols))
+             for _, row in feature_df.iterrows()]
+    write_derived(items, mode="merge", label="nba_home_away")
 
 
 def run():

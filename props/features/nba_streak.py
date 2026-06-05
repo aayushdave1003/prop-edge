@@ -13,6 +13,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 def run():
@@ -54,23 +55,13 @@ def run():
     ).reset_index(level=0, drop=True)
     df["team_won_last_game"] = df.groupby("team_id")["team_won"].shift(1).fillna(0).astype(int)
 
-    # Write back to derived
-    log.info("writing_features", rows=len(df))
-    with session_scope() as session:
-        for i, row in df.iterrows():
-            existing = row["derived"] or {}
-            if not isinstance(existing, dict):
-                existing = json.loads(existing) if existing else {}
-            existing["min_stddev_last_10"] = float(row["min_stddev_last_10"]) if pd.notna(row["min_stddev_last_10"]) else 0.0
-            existing["team_last_5_wins"] = int(row["team_last_5_wins"]) if pd.notna(row["team_last_5_wins"]) else 0
-            existing["team_won_last_game"] = int(row["team_won_last_game"])
-            session.execute(text("""
-                UPDATE player_games SET derived = CAST(:d AS JSONB), updated_at = NOW()
-                WHERE player_game_id = :pid
-            """), {"d": json.dumps(existing), "pid": int(row["player_game_id"])})
-            if i % 5000 == 0 and i > 0:
-                log.info("progress", done=i, total=len(df))
-
+    # Write back to derived (merge keys onto the rolling base)
+    items = [(int(row["player_game_id"]), {
+        "min_stddev_last_10": float(row["min_stddev_last_10"]) if pd.notna(row["min_stddev_last_10"]) else 0.0,
+        "team_last_5_wins": int(row["team_last_5_wins"]) if pd.notna(row["team_last_5_wins"]) else 0,
+        "team_won_last_game": int(row["team_won_last_game"]),
+    }) for _, row in df.iterrows()]
+    write_derived(items, mode="merge", label="nba_streak")
     log.info("nba_streak_features_complete", rows=len(df))
 
 

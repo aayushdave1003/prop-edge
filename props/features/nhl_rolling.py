@@ -10,6 +10,7 @@ import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived, feat_dict
 
 WINDOWS = [5, 10, 20]
 
@@ -98,23 +99,11 @@ def compute_all(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def write_to_derived(feature_df: pd.DataFrame, batch_size: int = 5000):
-    log.info("writing_nhl_derived", rows=len(feature_df))
+def write_to_derived(feature_df: pd.DataFrame):
     cols = [c for c in feature_df.columns if c != "player_game_id"]
-    items = [(int(row["player_game_id"]),
-              {c: (0 if pd.isna(row[c]) else
-                   (int(row[c]) if isinstance(row[c], np.integer) else float(row[c])))
-               for c in cols})
+    items = [(int(row["player_game_id"]), feat_dict(row, cols))
              for _, row in feature_df.iterrows()]
-    with session_scope() as session:
-        for i in range(0, len(items), batch_size):
-            for pg_id, feat in items[i:i + batch_size]:
-                session.execute(text("""
-                    UPDATE player_games SET derived=CAST(:f AS JSONB), updated_at=NOW()
-                    WHERE player_game_id=:pid
-                """), {"f": json.dumps(feat), "pid": pg_id})
-            if (i // batch_size) % 5 == 0:
-                log.info("write_progress", done=min(i + batch_size, len(items)), total=len(items))
+    write_derived(items, mode="replace", label="nhl_rolling")
 
 
 def run():

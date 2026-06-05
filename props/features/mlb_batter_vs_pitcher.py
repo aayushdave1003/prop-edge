@@ -20,6 +20,7 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.features.derived_writer import write_derived
 
 
 def run():
@@ -75,21 +76,11 @@ def run():
         "bvp_career_bb": "bvp_career_walks",
         "bvp_career_tb": "bvp_career_total_bases",
     }
-    with session_scope() as session:
-        for i, row in df.iterrows():
-            existing = row["derived"] or {}
-            if not isinstance(existing, dict):
-                existing = json.loads(existing) if existing else {}
-            for src, dst in name_map.items():
-                v = row[src]
-                existing[dst] = int(v) if pd.notna(v) else 0
-            session.execute(text("""
-                UPDATE player_games
-                SET derived = CAST(:d AS JSONB), updated_at = NOW()
-                WHERE player_game_id = :pid
-            """), {"d": json.dumps(existing), "pid": int(row["player_game_id"])})
-            if i % 5000 == 0 and i > 0:
-                log.info("write_progress", done=i, total=len(df))
+    items = [(int(row["player_game_id"]),
+              {dst: (int(row[src]) if pd.notna(row[src]) else 0)
+               for src, dst in name_map.items()})
+             for _, row in df.iterrows()]
+    write_derived(items, mode="merge", label="mlb_batter_vs_pitcher")
 
     log.info("mlb_batter_vs_pitcher_complete", rows=len(df))
 
