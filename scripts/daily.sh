@@ -143,6 +143,10 @@ if [ "$(date +%u)" = "1" ]; then
     python -m props.picks.backtest --sport mlb --since "$SINCE_90" || true
 fi
 
+# ── 8a. Retention prune (E2) — keep the volume from refilling ────────────────
+echo "--- Retention prune (snapshots > 45d) ---"
+python -m props.maintenance.prune --days 45
+
 # ── 8b. Health check + alert (E11) ───────────────────────────────────────────
 # Report whether picks actually landed and ping Discord on trouble, so a silent
 # outage (DB down, 0 picks, failed steps) surfaces immediately instead of hours
