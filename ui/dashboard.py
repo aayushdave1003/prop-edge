@@ -15,6 +15,12 @@ from props.maintenance.migrate import run_migrations
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
 
+# Confidence cutoff for "recommended" picks. Backtest on 401 settled picks:
+# model_prob >= 0.70 hit 72.3% (vs 60.8% logging everything) — the band below
+# 0.70 is a coin-flip trap. We log everything for tracking, but surface this
+# tier by default and build the parlay slate only from it.
+REC_MIN_PROB = 0.70
+
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
                    page_icon="⚡")
@@ -722,12 +728,18 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
 
 
 def build_slate_card(picks_df: pd.DataFrame) -> str:
-    """Build the recommended parlay slate card."""
+    """Build the recommended parlay slate card (recommended-tier picks only)."""
     if picks_df.empty:
         return ""
 
+    # Only build the parlay from the recommended confidence tier — the backtest
+    # shows legs below this are coin-flips that tank the joint probability.
+    qual = picks_df[picks_df["model_prob"] >= REC_MIN_PROB]
+    if qual.empty:
+        return ""
+
     # Top 4 by edge, one leg per player (no correlated double-dip)
-    top = (picks_df
+    top = (qual
            .drop_duplicates(subset=["player_id"], keep="first")
            .head(4))
     legs_html = ""
@@ -790,11 +802,11 @@ losses_7  = (_settled_7["leg_result"] == "loss").sum()
 win_pct_7 = f"{wins_7/(wins_7+losses_7):.0%}" if (wins_7 + losses_7) else "—"
 _valid_edges = df['market_edge'].dropna() if len(df) else pd.Series(dtype=float)
 avg_edge  = f"{_valid_edges.mean():.1%}" if len(_valid_edges) else "—"
-above_be  = (df["model_prob"] >= 0.577).sum()
+rec_count = (df["model_prob"] >= REC_MIN_PROB).sum() if len(df) else 0
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Today's Picks", len(df))
-c2.metric("Above Breakeven", above_be)
+c2.metric(f"⭐ Recommended (≥{REC_MIN_PROB:.0%})", rec_count)
 c3.metric("Avg Edge", avg_edge)
 c4.metric("7-Day W/L", f"{wins_7}W – {losses_7}L")
 c5.metric("7-Day Win Rate", win_pct_7)
@@ -824,11 +836,21 @@ with tab_picks:
             dir_opts   = ["over", "under"]
             dir_sel    = st.multiselect("Direction", dir_opts, default=dir_opts, key="di")
 
+        rec_only = st.toggle(
+            f"⭐ Recommended only (model confidence ≥ {REC_MIN_PROB:.0%})",
+            value=True, key="rec",
+            help="Backtest: ≥70% confidence picks hit 72% vs 61% for all picks.")
+
         filtered = df[
             df["sport_code"].isin(sport_sel) &
             df["stat_type"].isin(stat_sel) &
             df["direction"].isin(dir_sel)
         ].reset_index(drop=True)
+        if rec_only:
+            filtered = filtered[filtered["model_prob"] >= REC_MIN_PROB].reset_index(drop=True)
+            if filtered.empty:
+                st.info(f"No picks at ≥{REC_MIN_PROB:.0%} confidence today. "
+                        "Toggle off to see all picks.")
 
         # Slate card — top picks across all sports by edge
         if not filtered.empty:
@@ -1068,6 +1090,17 @@ with tab_perf:
                   delta_color="normal" if win_pct >= be else "inverse")
         roi_2pick = win_pct**2 * 3 - 1
         c5.metric("2-pick ROI (sim)", f"{roi_2pick:+.1%}")
+
+        # ── Recommended-tier vs all (proves the confidence cutoff) ────────────
+        rec = all_picks[(all_picks["model_prob"] >= REC_MIN_PROB)
+                        & (all_picks["leg_result"].isin(["win", "loss"]))]
+        if len(rec) >= 10:
+            rec_wr = (rec["leg_result"] == "win").mean()
+            st.success(
+                f"⭐ **Recommended tier (confidence ≥ {REC_MIN_PROB:.0%}):** "
+                f"**{rec_wr:.1%}** win rate over {len(rec)} settled picks "
+                f"(vs {win_pct:.1%} for all) · 2-pick ROI {rec_wr**2*3-1:+.0%}. "
+                "This is the tier surfaced by default on Today's Picks.")
 
         # ── Model backtest history ────────────────────────────────────────────
         bt_trend = load_backtest_trend()
