@@ -512,7 +512,7 @@ def load_game_predictions_data():
         FROM games g
         JOIN teams ht ON ht.team_id = g.home_team_id
         JOIN teams at ON at.team_id = g.away_team_id
-        WHERE g.game_date = CURRENT_DATE
+        WHERE g.game_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
           AND g.sport_code = 'nba'
           AND g.context ? 'home_win_prob'
         ORDER BY g.game_id
@@ -979,8 +979,12 @@ def _render_market_section(label: str, emoji: str, sport_path: str, date_str: st
 
 
 with tab_game:
-    from datetime import date as _date
-    _today = _date.today()
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    # Use the Pacific date, not the server's (UTC on Railway) date — otherwise
+    # the whole tab goes blank every evening once UTC rolls to tomorrow while
+    # games are still stored under today's US date.
+    _today = _dt.now(ZoneInfo("America/Los_Angeles")).date()
 
     # ── NBA ───────────────────────────────────────────────────────────────────
     st.markdown("### 🏀 NBA")
