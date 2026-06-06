@@ -23,8 +23,9 @@ if [ -f ".env" ]; then
     set +a
 fi
 
-# Activate venv
-source .venv/bin/activate
+# Activate venv if present (local cron). On CI (GitHub Actions) there's no venv;
+# deps are installed into the system Python instead.
+[ -d .venv ] && source .venv/bin/activate || true
 
 # Log everything to a dated file
 LOG_DIR="logs"

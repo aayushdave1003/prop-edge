@@ -1,0 +1,40 @@
+name: daily-pipeline
+
+# Always-on replacement for the local Mac cron: generates picks daily even when
+# the laptop is off. Runs the same scripts/daily.sh against the Railway DB.
+on:
+  schedule:
+    # 14:00 UTC = 7:00 AM PDT (≈6:00 AM PST in winter). GitHub cron is UTC.
+    - cron: "0 14 * * *"
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: System deps (libgomp for LightGBM)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Run daily pipeline
+        run: bash scripts/daily.sh
