@@ -19,6 +19,14 @@ LEAGUE_TO_SPORT = {
     # "163": "nfl",  # NFLSZN — season-long, enable when game props arrive
 }
 
+# PrizePicks team abbreviations that differ from ours, per sport. NBA/NHL mostly
+# match already; MLB abbreviations are ambiguous on both sides so we don't alias
+# them — find_real_game falls back safely when a match isn't unambiguous.
+PP_ABBR_ALIAS = {
+    "wnba": {"LAS": "LA", "NYL": "NY", "PDX": "POR", "WAS": "WSH",
+             "CONN": "CON", "LVA": "LV", "GSV": "GS"},
+}
+
 # Map PrizePicks stat_type names to our canonical stat_type strings.
 # Keep this conservative — only stats we plan to model.
 STAT_TYPE_MAP = {
@@ -275,15 +283,15 @@ def run():
                 skipped += 1
                 continue
 
-            # game_id resolution: we punt for now (NULL not allowed by schema, so we'd
-            # need to either fix the schema or resolve here). Let's check.
-            # The schema has game_id NOT NULL. We need a game row. Two options:
-            # 1) Resolve to our existing game row (requires ID mapping)
-            # 2) Insert a placeholder game row keyed by PP game_id
-            # Going with option 2 for now: create a placeholder game.
-            game_id = ensure_pp_game(
-                session, rec["sport_code"], rec["game_external_id"], rec["start_time"]
+            # Resolve to the player's REAL game (team + date) when we can; only
+            # fall back to a pp_ placeholder when the match isn't unambiguous.
+            game_id = find_real_game(
+                session, rec["sport_code"], rec["team_abbr"], rec["start_time"]
             )
+            if game_id is None:
+                game_id = ensure_pp_game(
+                    session, rec["sport_code"], rec["game_external_id"], rec["start_time"]
+                )
             if game_id is None:
                 skipped += 1
                 continue
@@ -309,6 +317,40 @@ def run():
 
     log.info("prizepicks_scrape_complete", inserted=inserted, skipped=skipped,
              total=len(projections))
+
+
+def find_real_game(session, sport_code, team_abbr, start_time) -> int | None:
+    """Resolve a line to a REAL (non-placeholder) game by team + date.
+
+    Conservative on purpose: only returns a game when the team resolves to
+    exactly one team_id AND exactly one real game on that date involves it. So
+    ambiguous abbreviations (e.g. MLB's truncated city codes) safely return None
+    and fall back to the placeholder + the settle-time resolver. This is what
+    lets WNBA/NBA/NHL picks attach to real matchups instead of 'PPL'.
+    """
+    if not team_abbr or not start_time:
+        return None
+    abbr = PP_ABBR_ALIAS.get(sport_code, {}).get(team_abbr.upper(), team_abbr.upper())
+    try:
+        game_date = datetime.fromisoformat(start_time).date()
+    except (ValueError, TypeError):
+        try:
+            game_date = datetime.strptime(start_time[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return None
+    teams = session.execute(text(
+        "SELECT team_id FROM teams WHERE sport_code=:s AND UPPER(abbreviation)=:a"
+    ), {"s": sport_code, "a": abbr}).all()
+    if len(teams) != 1:
+        return None
+    tid = teams[0][0]
+    games = session.execute(text("""
+        SELECT game_id FROM games
+        WHERE sport_code=:s AND external_id NOT LIKE 'pp_%'
+          AND game_date BETWEEN :d - INTERVAL '1 day' AND :d + INTERVAL '1 day'
+          AND (home_team_id=:t OR away_team_id=:t)
+    """), {"s": sport_code, "d": game_date, "t": tid}).all()
+    return games[0][0] if len(games) == 1 else None
 
 
 def ensure_pp_game(session, sport_code, pp_game_id, start_time) -> int | None:
