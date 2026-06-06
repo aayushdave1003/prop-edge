@@ -248,6 +248,17 @@ p, label, div { color:var(--txt2); }
 [data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 div[data-baseweb="select"] > div { background:rgba(255,255,255,0.03); border-color:var(--line); border-radius:10px; }
 hr { border-color:var(--line) !important; }
+
+/* Mobile / narrow screens: stack columns full-width instead of cramming 3-up */
+@media (max-width: 640px) {
+    .block-container { padding-left:0.6rem !important; padding-right:0.6rem !important; }
+    [data-testid="stHorizontalBlock"] { flex-wrap:wrap !important; gap:8px !important; }
+    [data-testid="stHorizontalBlock"] > [data-testid="column"],
+    [data-testid="stColumn"] { flex:1 1 100% !important; min-width:100% !important; }
+    [data-testid="stMetricValue"] { font-size:1.3rem !important; }
+    .pick-card { min-height:0; }
+    .stTabs [data-baseweb="tab"] { padding:8px 12px; font-size:0.82rem; }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -553,6 +564,23 @@ def load_game_predictions_data():
     return pd.read_sql(text(sql), engine)
 
 
+@st.cache_data(ttl=60)
+def load_mlb_game_context() -> dict:
+    """Today's MLB game-winner predictions from games.context (persisted by the
+    cron). Lets the dashboard skip live inference. {game_id: {hwp, margin}}."""
+    df = pd.read_sql(text("""
+        SELECT game_id,
+               (context->>'home_win_prob')::float  AS hwp,
+               (context->>'implied_margin')::float AS margin
+        FROM games
+        WHERE sport_code = 'mlb'
+          AND game_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+          AND context ? 'home_win_prob'
+    """), engine)
+    return {int(r.game_id): {"hwp": r.hwp, "margin": r.margin}
+            for r in df.itertuples()}
+
+
 def _american_to_prob(odds) -> float | None:
     try:
         o = float(odds)
@@ -698,9 +726,19 @@ def live_value(sport: str, stat_type: str, raw: dict):
         return {"goals": g("G"), "assists": g("A"), "saves": g("SV"),
                 "shots": g("SOG")}.get(stat_type)
     if sport == "mlb":
-        return {"hits": g("H"), "home_runs": g("HR"), "rbis": g("RBI"),
-                "total_bases": g("TB"), "strikeouts_pitcher": g("K"),
-                "runs": g("R")}.get(stat_type)
+        # ESPN splits batting/pitching groups; be role-aware so a pitcher's
+        # "hits allowed" (K/H in the pitching group) never shows as a batter stat.
+        is_batter = "AB" in raw
+        is_pitcher = "IP" in raw
+        if stat_type == "strikeouts_pitcher":
+            return g("K") if is_pitcher else None
+        if stat_type in ("hits", "home_runs", "rbis", "runs"):
+            if not is_batter:
+                return None
+            return {"hits": g("H"), "home_runs": g("HR"),
+                    "rbis": g("RBI"), "runs": g("R")}.get(stat_type)
+        # total_bases isn't in ESPN's scoreboard boxscore — no live value
+        return None
     return None
 
 
@@ -1218,7 +1256,18 @@ with tab_game:
             )).all()
         mlb_names = {r[0]: r[1] for r in trows}
 
-        mlb_preds = predict_mlb_games(mlb_games_valid, _today) if mlb_games_valid else []
+        # Prefer cached predictions from games.context (the cron persists them) —
+        # avoids slow live LightGBM inference on every page load. Pitchers still
+        # come from the (cheap) schedule fetch. Fall back to live only if the
+        # context is missing for some game.
+        mlb_ctx = load_mlb_game_context()
+        if mlb_games_valid and all(g["game_id"] in mlb_ctx for g in mlb_games_valid):
+            mlb_preds = [{**g,
+                          "home_win_prob": mlb_ctx[g["game_id"]]["hwp"],
+                          "implied_margin": mlb_ctx[g["game_id"]]["margin"]}
+                         for g in mlb_games_valid]
+        else:
+            mlb_preds = predict_mlb_games(mlb_games_valid, _today) if mlb_games_valid else []
     except Exception as e:
         _prediction_notice("MLB", e)
         mlb_preds = []
