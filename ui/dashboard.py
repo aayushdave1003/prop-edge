@@ -412,6 +412,10 @@ def load_todays_picks():
         LEFT JOIN teams at ON at.team_id = g.away_team_id
         WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
               = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+          -- Only games actually happening today: excludes stale picks logged
+          -- against already-played games (e.g. unresolved PPL placeholders from
+          -- a prior day) and early picks for tomorrow.
+          AND g.game_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
           AND (pk.leg_result IS NULL OR pk.leg_result != 'void')
         ORDER BY COALESCE(pk.market_edge, pk.edge) DESC
     """
