@@ -845,6 +845,36 @@ def build_nba_player_feature_rows(games, target_date, season, feature_keys,
     return pd.DataFrame(rows)
 
 
+def persist_game_context(preds: list[dict]) -> int:
+    """Write game-winner predictions into games.context (E9).
+
+    The cron computes these once; the dashboard then just reads games.context
+    instead of running live LightGBM inference on every page load (slow, and the
+    reason the deployed tab hit the libgomp error). Merges so existing context
+    keys are preserved.
+    """
+    if not preds:
+        return 0
+    keys = ("home_win_prob", "implied_margin", "market_spread",
+            "market_total", "market_edge")
+    n = 0
+    with session_scope() as s:
+        for p in preds:
+            gid = p.get("game_id")
+            if not gid:
+                continue
+            ctx = {k: p[k] for k in keys if p.get(k) is not None}
+            if not ctx:
+                continue
+            s.execute(text(
+                "UPDATE games SET context = COALESCE(context, '{}'::jsonb) "
+                "|| CAST(:c AS JSONB) WHERE game_id = :g"),
+                {"c": json.dumps(ctx), "g": int(gid)})
+            n += 1
+    log.info("game_context_persisted", rows=n)
+    return n
+
+
 def main(target_date: date = None):
     import argparse
     if target_date is None:
@@ -871,6 +901,7 @@ def main(target_date: date = None):
         mlb_team_names = {r[0]: r[1] for r in mlb_team_rows}
         mlb_preds = predict_mlb_games(mlb_games_with_ids, today)
         print_mlb_game_predictions(mlb_preds, mlb_team_names)
+        persist_game_context(mlb_preds)
 
     nba_games = None  # lazy fetch
     nba_game_ctx_map = {}
@@ -898,6 +929,7 @@ def main(target_date: date = None):
                 team_names = {r[0]: r[1] for r in team_rows}
                 game_preds = predict_games(nba_games, today, nba_game_ctx_map)
                 print_game_predictions(game_preds, team_names)
+                persist_game_context(game_preds)
                 nba_injury_flags = detect_injury_expansion(nba_games, today)
             features = build_nba_player_feature_rows(nba_games, today, season,
                                                       meta["feature_keys"],
