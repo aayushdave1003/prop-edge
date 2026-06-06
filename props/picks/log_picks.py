@@ -1,10 +1,12 @@
 """Generate today's picks across all models and log them to the picks table."""
 import json
+import time
 import requests
 from datetime import date
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
@@ -145,7 +147,22 @@ def main():
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
     run_migrations()
-    edges = predict_main(target_date=target_date)
+    # Predict reads are heavy and run against the small remote Railway instance,
+    # which can transiently drop the connection under load (E10). Retry the whole
+    # predict step on OperationalError — a re-run reliably succeeds — so a daily
+    # cron run self-heals instead of producing 0 picks.
+    edges = None
+    for _attempt in range(3):
+        try:
+            edges = predict_main(target_date=target_date)
+            break
+        except OperationalError as e:
+            if _attempt == 2:
+                raise
+            wait = 15 * (_attempt + 1)
+            log.warning("predict_retry", attempt=_attempt + 1, wait=wait,
+                        error=str(e)[:120])
+            time.sleep(wait)
     if edges is None or edges.empty:
         log.warning("no_edges_to_log")
         return

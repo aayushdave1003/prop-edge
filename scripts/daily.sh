@@ -124,9 +124,12 @@ echo "--- Settle yesterday's picks ---"
 python -m props.picks.settle_picks
 
 # ── 6. Generate + log today's picks ─────────────────────────────────────────
+# log_picks runs predict internally (which also persists game predictions to
+# games.context) and retries on transient connection drops, so we DON'T run a
+# separate predict_today pass — that just doubled the load on the small Railway
+# instance and the drop risk (E10).
 echo "--- Generate and log today's picks ---"
-python -m props.picks.predict_today --date "$TODAY"
-python -m props.picks.log_picks
+python -m props.picks.log_picks --date "$TODAY"
 
 echo "--- Confirm MLB starters (morning check) ---"
 python -m props.picks.confirm_starters --date "$TODAY" || true
