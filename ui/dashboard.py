@@ -615,9 +615,125 @@ def load_market_games(sport_path: str, date_str: str) -> list[dict]:
     return out
 
 
+# ── Live in-game tracker ──────────────────────────────────────────────────────
+
+ESPN_LIVE_PATH = {"nba": "basketball/nba", "wnba": "basketball/wnba",
+                  "nhl": "hockey/nhl", "mlb": "baseball/mlb"}
+
+
+def _norm_name(name: str) -> str:
+    import unicodedata, re
+    n = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z]", "", n)
+
+
+def _statnum(x):
+    """Parse an ESPN stat cell: '14' -> 14, '2-5' (3PT made-att) -> 2 (made)."""
+    try:
+        s = str(x).strip()
+        return float(s.split("-")[0]) if "-" in s else float(s)
+    except (TypeError, ValueError):
+        return None
+
+
+@st.cache_data(ttl=30)
+def load_live_stats(sport: str) -> dict:
+    """Live in-game player stats from ESPN for games currently in progress.
+
+    Returns {normalized_player_name: {"raw": {ESPN_STAT: value}, "status": "Q4 6:23"}}.
+    Only includes games in the 'in' (live) state. 30s cache.
+    """
+    from curl_cffi import requests as cc
+    path = ESPN_LIVE_PATH.get(sport)
+    if not path:
+        return {}
+    try:
+        sb = cc.get(f"https://site.api.espn.com/apis/site/v2/sports/{path}/scoreboard",
+                    impersonate="chrome120", timeout=12).json()
+    except Exception:
+        return {}
+    out: dict = {}
+    for ev in sb.get("events", []):
+        comp = (ev.get("competitions") or [{}])[0]
+        stt = comp.get("status", {}).get("type", {})
+        if stt.get("state") != "in":
+            continue
+        status_text = stt.get("shortDetail") or stt.get("detail") or "LIVE"
+        try:
+            summ = cc.get(f"https://site.api.espn.com/apis/site/v2/sports/{path}/summary",
+                          params={"event": ev["id"]}, impersonate="chrome120", timeout=12).json()
+        except Exception:
+            continue
+        for team in summ.get("boxscore", {}).get("players", []):
+            for grp in team.get("statistics", []):
+                names = [n.upper() for n in grp.get("names", [])]
+                for a in grp.get("athletes", []):
+                    nm = _norm_name(a.get("athlete", {}).get("displayName", ""))
+                    if not nm:
+                        continue
+                    raw = dict(zip(names, a.get("stats", [])))
+                    # merge (a player may appear in batting+pitching groups)
+                    out.setdefault(nm, {"raw": {}, "status": status_text})
+                    out[nm]["raw"].update(raw)
+    return out
+
+
+def live_value(sport: str, stat_type: str, raw: dict):
+    """Resolve our stat_type to a live value from ESPN's raw stat cells."""
+    g = lambda k: _statnum(raw.get(k))
+    def _sum(*xs):
+        vs = [x for x in xs if x is not None]
+        return sum(vs) if vs else None
+    if sport in ("nba", "wnba"):
+        P, R, A = g("PTS"), g("REB"), g("AST")
+        m = {"points": P, "rebounds": R, "assists": A,
+             "steals": g("STL"), "blocks": g("BLK"), "turnovers": g("TO"),
+             "off_rebounds": g("OREB"), "def_rebounds": g("DREB"),
+             "threes_made": g("3PT"),
+             "pts_rebs_asts": _sum(P, R, A), "pts_rebs": _sum(P, R),
+             "pts_asts": _sum(P, A), "rebs_asts": _sum(R, A),
+             "blocks_steals": _sum(g("BLK"), g("STL"))}
+        return m.get(stat_type)
+    if sport == "nhl":
+        return {"goals": g("G"), "assists": g("A"), "saves": g("SV"),
+                "shots": g("SOG")}.get(stat_type)
+    if sport == "mlb":
+        return {"hits": g("H"), "home_runs": g("HR"), "rbis": g("RBI"),
+                "total_bases": g("TB"), "strikeouts_pitcher": g("K"),
+                "runs": g("R")}.get(stat_type)
+    return None
+
+
+def live_row_html(sport: str, stat_type: str, line: float, direction: str, live: dict) -> str:
+    """A '🔴 LIVE' progress row for a pick whose game is in progress."""
+    cur = live_value(sport, stat_type, live.get("raw", {}))
+    if cur is None:
+        return ""
+    status = live.get("status", "LIVE")
+    pct = min(100, max(0, (cur / line * 100) if line else 0))
+    if direction == "over":
+        cleared = cur >= line
+        color = "#2ee6a6" if cleared else "#ffcf5c"
+        txt = (f"✅ HIT {cur:g}/{line:g}" if cleared
+               else f"{cur:g}/{line:g} · needs {line-cur:g}+")
+    else:  # under
+        safe = cur < line
+        color = "#2ee6a6" if safe else "#ff5d6c"
+        txt = (f"{cur:g}/{line:g} · {line-cur:g} cushion" if safe
+               else f"❌ BUSTED {cur:g}/{line:g}")
+    return f"""
+<div class="prob-row" style="margin-top:8px">
+  <span class="prob-label" style="color:#ff5d6c">🔴 LIVE · {status}</span>
+  <span class="prob-value" style="color:{color}">{txt}</span>
+</div>
+<div class="edge-bar-bg" style="margin-top:4px">
+  <div class="edge-bar-fill" style="width:{pct:.0f}%;background:{color};box-shadow:0 0 10px {color}"></div>
+</div>"""
+
+
 # ── Pick card builder ─────────────────────────────────────────────────────────
 
-def build_pick_card(row, form_df: pd.DataFrame) -> str:
+def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     sport   = row["sport_code"]
     photo   = player_photo_url(row.get("player_ext_id", ""), sport)
     logo    = team_logo_url(row.get("team_ext_id", ""), sport)
@@ -730,6 +846,9 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
             f'</span></div>'
         )
 
+    # Live in-game progress (only when the game is in progress)
+    live_html = live_row_html(sport, row["stat_type"], line, direction, live) if live else ""
+
     return _html(f"""
 <div class="pick-card">
   <div class="card-banner">
@@ -743,6 +862,7 @@ def build_pick_card(row, form_df: pd.DataFrame) -> str:
       <span class="line-value">{line:g}</span>
       <span class="badge {badge_cls}">{badge_text}</span>
     </div>
+    {live_html}
     <div class="prob-row">
       <span class="prob-label">Model confidence</span>
       <span class="prob-value">{prob:.0%}</span>
@@ -895,19 +1015,41 @@ with tab_picks:
             pids = tuple(grp["player_id"].astype(int).unique())
             form_cache[(sport, stat)] = load_player_form(pids, stat, sport)
 
-        # Card grid (3 per row)
-        cols_per_row = 3
-        rows = [filtered.iloc[i:i+cols_per_row]
-                for i in range(0, len(filtered), cols_per_row)]
+        # Live in-game stats (ESPN) for the sports on the board, keyed by player
+        def _live_lookup():
+            lk = {}
+            for sp in filtered["sport_code"].unique():
+                for nm, data in load_live_stats(sp).items():
+                    lk[(sp, nm)] = data
+            return lk
 
-        for row_picks in rows:
-            cols = st.columns(cols_per_row)
-            for col, (_, pick) in zip(cols, row_picks.iterrows()):
-                sport  = pick["sport_code"]
-                stat   = pick["stat_type"]
-                fdf    = form_cache.get((sport, stat), pd.DataFrame())
-                with col:
-                    st.markdown(build_pick_card(pick, fdf), unsafe_allow_html=True)
+        any_live = bool(_live_lookup())
+        if any_live:
+            st.markdown(
+                '<div style="color:#ff5d6c;font-weight:700;margin:4px 0 10px">'
+                '🔴 LIVE games in progress — tracking picks in real time '
+                '(auto-refreshes every 45s)</div>', unsafe_allow_html=True)
+
+        # Card grid (3 per row) — wrapped in a fragment that re-fetches live
+        # stats every 45s when games are on (no full-page reload).
+        @st.fragment(run_every=("45s" if any_live else None))
+        def _render_cards():
+            live = _live_lookup() if any_live else {}
+            cols_per_row = 3
+            rows = [filtered.iloc[i:i+cols_per_row]
+                    for i in range(0, len(filtered), cols_per_row)]
+            for row_picks in rows:
+                cols = st.columns(cols_per_row)
+                for col, (_, pick) in zip(cols, row_picks.iterrows()):
+                    sport = pick["sport_code"]
+                    stat  = pick["stat_type"]
+                    fdf   = form_cache.get((sport, stat), pd.DataFrame())
+                    lv    = live.get((sport, _norm_name(pick["player"])))
+                    with col:
+                        st.markdown(build_pick_card(pick, fdf, lv),
+                                    unsafe_allow_html=True)
+
+        _render_cards()
 
 
 # ══ TAB 2: Game Predictions ══════════════════════════════════════════════════
