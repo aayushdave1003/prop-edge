@@ -562,6 +562,69 @@ def resolve_nba_external_to_internal_ids(games):
     return resolved
 
 
+# ESPN uses slightly different NBA team abbreviations than we store.
+ESPN_NBA_ABBR = {"GS": "GSW", "NO": "NOP", "NY": "NYK", "SA": "SAS",
+                 "UTAH": "UTA", "WSH": "WAS"}
+
+
+def fetch_nba_schedule_espn(target_date):
+    """Datacenter-friendly NBA schedule via ESPN (stats.nba.com blocks cloud IPs).
+
+    Resolves ESPN team abbreviations to our team_ids and find-or-creates the
+    game row, returning dicts shaped like resolve_nba_external_to_internal_ids
+    output (game_id, home_team_id, away_team_id) so the predict path is identical.
+    """
+    from curl_cffi import requests as cc
+    ds = target_date.strftime("%Y%m%d")
+    try:
+        data = cc.get("https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+                      params={"dates": ds, "limit": 30}, impersonate="chrome120", timeout=15).json()
+    except Exception as e:
+        log.warning("espn_nba_schedule_failed", error=str(e)[:120])
+        return []
+    season = str(target_date.year if target_date.month >= 10 else target_date.year - 1)
+    games = []
+    with session_scope() as s:
+        abbr_map = {r[0].upper(): r[1] for r in s.execute(text(
+            "SELECT abbreviation, team_id FROM teams WHERE sport_code='nba'")).all()}
+        for ev in data.get("events", []):
+            comp = (ev.get("competitions") or [{}])[0]
+            cs = comp.get("competitors", [])
+            h = next((c for c in cs if c.get("homeAway") == "home"), None)
+            a = next((c for c in cs if c.get("homeAway") == "away"), None)
+            if not h or not a:
+                continue
+            ha = h.get("team", {}).get("abbreviation", "").upper()
+            aa = a.get("team", {}).get("abbreviation", "").upper()
+            htid = abbr_map.get(ESPN_NBA_ABBR.get(ha, ha))
+            atid = abbr_map.get(ESPN_NBA_ABBR.get(aa, aa))
+            if not htid or not atid:
+                log.warning("espn_nba_team_unmatched", home=ha, away=aa)
+                continue
+            # Find-or-create by (date, teams) to avoid duplicate rows.
+            row = s.execute(text("""
+                SELECT game_id, external_id FROM games
+                WHERE sport_code='nba' AND game_date=:d
+                  AND home_team_id=:h AND away_team_id=:a
+            """), {"d": target_date, "h": htid, "a": atid}).first()
+            if row:
+                gid = row[0]
+            else:
+                gid = s.execute(text("""
+                    INSERT INTO games (sport_code, external_id, game_date, season,
+                        season_type, home_team_id, away_team_id, status)
+                    VALUES ('nba', :ext, :d, :season, 'playoffs', :h, :a, 'scheduled')
+                    ON CONFLICT (sport_code, external_id) DO UPDATE SET status=EXCLUDED.status
+                    RETURNING game_id
+                """), {"ext": f"espn_{ev['id']}", "d": target_date,
+                       "season": season, "h": htid, "a": atid}).first()[0]
+            games.append({"external_id": f"espn_{ev['id']}", "home_team_ext": None,
+                          "away_team_ext": None, "game_id": gid,
+                          "home_team_id": htid, "away_team_id": atid})
+    log.info("espn_nba_schedule", games=len(games))
+    return games
+
+
 def detect_injury_expansion(nba_games: list, target_date) -> dict:
     """Return {player_id: injured_teammate_avg_min} for players whose key teammate is out.
 
@@ -937,6 +1000,10 @@ def main(target_date: date = None):
                     nba_raw = fetch_nba_schedule(today)
                     log.info("nba_scheduled_games", n=len(nba_raw))
                     nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+                    # stats.nba.com blocks datacenter IPs (GitHub Actions) — fall
+                    # back to ESPN so NBA picks still generate when it times out.
+                    if not nba_games:
+                        nba_games = fetch_nba_schedule_espn(today)
                     # Game context + winner predictions up front
                     espn_raw = fetch_nba_game_context(today)
                     nba_game_ctx_map = map_context_to_game_ids(espn_raw, nba_games)
