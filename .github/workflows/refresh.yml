@@ -1,0 +1,41 @@
+name: line-refresh
+
+# Intraday line + injury refreshes (lightweight — no model inference). Moves the
+# last Mac-dependent jobs to GitHub Actions for a fully laptop-free setup.
+# Times are UTC; ~PDT shown. (GitHub cron doesn't follow DST — ~1h off in winter.)
+on:
+  schedule:
+    - cron: "0 17 * * *"   # ~10 AM PDT — mid-morning lines
+    - cron: "0 23 * * *"   # ~4 PM PDT  — afternoon lines + injuries + starters
+    - cron: "0 2 * * *"    # ~7 PM PDT  — evening pre-game refresh
+  workflow_dispatch: {}
+
+concurrency:
+  group: line-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - run: pip install -r requirements.txt
+      - name: Refresh PrizePicks lines + injuries + starters
+        run: |
+          for sport in nba mlb wnba nhl; do
+            python -m props.ingest.prizepicks --sport "$sport" || echo "WARN: $sport lines failed"
+          done
+          python -m props.ingest.injuries || echo "WARN: injuries failed"
+          python -m props.picks.confirm_starters || echo "WARN: confirm_starters failed"
