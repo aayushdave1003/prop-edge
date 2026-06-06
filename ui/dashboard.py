@@ -317,6 +317,39 @@ def _html(s: str) -> str:
     return "\n".join(ln.strip() for ln in s.splitlines() if ln.strip())
 
 
+def simulate_bankroll(picks_df: pd.DataFrame):
+    """Flat 1-unit paper P&L over settled picks, chronological.
+
+    Each leg risks 1 unit and pays the per-leg equivalent of a 2-pick 3x parlay
+    (decimal √3 → +0.732u on a win, -1u on a loss, 0 on a push). Flat staking
+    (not Kelly) keeps the curve honest — no compounding distortion. Returns
+    (daily cumulative-P&L curve, metrics).
+    """
+    import math
+    WIN_PL = math.sqrt(3.0) - 1.0       # ≈ +0.732u per winning leg
+    d = (picks_df[picks_df["leg_result"].isin(["win", "loss", "push"])]
+         .sort_values(["pick_date", "pick_id"]))
+    cum = peak = 0.0
+    max_dd = 0.0
+    wins = losses = 0
+    rows = []
+    for _, r in d.iterrows():
+        res = r["leg_result"]
+        if res == "win":
+            cum += WIN_PL; wins += 1
+        elif res == "loss":
+            cum -= 1.0; losses += 1
+        peak = max(peak, cum); max_dd = max(max_dd, peak - cum)
+        rows.append({"date": pd.to_datetime(r["pick_date"]), "pnl": cum})
+    if not rows or (wins + losses) == 0:
+        return pd.DataFrame(), {}
+    curve = pd.DataFrame(rows).groupby("date", as_index=True)["pnl"].last()
+    n = wins + losses
+    m = {"units": cum, "n": n, "wins": wins, "losses": losses,
+         "win_rate": wins / n, "yield": cum / n, "max_dd": max_dd}
+    return curve, m
+
+
 def _prediction_notice(sport: str, err: Exception) -> None:
     """Render a clean, non-alarming notice instead of a raw traceback.
 
@@ -1105,6 +1138,30 @@ with tab_perf:
                 f"**{rec_wr:.1%}** win rate over {len(rec)} settled picks "
                 f"(vs {win_pct:.1%} for all) · 2-pick ROI {rec_wr**2*3-1:+.0%}. "
                 "This is the tier surfaced by default on Today's Picks.")
+
+        # ── Paper bankroll / ROI ──────────────────────────────────────────────
+        st.divider()
+        st.subheader("💰 Paper P&L")
+        bk_scope = st.radio("Bets included", ["Recommended (≥70%)", "All picks"],
+                            horizontal=True, key="bk")
+        bk_src = (all_picks[all_picks["model_prob"] >= REC_MIN_PROB]
+                  if bk_scope.startswith("Recommended") else all_picks)
+        curve, m = simulate_bankroll(bk_src)
+        if not m or m["n"] < 5:
+            st.info("Not enough settled picks in this scope for a P&L curve yet.")
+        else:
+            b1, b2, b3, b4 = st.columns(4)
+            b1.metric("Units won", f"{m['units']:+.1f}u",
+                      delta_color="normal" if m["units"] >= 0 else "inverse")
+            b2.metric("ROI / yield", f"{m['yield']:+.1%}", "per unit staked",
+                      delta_color="normal" if m["yield"] >= 0 else "inverse")
+            b3.metric("Settled bets", f"{m['n']}  ({m['win_rate']:.0%} W)")
+            b4.metric("Max drawdown", f"-{m['max_dd']:.1f}u", delta_color="off")
+            chart = curve.to_frame("Cumulative P&L (units)")
+            chart["Breakeven"] = 0.0
+            st.line_chart(chart, height=240)
+            st.caption("Flat 1u/leg · win pays +0.73u, loss −1u (per-leg equivalent of a "
+                       "2-pick 3× parlay, decimal √3) · paper-tracking only, not betting advice.")
 
         # ── Model backtest history ────────────────────────────────────────────
         bt_trend = load_backtest_trend()
