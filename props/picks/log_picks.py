@@ -358,7 +358,9 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     # Derive sport_code from model_name using the registry
     sport_by_model = {m.name: m.sport_code for m in MODELS}
 
-    ALERT_THRESHOLD = 0.65
+    # Align with the dashboard's recommended cutoff: 0.65-0.70 is a coin-flip
+    # band (backtest ~41%), so don't alert on it.
+    ALERT_THRESHOLD = 0.70
     top = (
         edges[edges["model_prob"] >= ALERT_THRESHOLD]
         .sort_values("model_prob", ascending=False)
@@ -403,7 +405,7 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     payload = {
         "embeds": [{
             "title": f"⚡ prop-edge picks — {target_date.strftime('%a %b %-d')}",
-            "description": f"{len(top)} picks ≥ 65% confidence{parlay_note}",
+            "description": f"{len(top)} picks ≥ 70% confidence{parlay_note}",
             "color": 0x5932d9,
             "fields": fields,
             "footer": {"text": "prop-edge • auto-generated"},

@@ -506,10 +506,24 @@ def build_nba_combo_edges(nba_pred_by_player: dict) -> pd.DataFrame:
 
 
 def fetch_nba_schedule(target_date):
-    """Pull today's NBA games via scoreboardv3."""
+    """Pull today's NBA games via scoreboardv3.
+
+    stats.nba.com throttles datacenter IPs (GitHub Actions), so this can time
+    out. Retry briefly, then return [] rather than raising — a failed NBA fetch
+    must not abort the whole predict run and zero out MLB/WNBA/NHL picks.
+    """
     from nba_api.stats.endpoints import scoreboardv3
-    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"))
-    raw = sb.get_dict().get("scoreboard", {}).get("games", [])
+    raw = []
+    for attempt in range(3):
+        try:
+            sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"),
+                                           timeout=45)
+            raw = sb.get_dict().get("scoreboard", {}).get("games", [])
+            break
+        except Exception as e:
+            log.warning("nba_schedule_fetch_failed", attempt=attempt + 1, error=str(e)[:120])
+            import time as _t
+            _t.sleep(3 * (attempt + 1))
     games = []
     for g in raw:
         gid = g.get("gameId")
@@ -913,38 +927,45 @@ def main(target_date: date = None):
         if not entry.model_path.exists():
             log.warning("model_file_missing", name=entry.name, path=str(entry.model_path))
             continue
-        model, meta = load_model(entry)
-        if entry.sport_code == "nba":
-            if nba_games is None:
-                nba_raw = fetch_nba_schedule(today)
-                log.info("nba_scheduled_games", n=len(nba_raw))
-                nba_games = resolve_nba_external_to_internal_ids(nba_raw)
-                # Game context + winner predictions up front
-                espn_raw = fetch_nba_game_context(today)
-                nba_game_ctx_map = map_context_to_game_ids(espn_raw, nba_games)
-                with session_scope() as _s:
-                    team_rows = _s.execute(text(
-                        "SELECT team_id, city || ' ' || name FROM teams WHERE sport_code='nba'"
-                    )).all()
-                team_names = {r[0]: r[1] for r in team_rows}
-                game_preds = predict_games(nba_games, today, nba_game_ctx_map)
-                print_game_predictions(game_preds, team_names)
-                persist_game_context(game_preds)
-                nba_injury_flags = detect_injury_expansion(nba_games, today)
-            features = build_nba_player_feature_rows(nba_games, today, season,
-                                                      meta["feature_keys"],
-                                                      injury_flags=nba_injury_flags)
-        elif entry.sport_code in ("wnba", "nhl"):
-            features = build_derived_player_feature_rows(
-                entry.sport_code, meta["feature_keys"], today)
-        elif entry.role == "pitcher":
-            features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
-        else:
-            features = build_batter_feature_rows(games, today, season, meta["feature_keys"])
-        log.info("built_features", model=entry.name, rows=len(features))
-        if features.empty:
+        # Isolate each model: a failure (e.g. a sports-API timeout from a
+        # datacenter IP) skips that model only — it must not abort the whole run
+        # and zero out every other sport's picks.
+        try:
+            model, meta = load_model(entry)
+            if entry.sport_code == "nba":
+                if nba_games is None:
+                    nba_raw = fetch_nba_schedule(today)
+                    log.info("nba_scheduled_games", n=len(nba_raw))
+                    nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+                    # Game context + winner predictions up front
+                    espn_raw = fetch_nba_game_context(today)
+                    nba_game_ctx_map = map_context_to_game_ids(espn_raw, nba_games)
+                    with session_scope() as _s:
+                        team_rows = _s.execute(text(
+                            "SELECT team_id, city || ' ' || name FROM teams WHERE sport_code='nba'"
+                        )).all()
+                    team_names = {r[0]: r[1] for r in team_rows}
+                    game_preds = predict_games(nba_games, today, nba_game_ctx_map)
+                    print_game_predictions(game_preds, team_names)
+                    persist_game_context(game_preds)
+                    nba_injury_flags = detect_injury_expansion(nba_games, today)
+                features = build_nba_player_feature_rows(nba_games, today, season,
+                                                          meta["feature_keys"],
+                                                          injury_flags=nba_injury_flags)
+            elif entry.sport_code in ("wnba", "nhl"):
+                features = build_derived_player_feature_rows(
+                    entry.sport_code, meta["feature_keys"], today)
+            elif entry.role == "pitcher":
+                features = build_pitcher_feature_rows(games, today, season, meta["feature_keys"])
+            else:
+                features = build_batter_feature_rows(games, today, season, meta["feature_keys"])
+            log.info("built_features", model=entry.name, rows=len(features))
+            if features.empty:
+                continue
+            edges = score_and_edge(model, meta, entry, features)
+        except Exception as e:
+            log.warning("model_failed", name=entry.name, error=str(e)[:200])
             continue
-        edges = score_and_edge(model, meta, entry, features)
         if not edges.empty:
             all_picks.append(edges)
             # Track NBA component predictions for combo stat derivation
