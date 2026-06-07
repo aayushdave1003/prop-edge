@@ -4,13 +4,15 @@ name: daily-pipeline
 # the laptop is off. Runs the same scripts/daily.sh against the Railway DB.
 #
 # DST-safe scheduling: GitHub cron is UTC and doesn't follow DST, so we trigger
-# at BOTH the PDT and PST UTC times and gate execution to the intended Pacific
-# hour (7 AM PT). The job therefore fires once a day year-round, not an hour off
-# in winter. Manual dispatch always runs.
+# at BOTH the PDT and PST UTC times for 7 AM PT and let exactly one through per
+# day. The gate keys on WHICH cron fired (github.event.schedule) + the current
+# DST offset — NOT the actual run hour, because GitHub frequently delivers
+# scheduled events 1–2h late (an hour-based gate skipped real runs). Manual
+# dispatch always runs.
 on:
   schedule:
-    - cron: "0 14 * * *"   # 7 AM PDT (summer)
-    - cron: "0 15 * * *"   # 7 AM PST (winter)
+    - cron: "0 14 * * *"   # 7 AM PDT (summer, UTC-7)
+    - cron: "0 15 * * *"   # 7 AM PST (winter, UTC-8)
   workflow_dispatch: {}
 
 concurrency:
@@ -28,17 +30,24 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       LOG_LEVEL: INFO
     steps:
-      - name: Gate to 7 AM Pacific (DST-safe)
+      - name: Gate one run per day (DST-safe, delay-independent)
         id: gate
+        env:
+          SCHED: ${{ github.event.schedule }}
+          EVENT: ${{ github.event_name }}
         run: |
-          H=$(TZ=America/Los_Angeles date +%H)
-          echo "Pacific hour: $H"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "07" ]; then
-            echo "run=yes" >> "$GITHUB_OUTPUT"
-          else
-            echo "Skipping — not 7 AM PT (DST duplicate trigger)."
-            echo "run=no" >> "$GITHUB_OUTPUT"
+          OFFSET=$(TZ=America/Los_Angeles date +%z)   # -0700 PDT, -0800 PST
+          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
+          RUN=no
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            RUN=yes
+          elif [ "$SCHED" = "0 14 * * *" ] && [ "$OFFSET" = "-0700" ]; then
+            RUN=yes   # 14:00 UTC cron, summer = 7 AM PDT
+          elif [ "$SCHED" = "0 15 * * *" ] && [ "$OFFSET" = "-0800" ]; then
+            RUN=yes   # 15:00 UTC cron, winter = 7 AM PST
           fi
+          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.gate.outputs.run == 'yes'

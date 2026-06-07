@@ -3,10 +3,10 @@ name: line-refresh
 # Intraday line + injury refreshes (lightweight — no model inference). Moves the
 # last Mac-dependent jobs to GitHub Actions for a fully laptop-free setup.
 #
-# DST-safe: GitHub cron is UTC and doesn't follow DST, so we trigger at both the
-# PDT and PST UTC times for each slot and gate execution to the intended Pacific
-# hours (10 AM / 4 PM / 7 PM PT). Each slot fires once year-round. Manual
-# dispatch always runs.
+# DST-safe: GitHub cron is UTC and doesn't follow DST, so each slot has a PDT and
+# a PST cron and the gate lets exactly one through, keyed on WHICH cron fired
+# (github.event.schedule) + the current DST offset — NOT the run hour, since
+# GitHub delivers scheduled events 1–2h late. Manual dispatch always runs.
 on:
   schedule:
     - cron: "0 17 * * *"   # 10 AM PDT
@@ -32,18 +32,25 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       LOG_LEVEL: INFO
     steps:
-      - name: Gate to 10 AM / 4 PM / 7 PM Pacific (DST-safe)
+      - name: Gate slots (DST-safe, delay-independent)
         id: gate
+        env:
+          SCHED: ${{ github.event.schedule }}
+          EVENT: ${{ github.event_name }}
         run: |
-          H=$(TZ=America/Los_Angeles date +%H)
-          echo "Pacific hour: $H"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
-             || [ "$H" = "10" ] || [ "$H" = "16" ] || [ "$H" = "19" ]; then
-            echo "run=yes" >> "$GITHUB_OUTPUT"
+          OFFSET=$(TZ=America/Los_Angeles date +%z)   # -0700 PDT, -0800 PST
+          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
+          RUN=no
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            RUN=yes
           else
-            echo "Skipping — not a target PT hour (DST duplicate trigger)."
-            echo "run=no" >> "$GITHUB_OUTPUT"
+            case "$SCHED" in
+              "0 17 * * *"|"0 23 * * *"|"0 2 * * *") [ "$OFFSET" = "-0700" ] && RUN=yes ;;  # PDT slots
+              "0 18 * * *"|"0 0 * * *"|"0 3 * * *")  [ "$OFFSET" = "-0800" ] && RUN=yes ;;  # PST slots
+            esac
           fi
+          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         if: steps.gate.outputs.run == 'yes'
