@@ -2,12 +2,19 @@ name: line-refresh
 
 # Intraday line + injury refreshes (lightweight — no model inference). Moves the
 # last Mac-dependent jobs to GitHub Actions for a fully laptop-free setup.
-# Times are UTC; ~PDT shown. (GitHub cron doesn't follow DST — ~1h off in winter.)
+#
+# DST-safe: GitHub cron is UTC and doesn't follow DST, so we trigger at both the
+# PDT and PST UTC times for each slot and gate execution to the intended Pacific
+# hours (10 AM / 4 PM / 7 PM PT). Each slot fires once year-round. Manual
+# dispatch always runs.
 on:
   schedule:
-    - cron: "0 17 * * *"   # ~10 AM PDT — mid-morning lines
-    - cron: "0 23 * * *"   # ~4 PM PDT  — afternoon lines + injuries + starters
-    - cron: "0 2 * * *"    # ~7 PM PDT  — evening pre-game refresh
+    - cron: "0 17 * * *"   # 10 AM PDT
+    - cron: "0 18 * * *"   # 10 AM PST
+    - cron: "0 23 * * *"   #  4 PM PDT
+    - cron: "0 0 * * *"    #  4 PM PST
+    - cron: "0 2 * * *"    #  7 PM PDT
+    - cron: "0 3 * * *"    #  7 PM PST
   workflow_dispatch: {}
 
 concurrency:
@@ -25,14 +32,32 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       LOG_LEVEL: INFO
     steps:
+      - name: Gate to 10 AM / 4 PM / 7 PM Pacific (DST-safe)
+        id: gate
+        run: |
+          H=$(TZ=America/Los_Angeles date +%H)
+          echo "Pacific hour: $H"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] \
+             || [ "$H" = "10" ] || [ "$H" = "16" ] || [ "$H" = "19" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping — not a target PT hour (DST duplicate trigger)."
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'yes'
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'yes'
         with:
           python-version: "3.13"
           cache: pip
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
-      - run: pip install -r requirements.txt
+      - if: steps.gate.outputs.run == 'yes'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - if: steps.gate.outputs.run == 'yes'
+        run: pip install -r requirements.txt
       - name: Refresh PrizePicks lines + injuries + starters
+        if: steps.gate.outputs.run == 'yes'
         run: |
           for sport in nba mlb wnba nhl; do
             python -m props.ingest.prizepicks --sport "$sport" || echo "WARN: $sport lines failed"

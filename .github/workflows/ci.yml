@@ -1,0 +1,37 @@
+name: ci
+
+# Run the unit suite on every push / PR so the pure logic (settle, de-vig,
+# per-category cutoffs, ESPN stat parsing, HTML sanitizer) can't silently
+# regress. No DB or secrets needed — tests are DB-independent; a dummy
+# DATABASE_URL just satisfies settings at import time.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: "postgresql+psycopg://ci:ci@localhost:5432/ci"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: System deps (libgomp for LightGBM)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Byte-compile (syntax check)
+        run: python -m compileall -q props ui
+      - name: Run tests
+        run: python -m pytest tests/ -q

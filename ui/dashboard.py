@@ -214,6 +214,12 @@ p, label, div { color:var(--txt2); }
 .dot.miss  { background:linear-gradient(135deg,rgba(255,93,108,0.26),rgba(255,93,108,0.1)); color:var(--under); border:1px solid rgba(255,93,108,0.45); }
 .dot.empty { background:rgba(255,255,255,0.04); color:var(--txt3); border:1px solid var(--line); }
 .form-rate { font-size:0.72rem; color:var(--txt3); }
+.why {
+    font-size:0.72rem; color:var(--txt2); margin-top:10px;
+    padding:7px 10px; border-radius:8px;
+    background:rgba(124,92,232,0.10); border:1px solid rgba(124,92,232,0.22);
+    line-height:1.3;
+}
 .form-rate span { color:var(--txt); font-weight:700; }
 .inj-badge {
     font-size:0.66rem; color:var(--gold); background:rgba(255,207,92,0.1);
@@ -918,6 +924,22 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     # Live in-game progress (only when the game is in progress)
     live_html = live_row_html(sport, row["stat_type"], line, direction, live) if live else ""
 
+    # Synthesized rationale — the "why" behind the pick, from its strongest
+    # signals (recent form, market edge, line movement). Keeps the dense card
+    # data human-readable at a glance.
+    why_bits = []
+    if l5_den >= 3 and (l5_hit / l5_den) >= 0.6:
+        why_bits.append(f"hit {badge_text} {l5_hit}/{l5_den} last 5")
+    if edge >= 0.05:
+        why_bits.append(f"+{edge * 100:.0f}% vs market")
+    if lm is not None and lo is not None and abs(float(lm)) >= 0.05:
+        _mv = float(lm)
+        if (_mv > 0 and direction == "over") or (_mv < 0 and direction == "under"):
+            why_bits.append("line moving your way")
+    if not why_bits:
+        why_bits.append(f"model {prob:.0%} confident")
+    why_html = f'<div class="why">💡 {" · ".join(why_bits[:3])}</div>'
+
     return _html(f"""
 <div class="pick-card">
   <div class="card-banner">
@@ -944,6 +966,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
       {dots_html}
       {form_rate_html}
     </div>
+    {why_html}
     {inj_html}
   </div>
 </div>""")
@@ -1049,24 +1072,42 @@ with tab_picks:
     if df.empty:
         st.info("No picks logged today. Daily cron runs at 7 AM.")
     else:
-        # Filters
+        # Filters — persisted in the URL so they survive a reload / share link.
+        _qp = st.query_params
+
+        def _qp_default(name, allowed, fallback):
+            raw = _qp.get(name)
+            if raw is None:
+                return fallback
+            return [v for v in raw.split(",") if v in allowed]
+
         fc1, fc2, fc3 = st.columns(3)
         with fc1:
             sport_opts = sorted(df["sport_code"].unique())
-            sport_sel  = st.multiselect("Sport", sport_opts, default=sport_opts, key="sp")
+            sport_sel  = st.multiselect("Sport", sport_opts,
+                                        default=_qp_default("sport", sport_opts, sport_opts), key="sp")
         with fc2:
             stat_opts  = sorted(df["stat_type"].unique())
-            stat_sel   = st.multiselect("Stat", stat_opts, default=stat_opts, key="st")
+            stat_sel   = st.multiselect("Stat", stat_opts,
+                                        default=_qp_default("stat", stat_opts, stat_opts), key="st")
         with fc3:
             dir_opts   = ["over", "under"]
-            dir_sel    = st.multiselect("Direction", dir_opts, default=dir_opts, key="di")
+            dir_sel    = st.multiselect("Direction", dir_opts,
+                                        default=_qp_default("dir", dir_opts, dir_opts), key="di")
 
         rec_only = st.toggle(
             "⭐ Recommended only (per-category confidence cutoff)",
-            value=True, key="rec",
+            value=_qp.get("rec", "1") != "0", key="rec",
             help="Each sport/stat has its own tuned cutoff from settled history: "
                  "MLB clears breakeven broadly, NBA only at very high confidence. "
                  "Recompute: python -m props.models.category_cutoffs.")
+
+        # Write current selections back to the URL (idempotent — no rerun loop
+        # once they match the widgets).
+        _qp.update({
+            "sport": ",".join(sport_sel), "stat": ",".join(stat_sel),
+            "dir": ",".join(dir_sel), "rec": "1" if rec_only else "0",
+        })
 
         filtered = df[
             df["sport_code"].isin(sport_sel) &
@@ -1365,6 +1406,27 @@ with tab_perf:
                 f"**{rec_wr:.1%}** win rate over {len(rec)} settled picks "
                 f"(vs {win_pct:.1%} for all) · 2-pick ROI {rec_wr**2*3-1:+.0%}. "
                 "This is the tier surfaced by default on Today's Picks.")
+
+        # ── ROI by parlay size (realistic PrizePicks power-play payouts) ──────
+        # Per-leg win rate from the recommended tier (the slate you'd actually
+        # play); ROI assumes independent legs at that rate.
+        p_leg = rec_wr if len(rec) >= 10 else win_pct
+        PARLAY_MULT = {2: 3.0, 3: 5.0, 4: 10.0}  # PrizePicks power play
+        with st.expander(f"🎰 ROI by parlay size (at {p_leg:.0%} per-leg win rate)", expanded=True):
+            roi_rows = []
+            for n, mult in PARLAY_MULT.items():
+                joint = p_leg ** n
+                roi = joint * mult - 1
+                roi_rows.append({
+                    "Parlay": f"{n}-pick",
+                    "Payout": f"{mult:g}x",
+                    "All-hit chance": f"{joint:.1%}",
+                    "Expected ROI": f"{roi:+.1%}",
+                })
+            st.dataframe(pd.DataFrame(roi_rows), hide_index=True, use_container_width=True)
+            st.caption("Power-play (all legs must hit). More legs = higher payout "
+                       "but the all-hit chance compounds down — the +EV sweet spot "
+                       "is usually the smallest parlay. Assumes independent legs.")
 
         with st.expander("🎚️ Active confidence cutoffs (auto-tuned per category)"):
             st.caption(

@@ -2,11 +2,16 @@ name: daily-pipeline
 
 # Always-on replacement for the local Mac cron: generates picks daily even when
 # the laptop is off. Runs the same scripts/daily.sh against the Railway DB.
+#
+# DST-safe scheduling: GitHub cron is UTC and doesn't follow DST, so we trigger
+# at BOTH the PDT and PST UTC times and gate execution to the intended Pacific
+# hour (7 AM PT). The job therefore fires once a day year-round, not an hour off
+# in winter. Manual dispatch always runs.
 on:
   schedule:
-    # 14:00 UTC = 7:00 AM PDT (≈6:00 AM PST in winter). GitHub cron is UTC.
-    - cron: "0 14 * * *"
-  workflow_dispatch: {}   # allow manual runs from the Actions tab
+    - cron: "0 14 * * *"   # 7 AM PDT (summer)
+    - cron: "0 15 * * *"   # 7 AM PST (winter)
+  workflow_dispatch: {}
 
 concurrency:
   group: daily-pipeline
@@ -23,18 +28,35 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       LOG_LEVEL: INFO
     steps:
+      - name: Gate to 7 AM Pacific (DST-safe)
+        id: gate
+        run: |
+          H=$(TZ=America/Los_Angeles date +%H)
+          echo "Pacific hour: $H"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$H" = "07" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping — not 7 AM PT (DST duplicate trigger)."
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'yes'
 
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'yes'
         with:
           python-version: "3.13"
           cache: pip
 
       - name: System deps (libgomp for LightGBM)
+        if: steps.gate.outputs.run == 'yes'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
 
       - name: Install Python deps
+        if: steps.gate.outputs.run == 'yes'
         run: pip install -r requirements.txt
 
       - name: Run daily pipeline
+        if: steps.gate.outputs.run == 'yes'
         run: bash scripts/daily.sh

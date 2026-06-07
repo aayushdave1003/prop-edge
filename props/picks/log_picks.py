@@ -239,13 +239,36 @@ def main():
         if low_minute_players:
             log.info("low_minute_players_suppressed", n=len(low_minute_players))
 
+    # Guard: never log a pick for a game that's already played or dated before
+    # the target date. The dashboard hides these, but creating them pollutes the
+    # unsettled backlog and can produce "picks" for finished games. A real game
+    # is keyed by status (final/live) or a past game_date; today's still-
+    # scheduled placeholder games (resolved later by settle) are allowed.
+    game_state: dict[int, tuple] = {}
+    gid_list = [int(g) for g in edges["game_id"].dropna().unique()]
+    if gid_list:
+        with session_scope() as _sg:
+            for gid, gstatus, gdate in _sg.execute(text("""
+                SELECT game_id, status, game_date
+                FROM games WHERE game_id = ANY(:ids)
+            """), {"ids": gid_list}).all():
+                game_state[int(gid)] = (gstatus, gdate)
+
     inserted = 0
     skipped = 0
+    skipped_stale = 0
     with session_scope() as session:
         for _, row in edges.iterrows():
             if abs(row["edge"]) < MIN_EDGE_TO_LOG:
                 skipped += 1
                 continue
+            # Skip games already played (final/live) or dated in the past.
+            gstate = game_state.get(int(row["game_id"]))
+            if gstate is not None:
+                gstatus, gdate = gstate
+                if gstatus in ("final", "live") or (gdate is not None and gdate < target_date):
+                    skipped_stale += 1
+                    continue
             # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
             min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
             if float(row["line_value"]) < min_line:
@@ -343,7 +366,8 @@ def main():
                 "lo": line_open, "lm": line_movement,
             })
             inserted += 1
-    log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped)
+    log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped,
+             skipped_stale_games=skipped_stale)
 
     if inserted > 0:
         _send_discord_alert(edges, target_date)
@@ -358,22 +382,21 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     # Derive sport_code from model_name using the registry
     sport_by_model = {m.name: m.sport_code for m in MODELS}
 
-    # Align with the dashboard's recommended cutoff: 0.65-0.70 is a coin-flip
-    # band (backtest ~41%), so don't alert on it.
-    ALERT_THRESHOLD = 0.70
-    top = (
-        edges[edges["model_prob"] >= ALERT_THRESHOLD]
-        .sort_values("model_prob", ascending=False)
-        .head(8)
+    # Align the digest with the dashboard's RECOMMENDED tier: each sport/stat has
+    # its own tuned cutoff (per-category #3) instead of a flat 0.70 — so this is
+    # the same slate the dashboard surfaces, not a coin-flip band.
+    from props.models.category_cutoffs import rec_cutoff
+    e = edges.copy()
+    e["sport_code"] = e["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
+    rec_mask = e.apply(
+        lambda r: float(r["model_prob"]) >= rec_cutoff(r["sport_code"], r["stat_type"]),
+        axis=1,
     )
+    top = e[rec_mask].sort_values("model_prob", ascending=False).head(8)
     if top.empty:
         return
 
     sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒"}
-
-    # Add sport_code column for grouping
-    top = top.copy()
-    top["sport_code"] = top["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
 
     fields = []
     for sport_order in ["nba", "wnba", "mlb", "nhl"]:
@@ -404,8 +427,8 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
 
     payload = {
         "embeds": [{
-            "title": f"⚡ prop-edge picks — {target_date.strftime('%a %b %-d')}",
-            "description": f"{len(top)} picks ≥ 70% confidence{parlay_note}",
+            "title": f"⚡ prop-edge recommended — {target_date.strftime('%a %b %-d')}",
+            "description": f"{len(top)} recommended picks (per-category cutoffs){parlay_note}",
             "color": 0x5932d9,
             "fields": fields,
             "footer": {"text": "prop-edge • auto-generated"},

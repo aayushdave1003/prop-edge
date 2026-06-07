@@ -14,14 +14,14 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☐ **P0** Move game-prediction inference out of the dashboard render into the cron; dashboard reads `games.context` only. Fixes the ~30s slow tab *and* the Railway crash.
 - ☐ **P1** Replace the startup `ALTER TABLE … ADD COLUMN IF NOT EXISTS` hack in `dashboard.py` with a real migration (Alembic or versioned `sql/` migration run on deploy).
 - ☐ **P1** Health-check / alerting: Discord ping if the daily cron fails or produces 0 picks.
-- ☐ **P2** Centralize cron schedule + timezone handling (LA-time logic is scattered across queries).
+- ☑ **P2** Cron DST drift — DONE: `daily.yml`/`refresh.yml` trigger at both PDT & PST UTC times and gate execution to the intended Pacific hour, so jobs fire once year-round (not an hour off in winter).
 - ☐ **P2** Secrets hygiene: confirm `.env` isn't committed; rotate keys if it ever was.
 
 ## 2. Model Quality & ML
 - ☐ **P1** Diagnose the sub-breakeven win rate: per sport × stat × direction × edge-bucket, find the bleeders.
 - ☑ **P1** Confidence threshold tuning — DONE: per-category cutoffs (`props/models/category_cutoffs.py` + `category_cutoffs.json`) auto-derived from settled history as the lowest `model_prob` whose Wilson-LB win rate clears the 57.7% breakeven. Dashboard recomputes from the DB every 6h; recompute the seed offline with `python -m props.models.category_cutoffs`. (MLB ≥0.55 / 64% hist; NBA tuned ≥0.725 once it had enough settled data — see below.)
 - ☐ **P1** Calibration coverage: only some models have `_calibrator.pkl` (NBA pts/reb/ast yes; threes, MLB HR, all NHL, all WNBA no). Add isotonic calibration everywhere.
-- ☐ **P2** Model versioning/registry: currently `*_v1`. Define retrain cadence, track metrics per version, add rollback path.
+- ☑ **P2** Model versioning/registry — DONE (lightweight): `docs/MODEL_VERSIONING.md` defines naming, when to bump `v{N}`, evidence-driven retrain cadence (tied to `holdout_report`), the live cutoff guardrail, and one-commit rollback.
 - ☐ **P2** Feature-leakage audit (confirm strict `< game_date` cutoffs in all rolling features).
 - ☐ **P3** Train NHL/WNBA **winner** models once data is sufficient (WNBA first — basketball-generic; revisit ~150+ games). NHL currently 11 games, WNBA 43.
 - ☐ **P3** Correlated-leg modeling for parlays (`build_parlays` dedups players but doesn't model correlation).
@@ -31,19 +31,19 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☐ **P1** Backfill depth for NHL (11 games) and WNBA (43) so prop models have signal and winner models become trainable.
 - ☐ **P1** Confirm `line_open`/`line_movement` populate daily for all sports (recently added).
 - ☐ **P2** Ingest monitoring: per-table daily row-count deltas; alert on anomalies (missing slate, stale lines).
-- ☐ **P2** Injury data: `injury_flag` is hardcoded `0` in the dashboard query — wire a real source or remove the dead UI path.
+- ☐ **P2** Injury data: `injury_flag` is hardcoded `0` in the dashboard query — wire a real source or remove the dead UI path. (Deferred: needs a real injury feed; `player_injuries` is ingested but not joined into picks.)
 - ☐ **P3** Add sportsbooks beyond PrizePicks for line-shopping / consensus.
 
 ## 4. Pick Generation & Product
 - ☐ **P1** Make suppression rules (>97% confidence, multi-game/combined-player filters) configurable + documented in one place.
 - ☐ **P2** Bankroll/Kelly tracking: simulate a running paper bankroll from the Kelly sizes already shown.
-- ☐ **P2** Per-pick "why" explanations (top features / form / line move) on the card.
-- ☐ **P3** Morning Discord alert of top-edge picks.
+- ☑ **P2** Per-pick "why" — DONE: each card shows a synthesized rationale line (recent form / market edge / line movement).
+- ☑ **P3** Morning Discord digest — DONE: the daily digest posts the recommended slate using the per-category cutoffs (not a flat 0.70).
 
 ## 5. Evaluation & Tracking
 - ☐ **P1** Ensure every retrain logs a `backtest_runs` row (Performance tab already charts it).
-- ☐ **P2** True out-of-sample holdout report per model (not just walk-forward).
-- ☐ **P2** ROI by parlay size with realistic payouts, not just win rate.
+- ☑ **P2** Out-of-sample holdout/calibration report — DONE: `python -m props.models.holdout_report` (per sport×stat win rate, predicted-vs-realized calibration + weighted MAE, recent-vs-earlier drift).
+- ☑ **P2** ROI by parlay size — DONE: Performance tab shows 2/3/4-pick power-play ROI at the recommended-tier per-leg win rate.
 
 ## 6. UI / UX
 - ✅ Visual redesign (Inter, gradients, glass surfaces, refined cards/tabs/metrics)
@@ -54,13 +54,13 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ✅ Card-height alignment
 - ☐ **P2** Loading states/spinners for the slow tab (moot after §1 precompute).
 - ☐ **P2** Mobile / narrow-screen layout (cards fixed at 3-per-row).
-- ☐ **P3** Filter persistence, historical-slate date picker, dark/light toggle.
+- ☐ **P3** Historical-slate date picker, dark/light toggle. *(filter persistence DONE — Today's Picks filters now persist in URL query params.)*
 
 ## 7. Code Quality & Observability
-- ☐ **P1** Tests: add unit tests for pure logic (settle classification, edge/Kelly math, `_html` sanitizer, form-dot logic, moneyline de-vig).
+- ☑ **P1** Tests — DONE: 20 unit tests (settle, de-vig, `_html`, form dots, derived-writer guard, per-category cutoffs, ESPN stat parsing). Run on every push via CI.
 - ☐ **P2** Clean repo root: `backtest_*.csv`, `*.log`, `backfill.log` sitting in the tree — gitignore or move to `logs/`/`artifacts/`.
 - ☐ **P2** Standardize structlog usage; add run/request IDs.
-- ☐ **P3** CI: lint + tests on push.
+- ☑ **P3** CI on push — DONE: `.github/workflows/ci.yml` byte-compiles + runs the 20-test suite on push/PR to main.
 
 ## 8. Compliance / Safety
 - ☐ **P2** Keep "paper-tracking only, not betting advice" framing consistent; add disclaimer/age gate if this ever goes public.
