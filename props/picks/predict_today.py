@@ -933,8 +933,11 @@ def persist_game_context(preds: list[dict]) -> int:
     """
     if not preds:
         return 0
+    # Pitchers included so the MLB dashboard tab can render entirely from
+    # games.context (no live schedule fetch / LightGBM inference). NBA preds
+    # lack these keys and are simply skipped by the None filter below.
     keys = ("home_win_prob", "implied_margin", "market_spread",
-            "market_total", "market_edge")
+            "market_total", "market_edge", "home_pitcher", "away_pitcher")
     n = 0
     with session_scope() as s:
         for p in preds:

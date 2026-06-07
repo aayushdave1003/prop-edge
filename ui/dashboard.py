@@ -622,20 +622,27 @@ def load_game_predictions_data():
 
 
 @st.cache_data(ttl=60)
-def load_mlb_game_context() -> dict:
-    """Today's MLB game-winner predictions from games.context (persisted by the
-    cron). Lets the dashboard skip live inference. {game_id: {hwp, margin}}."""
-    df = pd.read_sql(text("""
-        SELECT game_id,
-               (context->>'home_win_prob')::float  AS hwp,
-               (context->>'implied_margin')::float AS margin
-        FROM games
-        WHERE sport_code = 'mlb'
-          AND game_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
-          AND context ? 'home_win_prob'
-    """), engine)
-    return {int(r.game_id): {"hwp": r.hwp, "margin": r.margin}
-            for r in df.itertuples()}
+def load_mlb_game_predictions():
+    """Today's MLB game-winner predictions straight from games.context (the cron
+    persists win prob, margin, and probable pitchers each morning). The dashboard
+    reads only — no live schedule fetch or LightGBM inference on render."""
+    sql = """
+        SELECT g.game_id,
+               COALESCE(ht.city || ' ', '') || ht.name AS home_team,
+               COALESCE(at.city || ' ', '') || at.name AS away_team,
+               (g.context->>'home_win_prob')::float  AS home_win_prob,
+               (g.context->>'implied_margin')::float AS implied_margin,
+               g.context->>'home_pitcher'            AS home_pitcher,
+               g.context->>'away_pitcher'            AS away_pitcher
+        FROM games g
+        JOIN teams ht ON ht.team_id = g.home_team_id
+        JOIN teams at ON at.team_id = g.away_team_id
+        WHERE g.sport_code = 'mlb'
+          AND g.game_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+          AND g.context ? 'home_win_prob'
+        ORDER BY g.game_id
+    """
+    return pd.read_sql(text(sql), engine)
 
 
 def _american_to_prob(odds) -> float | None:
@@ -1335,55 +1342,24 @@ with tab_game:
                             unsafe_allow_html=True)
 
     # ── MLB ───────────────────────────────────────────────────────────────────
+    # Read-only from games.context (persisted by the cron). No live schedule
+    # fetch or LightGBM inference on render — that was the slow path / libgomp
+    # risk this tab used to hit.
     st.markdown("### ⚾ MLB")
-    try:
-        from props.picks.predict_today import (fetch_todays_schedule_with_pitchers,
-                                                resolve_external_to_internal_ids)
-        from props.picks.predict_mlb_game import predict_mlb_games
-        from props.utils.db import session_scope
-        from sqlalchemy import text as sqlt
-
-        mlb_sched = fetch_todays_schedule_with_pitchers(_today)
-        mlb_sched = resolve_external_to_internal_ids(mlb_sched)
-        mlb_games_valid = [g for g in mlb_sched if g.get("game_id") and g.get("home_team_id")]
-
-        with session_scope() as s:
-            trows = s.execute(sqlt(
-                "SELECT team_id, COALESCE(city || ' ', '') || name FROM teams WHERE sport_code='mlb'"
-            )).all()
-        mlb_names = {r[0]: r[1] for r in trows}
-
-        # Prefer cached predictions from games.context (the cron persists them) —
-        # avoids slow live LightGBM inference on every page load. Pitchers still
-        # come from the (cheap) schedule fetch. Fall back to live only if the
-        # context is missing for some game.
-        mlb_ctx = load_mlb_game_context()
-        if mlb_games_valid and all(g["game_id"] in mlb_ctx for g in mlb_games_valid):
-            mlb_preds = [{**g,
-                          "home_win_prob": mlb_ctx[g["game_id"]]["hwp"],
-                          "implied_margin": mlb_ctx[g["game_id"]]["margin"]}
-                         for g in mlb_games_valid]
-        else:
-            mlb_preds = predict_mlb_games(mlb_games_valid, _today) if mlb_games_valid else []
-    except Exception as e:
-        _prediction_notice("MLB", e)
-        mlb_preds = []
-
-    if not mlb_preds:
-        st.info("No MLB games today.")
+    mlb_df = load_mlb_game_predictions()
+    if mlb_df.empty:
+        st.info("No MLB predictions yet today — the cron computes these each morning.")
     else:
         cols = st.columns(3)
-        for i, pred in enumerate(mlb_preds):
-            hwp    = pred["home_win_prob"]
-            margin = pred["implied_margin"]
-            home   = mlb_names.get(pred["home_team_id"], f"Team {pred['home_team_id']}")
-            away   = mlb_names.get(pred["away_team_id"], f"Team {pred['away_team_id']}")
-            h_sp   = pred.get("home_pitcher", "TBD")
-            a_sp   = pred.get("away_pitcher", "TBD")
+        for i, pred in enumerate(mlb_df.itertuples()):
+            h_sp = pred.home_pitcher or "TBD"
+            a_sp = pred.away_pitcher or "TBD"
             sp_html = (f'<div style="font-size:0.75rem;color:#8890a4;margin-top:4px">'
                        f'SP: {a_sp} vs {h_sp}</div>')
             with cols[i % 3]:
-                st.markdown(_game_card_html(home, away, hwp, margin, sp_html),
+                st.markdown(_game_card_html(pred.home_team, pred.away_team,
+                                            pred.home_win_prob, pred.implied_margin,
+                                            sp_html),
                             unsafe_allow_html=True)
 
     # ── WNBA & NHL (market-implied — no winner model for these sports) ─────────
