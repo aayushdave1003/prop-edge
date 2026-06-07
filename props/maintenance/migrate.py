@@ -23,6 +23,18 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_edge NUMERIC(6,4)"),
     ("0003_picks_injury_flag",
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS injury_flag NUMERIC(6,1) DEFAULT 0"),
+    ("0004_player_injuries",
+     "CREATE TABLE IF NOT EXISTS player_injuries ("
+     "  player_name TEXT NOT NULL,"
+     "  team_name TEXT NOT NULL,"
+     "  sport_code TEXT NOT NULL DEFAULT 'nba',"
+     "  status TEXT NOT NULL,"
+     "  short_comment TEXT,"
+     "  fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  PRIMARY KEY (player_name, sport_code, fetched_at));"
+     "ALTER TABLE player_injuries ADD COLUMN IF NOT EXISTS sport_code TEXT NOT NULL DEFAULT 'nba';"
+     "CREATE INDEX IF NOT EXISTS idx_injuries_sport_player_recent"
+     "  ON player_injuries (sport_code, player_name, fetched_at DESC)"),
 ]
 
 

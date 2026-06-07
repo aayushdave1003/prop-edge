@@ -9,27 +9,10 @@ from curl_cffi import requests
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
+from props.maintenance.migrate import run_migrations
 
 
 URL = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/injuries"
-
-
-def ensure_table():
-    with session_scope() as session:
-        session.execute(text("""
-            CREATE TABLE IF NOT EXISTS player_injuries (
-                player_name TEXT NOT NULL,
-                team_name TEXT NOT NULL,
-                status TEXT NOT NULL,
-                short_comment TEXT,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (player_name, fetched_at)
-            )
-        """))
-        session.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_injuries_player_recent
-            ON player_injuries (player_name, fetched_at DESC)
-        """))
 
 
 def fetch_injuries():
@@ -55,7 +38,7 @@ def fetch_injuries():
 
 def run():
     configure_logging()
-    ensure_table()
+    run_migrations()  # ensures player_injuries exists (migration 0004)
     rows = fetch_injuries()
     log.info("fetched_injuries", n=len(rows))
 

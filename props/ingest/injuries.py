@@ -6,6 +6,7 @@ from curl_cffi import requests
 from sqlalchemy import text
 from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
+from props.maintenance.migrate import run_migrations
 
 
 URLS = {
@@ -18,30 +19,6 @@ OUT_STATUSES = {
     "nba": {"Out", "Doubtful"},
     "mlb": {"10-Day-IL", "15-Day-IL", "60-Day-IL", "7-Day-IL", "Out"},
 }
-
-
-def ensure_table():
-    with session_scope() as session:
-        session.execute(text("""
-            CREATE TABLE IF NOT EXISTS player_injuries (
-                player_name TEXT NOT NULL,
-                team_name TEXT NOT NULL,
-                sport_code TEXT NOT NULL DEFAULT 'nba',
-                status TEXT NOT NULL,
-                short_comment TEXT,
-                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (player_name, sport_code, fetched_at)
-            )
-        """))
-        # Add sport_code column if migrating from old schema
-        session.execute(text("""
-            ALTER TABLE player_injuries
-            ADD COLUMN IF NOT EXISTS sport_code TEXT NOT NULL DEFAULT 'nba'
-        """))
-        session.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_injuries_sport_player_recent
-            ON player_injuries (sport_code, player_name, fetched_at DESC)
-        """))
 
 
 def fetch(sport: str):
@@ -83,7 +60,7 @@ def store(rows: list):
 
 def run():
     configure_logging()
-    ensure_table()
+    run_migrations()  # ensures player_injuries exists (migration 0004)
     for sport in URLS:
         rows = fetch(sport)
         store(rows)
