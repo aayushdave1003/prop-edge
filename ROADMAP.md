@@ -31,7 +31,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☐ **P1** Backfill depth for NHL (11 games) and WNBA (43) so prop models have signal and winner models become trainable.
 - ☐ **P1** Confirm `line_open`/`line_movement` populate daily for all sports (recently added).
 - ☐ **P2** Ingest monitoring: per-table daily row-count deltas; alert on anomalies (missing slate, stale lines).
-- ☐ **P2** Injury data: `injury_flag` is hardcoded `0` in the dashboard query — wire a real source or remove the dead UI path. (Deferred: needs a real injury feed; `player_injuries` is ingested but not joined into picks.)
+- ☑ **P2** Injury data wired into picks — DONE: (1) the role-expansion `injury_flag` (teammate-out minutes from `detect_injury_expansion`) is now persisted on each pick (migration `0003`, stored by `log_picks`) instead of hardcoded `0`; (2) each card shows the player's OWN injury status (Out / *-IL / Day-To-Day) via a LATERAL name-join to `player_injuries` (81% exact-name match, fail-safe — a miss just shows no badge). Red "🚫" for won't-play statuses, yellow "⚠" for day-to-day.
 - ☐ **P3** Add sportsbooks beyond PrizePicks for line-shopping / consensus.
 
 ## 4. Pick Generation & Product

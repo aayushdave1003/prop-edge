@@ -21,6 +21,8 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS line_movement NUMERIC(6,3)"),
     ("0002_picks_market_edge",
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_edge NUMERIC(6,4)"),
+    ("0003_picks_injury_flag",
+     "ALTER TABLE picks ADD COLUMN IF NOT EXISTS injury_flag NUMERIC(6,1) DEFAULT 0"),
 ]
 
 

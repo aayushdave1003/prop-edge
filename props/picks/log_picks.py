@@ -343,17 +343,20 @@ def main():
                 if _me is not None and pd.notna(_me)
                 else None
             )
+            _inj = row.get("injury_flag") if hasattr(row, "get") else None
+            injury_flag = (round(float(_inj), 1)
+                           if _inj is not None and pd.notna(_inj) else 0.0)
             session.execute(text("""
                 INSERT INTO picks (
                     parlay_size, sport_code, player_id, game_id, stat_type,
                     line_id, direction, model_version_id, prediction_id,
                     model_prob, edge, expected_value, market_edge,
-                    line_open, line_movement, picked_at
+                    line_open, line_movement, injury_flag, picked_at
                 ) VALUES (
                     1, :sport, :pid, :gid, :st,
                     :lid, :dir, :mvid, :prid,
                     :mp, :edge, :ev, :me,
-                    :lo, :lm, NOW()
+                    :lo, :lm, :inj, NOW()
                 )
                 ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
             """), {
@@ -363,7 +366,7 @@ def main():
                 "dir": row["direction"], "mvid": mv_id, "prid": pred_id,
                 "mp": model_prob, "edge": edge_val, "ev": half_kelly,
                 "me": market_edge,
-                "lo": line_open, "lm": line_movement,
+                "lo": line_open, "lm": line_movement, "inj": injury_flag,
             })
             inserted += 1
     log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped,

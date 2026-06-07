@@ -248,6 +248,13 @@ p, label, div { color:var(--txt2); }
 }
 .kelly-row { font-size:0.7rem; color:var(--txt3); margin-top:4px; }
 .kelly-row span { color:var(--acc2); font-weight:700; }
+.inj-status {
+    font-size:0.7rem; font-weight:700; border-radius:7px;
+    padding:4px 9px; margin:6px 0 2px; display:block;
+}
+.inj-status.out  { color:#ff5d6c; background:rgba(255,93,108,0.12); border:1px solid rgba(255,93,108,0.4); }
+.inj-status.warn { color:var(--gold); background:rgba(255,207,92,0.1); border:1px solid rgba(255,207,92,0.3); }
+.inj-status .inj-note { font-weight:400; color:var(--txt3); }
 
 /* Slate card */
 .slate-card {
@@ -452,7 +459,9 @@ def load_todays_picks():
             pk.actual_value,
             pk.line_open,
             pk.line_movement,
-            0                 AS injury_flag,
+            COALESCE(pk.injury_flag, 0) AS injury_flag,
+            inj.status        AS injury_status,
+            inj.short_comment AS injury_note,
             g.status          AS game_status,
             ht.abbreviation   AS home_team,
             at.abbreviation   AS away_team
@@ -463,6 +472,17 @@ def load_todays_picks():
         JOIN prop_lines pl ON pl.line_id = pk.line_id
         LEFT JOIN teams ht ON ht.team_id = g.home_team_id
         LEFT JOIN teams at ON at.team_id = g.away_team_id
+        -- The player's own current injury status (warn on Out / IL / Day-To-Day),
+        -- most recent report within ~36h, matched by name within the sport.
+        LEFT JOIN LATERAL (
+            SELECT pi.status, pi.short_comment
+            FROM player_injuries pi
+            WHERE pi.sport_code = g.sport_code
+              AND lower(pi.player_name) = lower(p.full_name)
+              AND pi.fetched_at > NOW() - INTERVAL '36 hours'
+            ORDER BY pi.fetched_at DESC
+            LIMIT 1
+        ) inj ON true
         WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
               = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
           -- Only games actually happening today: excludes stale picks logged
@@ -922,6 +942,22 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     badge_cls  = "over" if direction == "over" else "under"
     badge_text = "OVER" if direction == "over" else "UNDER"
     inj_html  = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
+
+    # The player's OWN injury status (warn before betting someone who's out/IL).
+    inj_status = (row.get("injury_status") or "").strip()
+    inj_status_html = ""
+    if inj_status:
+        _s = inj_status.lower()
+        # Day-to-day / questionable etc = caution; everything else (Out, *-IL,
+        # suspension, …) means they likely won't play = strong warning.
+        _soft = any(k in _s for k in ("day-to-day", "day to day", "questionable",
+                                      "doubtful", "probable", "gtd", "game-time"))
+        cls = "warn" if _soft else "out"
+        icon = "⚠" if _soft else "🚫"
+        note = (row.get("injury_note") or "").strip()
+        note = f" · {note[:48]}" if note else ""
+        inj_status_html = (f'<div class="inj-status {cls}">{icon} {inj_status}'
+                           f'<span class="inj-note">{note}</span></div>')
     kelly_pct = round(kelly * 100, 1)
     kelly_label = f"Kelly {kelly_pct}%" if kelly > 0 else ""
     kelly_row = (f'<div class="prob-row" style="margin-top:4px">'
@@ -976,6 +1012,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
   <div class="card-body">
     <div class="player-name">{result_html}{row['player']}</div>
     <div class="team-stat">{row.get('team','')}{' · ' + opp if opp else ''} · {stat_label}</div>
+    {inj_status_html}
     <div class="line-row">
       <span class="line-value">{line:g}</span>
       <span class="badge {badge_cls}">{badge_text}</span>
