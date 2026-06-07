@@ -115,6 +115,40 @@ def test_form_dots_direction():
     assert over.count("dot empty") == 1  # None renders empty
 
 
+# ── feature lookahead-safety (leakage audit guard) ───────────────────────────
+from props.features.mlb_rolling import compute_rolling_features, ALL_STATS
+
+
+def _toy_player_history(last_game_value: float) -> pd.DataFrame:
+    """5 chronological games for one player; the LAST game's raw stats are set to
+    `last_game_value` so we can prove they don't leak into that game's features."""
+    rows = []
+    for i in range(5):
+        row = {"game_date": pd.Timestamp("2026-04-01") + pd.Timedelta(days=i),
+               "player_game_id": 100 + i, "season": "2026"}
+        for s in ALL_STATS:
+            row[s] = float(i + 1)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    for s in ALL_STATS:                       # mutate ONLY the last game's stats
+        df.loc[df.index[-1], s] = last_game_value
+    return df
+
+
+def test_rolling_features_have_no_lookahead():
+    base = compute_rolling_features(_toy_player_history(3.0))
+    mutated = compute_rolling_features(_toy_player_history(999.0))
+    # The last game's rolling/season features must be identical regardless of the
+    # last game's own outcome — they may only use prior games (shift(1) first).
+    # If a future change drops a shift(1), these diverge and this test fails.
+    feat_cols = [c for c in base.columns
+                 if c.startswith(("last_", "season_avg_"))]
+    assert len(feat_cols) > 10
+    lb, lm = base.iloc[-1], mutated.iloc[-1]
+    for c in feat_cols:
+        assert lb[c] == lm[c], f"lookahead leak: {c} changed with the current game"
+
+
 # ── per-category cutoffs (#3) ─────────────────────────────────────────────────
 from props.models import category_cutoffs as cc
 

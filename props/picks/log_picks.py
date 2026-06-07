@@ -73,6 +73,16 @@ MIN_LINE_BY_STAT = {
 }
 
 
+def _is_stale_game(game_state: dict, game_id, target_date) -> bool:
+    """True if the game is already played (final/live) or dated before the
+    target date — we neither log picks for it nor put it in the Discord digest."""
+    gstate = game_state.get(int(game_id))
+    if gstate is None:
+        return False
+    status, gdate = gstate
+    return status in ("final", "live") or (gdate is not None and gdate < target_date)
+
+
 def ensure_model_version(model_name, stat_type, sport_code="mlb"):
     with session_scope() as session:
         result = session.execute(text("""
@@ -263,12 +273,9 @@ def main():
                 skipped += 1
                 continue
             # Skip games already played (final/live) or dated in the past.
-            gstate = game_state.get(int(row["game_id"]))
-            if gstate is not None:
-                gstatus, gdate = gstate
-                if gstatus in ("final", "live") or (gdate is not None and gdate < target_date):
-                    skipped_stale += 1
-                    continue
+            if _is_stale_game(game_state, row["game_id"], target_date):
+                skipped_stale += 1
+                continue
             # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
             min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
             if float(row["line_value"]) < min_line:
@@ -373,7 +380,11 @@ def main():
              skipped_stale_games=skipped_stale)
 
     if inserted > 0:
-        _send_discord_alert(edges, target_date)
+        # Digest must match what we actually logged — drop stale-game rows so the
+        # alert never lists a pick for an already-played game.
+        digest_edges = edges[~edges["game_id"].map(
+            lambda g: _is_stale_game(game_state, g, target_date))]
+        _send_discord_alert(digest_edges, target_date)
 
 
 def _send_discord_alert(edges: pd.DataFrame, target_date):
