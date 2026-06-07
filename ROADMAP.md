@@ -19,7 +19,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 
 ## 2. Model Quality & ML
 - ☐ **P1** Diagnose the sub-breakeven win rate: per sport × stat × direction × edge-bucket, find the bleeders.
-- ☐ **P1** Confidence/edge threshold tuning: find the cutoff that pushes the surfaced slate above 57.7%.
+- ☑ **P1** Confidence threshold tuning — DONE: per-category cutoffs (`props/models/category_cutoffs.py` + `category_cutoffs.json`) auto-derived from settled history as the lowest `model_prob` whose Wilson-LB win rate clears the 57.7% breakeven. Live (MLB ≥0.55 / 64% hist; NBA suppressed — 52.8% coin-flip; WNBA/NHL default pending data). Dashboard recomputes from the DB every 6h; recompute the seed offline with `python -m props.models.category_cutoffs`.
 - ☐ **P1** Calibration coverage: only some models have `_calibrator.pkl` (NBA pts/reb/ast yes; threes, MLB HR, all NHL, all WNBA no). Add isotonic calibration everywhere.
 - ☐ **P2** Model versioning/registry: currently `*_v1`. Define retrain cadence, track metrics per version, add rollback path.
 - ☐ **P2** Feature-leakage audit (confirm strict `< game_date` cutoffs in all rolling features).

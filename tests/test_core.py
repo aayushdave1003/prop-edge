@@ -113,3 +113,53 @@ def test_form_dots_direction():
     assert over.count("dot hit") == 1 and over.count("dot miss") == 1
     assert under.count("dot hit") == 1 and under.count("dot miss") == 1
     assert over.count("dot empty") == 1  # None renders empty
+
+
+# ── per-category cutoffs (#3) ─────────────────────────────────────────────────
+from props.models import category_cutoffs as cc
+
+
+def test_wilson_lower_bound_penalises_small_n():
+    # same win rate, smaller sample => lower bound is lower (less trust)
+    assert cc.wilson_lower_bound(7, 10) < cc.wilson_lower_bound(70, 100)
+    # all wins still isn't certainty
+    assert cc.wilson_lower_bound(10, 10) < 1.0
+    assert cc.wilson_lower_bound(0, 0) == 0.0
+
+
+def _rows(sport, stat, prob, wins, losses):
+    return ([{"sport": sport, "stat_type": stat, "model_prob": prob, "win": 1}] * wins
+            + [{"sport": sport, "stat_type": stat, "model_prob": prob, "win": 0}] * losses)
+
+
+def test_compute_picks_lowest_qualifying_cutoff():
+    # a clearly +EV book (80% over 60 picks at prob 0.60) qualifies at the floor
+    table = cc.compute_cutoffs(_rows("mlb", "hits", 0.60, 48, 12))
+    assert table["sports"]["mlb"]["status"] == "tuned"
+    assert table["sports"]["mlb"]["cutoff"] == cc.GRID[0]  # lowest grid point
+
+
+def test_compute_suppresses_losing_model():
+    # coin-flip with plenty of data => never clears breakeven => suppressed
+    table = cc.compute_cutoffs(_rows("nba", "points", 0.65, 50, 50))
+    assert table["sports"]["nba"]["status"] == "suppressed"
+    assert table["sports"]["nba"]["cutoff"] == cc.SUPPRESS_CUTOFF
+
+
+def test_compute_unproven_when_too_little_data():
+    table = cc.compute_cutoffs(_rows("wnba", "points", 0.62, 2, 0))
+    assert table["sports"]["wnba"]["status"] == "unproven"
+    assert table["sports"]["wnba"]["cutoff"] == cc.DEFAULT_CUTOFF
+
+
+def test_rec_cutoff_hierarchy():
+    table = {
+        "default_cutoff": 0.70,
+        "sports": {"mlb": {"cutoff": 0.55}, "nba": {"cutoff": 0.80}},
+        "stats": {"mlb|hits": {"cutoff": 0.60}},
+    }
+    assert cc.rec_cutoff("mlb", "hits", table=table) == 0.60   # stat override
+    assert cc.rec_cutoff("mlb", "rbis", table=table) == 0.55   # sport fallback
+    assert cc.rec_cutoff("nba", "points", table=table) == 0.80
+    assert cc.rec_cutoff("nhl", "goals", table=table) == 0.70  # global default
+    assert cc.rec_cutoff(None, None, table=table) == 0.70

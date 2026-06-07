@@ -1,0 +1,36 @@
+{
+  "breakeven": 0.577,
+  "default_cutoff": 0.7,
+  "sports": {
+    "mlb": {
+      "cutoff": 0.55,
+      "n": 289,
+      "win_rate": 0.6436,
+      "wilson_lb": 0.615,
+      "status": "tuned"
+    },
+    "nba": {
+      "cutoff": 0.99,
+      "n": 125,
+      "win_rate": 0.528,
+      "wilson_lb": null,
+      "status": "suppressed"
+    },
+    "wnba": {
+      "cutoff": 0.7,
+      "n": 2,
+      "win_rate": 0.5,
+      "wilson_lb": null,
+      "status": "unproven"
+    }
+  },
+  "stats": {
+    "mlb|hits": {
+      "cutoff": 0.55,
+      "n": 204,
+      "win_rate": 0.6961,
+      "wilson_lb": 0.663,
+      "status": "tuned"
+    }
+  }
+}

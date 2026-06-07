@@ -11,15 +11,42 @@ import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.maintenance.migrate import run_migrations
+from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
 
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
 
-# Confidence cutoff for "recommended" picks. Backtest on 401 settled picks:
-# model_prob >= 0.70 hit 72.3% (vs 60.8% logging everything) — the band below
-# 0.70 is a coin-flip trap. We log everything for tracking, but surface this
-# tier by default and build the parlay slate only from it.
-REC_MIN_PROB = 0.70
+# "Recommended" picks are now tuned PER CATEGORY, not by one global threshold.
+# A flat cutoff is wrong in both directions at once: the MLB model clears the
+# 2-pick breakeven (57.7%) even at the pick-generation floor, while the NBA
+# model is a coin-flip until very high confidence. Cutoffs are recomputed live
+# from settled history every 6h (committed category_cutoffs.json is the
+# instant seed/fallback). Recompute the file offline: python -m
+# props.models.category_cutoffs.
+
+
+@st.cache_data(ttl=21600)  # 6h: cutoffs only move as new picks settle
+def _cutoff_table() -> dict:
+    """Live per-category cutoffs from the DB, falling back to the seed JSON."""
+    try:
+        return compute_from_db(engine)
+    except Exception:
+        return load_cutoffs()
+
+
+CUTOFFS = _cutoff_table()
+DEFAULT_CUTOFF = float(CUTOFFS.get("default_cutoff", 0.70))
+
+
+def _rec_mask(df: pd.DataFrame) -> pd.Series:
+    """Boolean mask: each pick meets its category's recommended cutoff."""
+    if df.empty:
+        return pd.Series([], dtype=bool)
+    return df.apply(
+        lambda r: float(r["model_prob"]) >= rec_cutoff(
+            r.get("sport_code"), r.get("stat_type"), table=CUTOFFS),
+        axis=1,
+    )
 
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
@@ -928,8 +955,9 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
         return ""
 
     # Only build the parlay from the recommended confidence tier — the backtest
-    # shows legs below this are coin-flips that tank the joint probability.
-    qual = picks_df[picks_df["model_prob"] >= REC_MIN_PROB]
+    # shows legs below each category's cutoff are coin-flips that tank the joint
+    # probability.
+    qual = picks_df[_rec_mask(picks_df)]
     if qual.empty:
         return ""
 
@@ -997,11 +1025,13 @@ losses_7  = (_settled_7["leg_result"] == "loss").sum()
 win_pct_7 = f"{wins_7/(wins_7+losses_7):.0%}" if (wins_7 + losses_7) else "—"
 _valid_edges = df['market_edge'].dropna() if len(df) else pd.Series(dtype=float)
 avg_edge  = f"{_valid_edges.mean():.1%}" if len(_valid_edges) else "—"
-rec_count = (df["model_prob"] >= REC_MIN_PROB).sum() if len(df) else 0
+rec_count = int(_rec_mask(df).sum()) if len(df) else 0
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Today's Picks", len(df))
-c2.metric(f"⭐ Recommended (≥{REC_MIN_PROB:.0%})", rec_count)
+c2.metric("⭐ Recommended", rec_count,
+          help="Picks clearing their category's tuned confidence cutoff "
+               "(per-sport/stat; see category_cutoffs.json).")
 c3.metric("Avg Edge", avg_edge)
 c4.metric("7-Day W/L", f"{wins_7}W – {losses_7}L")
 c5.metric("7-Day Win Rate", win_pct_7)
@@ -1032,9 +1062,11 @@ with tab_picks:
             dir_sel    = st.multiselect("Direction", dir_opts, default=dir_opts, key="di")
 
         rec_only = st.toggle(
-            f"⭐ Recommended only (model confidence ≥ {REC_MIN_PROB:.0%})",
+            "⭐ Recommended only (per-category confidence cutoff)",
             value=True, key="rec",
-            help="Backtest: ≥70% confidence picks hit 72% vs 61% for all picks.")
+            help="Each sport/stat has its own tuned cutoff from settled history: "
+                 "MLB clears breakeven broadly, NBA only at very high confidence. "
+                 "Recompute: python -m props.models.category_cutoffs.")
 
         filtered = df[
             df["sport_code"].isin(sport_sel) &
@@ -1042,9 +1074,9 @@ with tab_picks:
             df["direction"].isin(dir_sel)
         ].reset_index(drop=True)
         if rec_only:
-            filtered = filtered[filtered["model_prob"] >= REC_MIN_PROB].reset_index(drop=True)
+            filtered = filtered[_rec_mask(filtered).values].reset_index(drop=True)
             if filtered.empty:
-                st.info(f"No picks at ≥{REC_MIN_PROB:.0%} confidence today. "
+                st.info("No picks clear their category cutoff today. "
                         "Toggle off to see all picks.")
 
         # Slate card — top picks across all sports by edge
@@ -1323,23 +1355,51 @@ with tab_perf:
         roi_2pick = win_pct**2 * 3 - 1
         c5.metric("2-pick ROI (sim)", f"{roi_2pick:+.1%}")
 
-        # ── Recommended-tier vs all (proves the confidence cutoff) ────────────
-        rec = all_picks[(all_picks["model_prob"] >= REC_MIN_PROB)
+        # ── Recommended-tier vs all (proves the per-category cutoffs) ─────────
+        rec = all_picks[_rec_mask(all_picks).values
                         & (all_picks["leg_result"].isin(["win", "loss"]))]
         if len(rec) >= 10:
             rec_wr = (rec["leg_result"] == "win").mean()
             st.success(
-                f"⭐ **Recommended tier (confidence ≥ {REC_MIN_PROB:.0%}):** "
+                f"⭐ **Recommended tier (per-category cutoffs):** "
                 f"**{rec_wr:.1%}** win rate over {len(rec)} settled picks "
                 f"(vs {win_pct:.1%} for all) · 2-pick ROI {rec_wr**2*3-1:+.0%}. "
                 "This is the tier surfaced by default on Today's Picks.")
 
+        with st.expander("🎚️ Active confidence cutoffs (auto-tuned per category)"):
+            st.caption(
+                "Lowest model-confidence at which each category's settled win "
+                f"rate clears the {CUTOFFS.get('breakeven', 0.577):.1%} 2-pick "
+                "breakeven (Wilson lower bound). Recomputed from history every 6h.")
+            _ct = CUTOFFS.get("sports", {})
+            if _ct:
+                _rows = [{
+                    "Sport": sp.upper(),
+                    "Cutoff": f"{v['cutoff']:.0%}",
+                    "Settled n": v["n"],
+                    "Win rate": f"{v['win_rate']:.1%}" if v.get("win_rate") else "—",
+                    "Status": v.get("status", ""),
+                } for sp, v in sorted(_ct.items())]
+                st.dataframe(pd.DataFrame(_rows), hide_index=True,
+                             use_container_width=True)
+            _st_cells = CUTOFFS.get("stats", {})
+            if _st_cells:
+                st.caption("Stat-level overrides (where a single stat has enough "
+                           "history to tune on its own):")
+                st.dataframe(pd.DataFrame([{
+                    "Sport·Stat": k.replace("|", " · "),
+                    "Cutoff": f"{v['cutoff']:.0%}",
+                    "Settled n": v["n"],
+                    "Win rate": f"{v['win_rate']:.1%}" if v.get("win_rate") else "—",
+                } for k, v in sorted(_st_cells.items())]),
+                hide_index=True, use_container_width=True)
+
         # ── Paper bankroll / ROI ──────────────────────────────────────────────
         st.divider()
         st.subheader("💰 Paper P&L")
-        bk_scope = st.radio("Bets included", ["Recommended (≥70%)", "All picks"],
+        bk_scope = st.radio("Bets included", ["Recommended", "All picks"],
                             horizontal=True, key="bk")
-        bk_src = (all_picks[all_picks["model_prob"] >= REC_MIN_PROB]
+        bk_src = (all_picks[_rec_mask(all_picks).values]
                   if bk_scope.startswith("Recommended") else all_picks)
         curve, m = simulate_bankroll(bk_src)
         if not m or m["n"] < 5:
