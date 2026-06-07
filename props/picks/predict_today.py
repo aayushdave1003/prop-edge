@@ -514,16 +514,17 @@ def fetch_nba_schedule(target_date):
     """
     from nba_api.stats.endpoints import scoreboardv3
     raw = []
-    for attempt in range(3):
+    # This is now only a FALLBACK (ESPN is tried first), and stats.nba.com just
+    # hangs on datacenter IPs — so use a short timeout and a single attempt to
+    # bound the worst case to ~10s instead of ~2.5 min of 45s retries.
+    for attempt in range(1):
         try:
             sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"),
-                                           timeout=45)
+                                           timeout=10)
             raw = sb.get_dict().get("scoreboard", {}).get("games", [])
             break
         except Exception as e:
             log.warning("nba_schedule_fetch_failed", attempt=attempt + 1, error=str(e)[:120])
-            import time as _t
-            _t.sleep(3 * (attempt + 1))
     games = []
     for g in raw:
         gid = g.get("gameId")
@@ -997,13 +998,17 @@ def main(target_date: date = None):
             model, meta = load_model(entry)
             if entry.sport_code == "nba":
                 if nba_games is None:
-                    nba_raw = fetch_nba_schedule(today)
-                    log.info("nba_scheduled_games", n=len(nba_raw))
-                    nba_games = resolve_nba_external_to_internal_ids(nba_raw)
-                    # stats.nba.com blocks datacenter IPs (GitHub Actions) — fall
-                    # back to ESPN so NBA picks still generate when it times out.
+                    # ESPN first: it's datacenter-friendly and fast, whereas
+                    # stats.nba.com blocks cloud IPs and hangs. nba_api is only a
+                    # fallback now (short-timeout) if ESPN returns nothing.
+                    nba_games = fetch_nba_schedule_espn(today)
+                    log.info("nba_scheduled_games", n=len(nba_games), source="espn")
                     if not nba_games:
-                        nba_games = fetch_nba_schedule_espn(today)
+                        nba_raw = fetch_nba_schedule(today)
+                        nba_games = resolve_nba_external_to_internal_ids(nba_raw)
+                        if nba_games:
+                            log.info("nba_scheduled_games", n=len(nba_games),
+                                     source="nba_api")
                     # Game context + winner predictions up front
                     espn_raw = fetch_nba_game_context(today)
                     nba_game_ctx_map = map_context_to_game_ids(espn_raw, nba_games)

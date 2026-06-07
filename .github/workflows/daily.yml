@@ -22,7 +22,10 @@ concurrency:
 jobs:
   daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full pipeline (4 sports × schedules/box-scores/features + settle +
+    # predict) runs ~35-40 min; 45 was too tight and a slow API made it time out
+    # mid-predict, before picks/Discord. 90 gives headroom.
+    timeout-minutes: 90
     env:
       RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
