@@ -215,6 +215,28 @@ def test_parse_stats_handles_dnp_empty():
     assert out["points"] == 0 and out["minutes"] == 0.0
 
 
+def test_wilson_upper_bound_above_lower():
+    assert cc.wilson_upper_bound(46, 100) > cc.wilson_lower_bound(46, 100)
+    assert cc.wilson_upper_bound(0, 0) == 1.0
+
+
+def test_compute_suppresses_confidently_losing_stat():
+    # A stat with plenty of data stuck well below breakeven (like NBA points on
+    # the playoff sample) is SUPPRESSED, not left to inherit the sport cutoff.
+    rows = (_rows("nba", "points", 0.70, 36, 43)        # ~46% over 79
+            + _rows("nba", "rebounds", 0.62, 45, 20))   # sport stays viable
+    table = cc.compute_cutoffs(rows)
+    assert table["stats"]["nba|points"]["status"] == "suppressed"
+    assert table["stats"]["nba|points"]["cutoff"] == cc.SUPPRESS_CUTOFF
+    assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
+
+
+def test_compute_does_not_suppress_borderline_stat():
+    # ~53% with modest n is NOT confidently losing -> defer to sport, no override.
+    table = cc.compute_cutoffs(_rows("mlb", "strikeouts_pitcher", 0.66, 38, 34))
+    assert "mlb|strikeouts_pitcher" not in table["stats"]
+
+
 def test_rec_cutoff_hierarchy():
     table = {
         "default_cutoff": 0.70,

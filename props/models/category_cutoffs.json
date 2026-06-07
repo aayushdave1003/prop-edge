@@ -4,9 +4,9 @@
   "sports": {
     "mlb": {
       "cutoff": 0.55,
-      "n": 289,
-      "win_rate": 0.6436,
-      "wilson_lb": 0.615,
+      "n": 314,
+      "win_rate": 0.6433,
+      "wilson_lb": 0.6159,
       "status": "tuned"
     },
     "nba": {
@@ -31,6 +31,13 @@
       "win_rate": 0.6961,
       "wilson_lb": 0.663,
       "status": "tuned"
+    },
+    "nba|points": {
+      "cutoff": 0.99,
+      "n": 79,
+      "win_rate": 0.4557,
+      "wilson_ub": 0.5119,
+      "status": "suppressed"
     },
     "nba|rebounds": {
       "cutoff": 0.55,

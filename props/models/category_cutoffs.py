@@ -57,6 +57,17 @@ def wilson_lower_bound(wins: int, n: int, z: float = WILSON_Z) -> float:
     return (centre - margin) / denom
 
 
+def wilson_upper_bound(wins: int, n: int, z: float = WILSON_Z) -> float:
+    """One-sided Wilson upper bound on a binomial win rate."""
+    if n == 0:
+        return 1.0
+    p = wins / n
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    margin = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (centre + margin) / denom
+
+
 def _best_cutoff(probs, wins, min_n: int):
     """Lowest grid cutoff whose Wilson-LB win rate clears breakeven.
 
@@ -125,17 +136,27 @@ def compute_cutoffs(rows) -> dict:
     for (sport, stat), pairs in sorted(by_stat.items()):
         probs = [p for p, _ in pairs]
         wins = [w for _, w in pairs]
+        n_all, k_all = len(pairs), sum(wins)
         res = _best_cutoff(probs, wins, MIN_N_STAT)
-        if res is None:
-            continue  # not enough stat-level data -> defer to sport cutoff
-        t, n, wr, lb = res
-        stats[f"{sport}|{stat}"] = {
-            "cutoff": t,
-            "n": n,
-            "win_rate": round(wr, 4),
-            "wilson_lb": round(lb, 4),
-            "status": "tuned",
-        }
+        if res is not None:
+            t, n, wr, lb = res
+            stats[f"{sport}|{stat}"] = {
+                "cutoff": t, "n": n, "win_rate": round(wr, 4),
+                "wilson_lb": round(lb, 4), "status": "tuned",
+            }
+            continue
+        # No qualifying cutoff. If there's enough data AND the stat is
+        # CONFIDENTLY below breakeven (Wilson upper bound < breakeven), suppress
+        # it explicitly — otherwise it would silently inherit the more permissive
+        # SPORT cutoff and keep getting recommended (e.g. NBA points: 57% at the
+        # sport's 0.725, sub-breakeven). Without enough data, defer to the sport.
+        if n_all >= MIN_N_STAT and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
+            stats[f"{sport}|{stat}"] = {
+                "cutoff": SUPPRESS_CUTOFF, "n": n_all,
+                "win_rate": round(k_all / n_all, 4),
+                "wilson_ub": round(wilson_upper_bound(k_all, n_all), 4),
+                "status": "suppressed",
+            }
 
     return {
         "breakeven": BREAKEVEN,
