@@ -16,6 +16,26 @@ from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
 
+
+@st.cache_resource
+def _verify_native_deps() -> str:
+    """Import LightGBM once per container so a libgomp/native-lib regression is
+    visible in the deploy logs immediately — it has broken prod before (Nixpacks'
+    linker couldn't see apt's libgomp.so.1). Fail-loud beats discovering it only
+    when someone opens a tab that runs inference.
+    """
+    try:
+        import lightgbm as lgb
+        print(f"[startup] native deps OK — lightgbm {lgb.__version__} "
+              "(libgomp resolved)", flush=True)
+        return f"ok {lgb.__version__}"
+    except Exception as e:  # pragma: no cover - environment-specific
+        print(f"[startup] NATIVE DEP FAILURE — lightgbm import failed: {e}", flush=True)
+        return f"failed: {e}"
+
+
+_verify_native_deps()
+
 # "Recommended" picks are now tuned PER CATEGORY, not by one global threshold.
 # A flat cutoff is wrong in both directions at once: the MLB model clears the
 # 2-pick breakeven (57.7%) even at the pick-generation floor, while the NBA
