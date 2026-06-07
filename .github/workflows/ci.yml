@@ -30,7 +30,9 @@ jobs:
       - name: System deps (libgomp for LightGBM)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
       - name: Byte-compile (syntax check)
         run: python -m compileall -q props ui
       - name: Run tests
