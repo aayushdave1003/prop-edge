@@ -19,7 +19,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 
 ## 2. Model Quality & ML
 - ☐ **P1** Diagnose the sub-breakeven win rate: per sport × stat × direction × edge-bucket, find the bleeders.
-- ☑ **P1** Confidence threshold tuning — DONE: per-category cutoffs (`props/models/category_cutoffs.py` + `category_cutoffs.json`) auto-derived from settled history as the lowest `model_prob` whose Wilson-LB win rate clears the 57.7% breakeven. Live (MLB ≥0.55 / 64% hist; NBA suppressed — 52.8% coin-flip; WNBA/NHL default pending data). Dashboard recomputes from the DB every 6h; recompute the seed offline with `python -m props.models.category_cutoffs`.
+- ☑ **P1** Confidence threshold tuning — DONE: per-category cutoffs (`props/models/category_cutoffs.py` + `category_cutoffs.json`) auto-derived from settled history as the lowest `model_prob` whose Wilson-LB win rate clears the 57.7% breakeven. Dashboard recomputes from the DB every 6h; recompute the seed offline with `python -m props.models.category_cutoffs`. (MLB ≥0.55 / 64% hist; NBA tuned ≥0.725 once it had enough settled data — see below.)
 - ☐ **P1** Calibration coverage: only some models have `_calibrator.pkl` (NBA pts/reb/ast yes; threes, MLB HR, all NHL, all WNBA no). Add isotonic calibration everywhere.
 - ☐ **P2** Model versioning/registry: currently `*_v1`. Define retrain cadence, track metrics per version, add rollback path.
 - ☐ **P2** Feature-leakage audit (confirm strict `< game_date` cutoffs in all rolling features).
@@ -27,6 +27,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☐ **P3** Correlated-leg modeling for parlays (`build_parlays` dedups players but doesn't model correlation).
 
 ## 3. Data Pipeline & Coverage
+- ☑ **P1** NBA box scores on datacenter — DONE: `props/ingest/nba_boxscores.py` rewritten to fetch via ESPN (stats.nba.com blocks cloud IPs, so on GitHub Actions NBA picks never settled). Maps stats by ESPN's `keys` array, resolves players by fuzzy name (similarity>0.8, same as PrizePicks) so box-score `player_id` matches the pick's, resolves the ESPN event from an `espn_` id or by date+team, and flips stale `live`/`scheduled` games to `final` from ESPN's status. Verified: settled all 38 stuck NBA Finals picks; NBA settled history 125→173, which let the cutoff tuner un-suppress NBA.
 - ☐ **P1** Backfill depth for NHL (11 games) and WNBA (43) so prop models have signal and winner models become trainable.
 - ☐ **P1** Confirm `line_open`/`line_movement` populate daily for all sports (recently added).
 - ☐ **P2** Ingest monitoring: per-table daily row-count deltas; alert on anomalies (missing slate, stale lines).

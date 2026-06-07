@@ -152,6 +152,35 @@ def test_compute_unproven_when_too_little_data():
     assert table["sports"]["wnba"]["cutoff"] == cc.DEFAULT_CUTOFF
 
 
+# ── ESPN NBA boxscore parsing (datacenter ingest) ─────────────────────────────
+from props.ingest.nba_boxscores import parse_stats
+
+
+def test_parse_stats_maps_by_key_not_position():
+    # Real ESPN NBA column order (REB before AST, OREB/DREB late) — the bug we
+    # guard against is reusing WNBA's positional order.
+    keys = ['minutes', 'points', 'fieldGoalsMade-fieldGoalsAttempted',
+            'threePointFieldGoalsMade-threePointFieldGoalsAttempted',
+            'freeThrowsMade-freeThrowsAttempted', 'rebounds', 'assists',
+            'turnovers', 'steals', 'blocks', 'offensiveRebounds',
+            'defensiveRebounds', 'fouls', 'plusMinus']
+    stats = ['31', '17', '5-12', '3-6', '4-4', '3', '0', '0', '1', '1', '0', '3', '0', '-6']
+    out = parse_stats(keys, stats)
+    assert out["points"] == 17
+    assert out["rebounds"] == 3 and out["assists"] == 0
+    assert out["fg_made"] == 5 and out["fg_attempted"] == 12
+    assert out["threes_made"] == 3 and out["threes_attempted"] == 6
+    assert out["off_rebounds"] == 0 and out["def_rebounds"] == 3
+    assert out["steals"] == 1 and out["blocks"] == 1
+    assert out["plus_minus"] == -6.0 and out["minutes"] == 31.0
+
+
+def test_parse_stats_handles_dnp_empty():
+    # A DNP athlete has an empty stats list -> all zeros, no crash.
+    out = parse_stats(["minutes", "points"], [])
+    assert out["points"] == 0 and out["minutes"] == 0.0
+
+
 def test_rec_cutoff_hierarchy():
     table = {
         "default_cutoff": 0.70,
