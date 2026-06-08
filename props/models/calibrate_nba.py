@@ -52,17 +52,22 @@ def calibrate_one(spec: dict):
     feature_keys = meta["feature_keys"]
     target = spec["target"]
 
-    # Use pre-2026 training data with out-of-fold predictions for calibration.
-    # This prevents the calibrator from overfitting to the same holdout we test on.
-    # 5-fold time-ordered CV: train on earlier games, predict on later fold.
+    # Calibrate on ALL regular-season games (nba_api external_id prefix 0022),
+    # which now includes the full 2026 regular season — the old `< 2026-01-01`
+    # cutoff ignored ~20k recent games. PLAYOFFS (0042) and play-in (0052) are
+    # excluded on purpose: they're a different, lower-scoring distribution that
+    # makes the model overconfident (the 71%->46% points problem) and would
+    # pollute a calibrator that mostly serves regular-season predictions.
+    # 5-fold time-ordered out-of-fold CV keeps the fit honest (no leakage).
     df = pd.read_sql(text("""
         SELECT pg.derived, pg.stats, g.game_date
         FROM player_games pg
         JOIN games g USING(game_id)
         WHERE g.sport_code = 'nba'
           AND pg.minutes_played >= 10
-          AND g.game_date < '2026-01-01'
+          AND g.external_id LIKE '0022%'
           AND g.status = 'final'
+        ORDER BY g.game_date
     """), engine)
 
     if len(df) < 200:
