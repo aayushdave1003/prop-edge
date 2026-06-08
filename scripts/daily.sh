@@ -176,6 +176,13 @@ if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && { [ "${PICKS_TODAY:-0}" -le 0 ] || [ "$F
          -d "{\"content\": \"$MSG\"}" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 || true
 fi
 
+# ── 8c. Ingest health monitor ────────────────────────────────────────────────
+# Checks the upstream ingest tables (lines fresh + slate not thin, recent final
+# games have box scores, injuries not cold) and pings Discord on anomalies —
+# catches a silently broken scrape/ingest before it zeroes out future picks.
+echo "--- Ingest monitor ---"
+python -m props.maintenance.ingest_monitor || true
+
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
 
