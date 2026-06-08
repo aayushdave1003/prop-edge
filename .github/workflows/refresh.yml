@@ -1,7 +1,9 @@
-name: line-refresh
+name: intraday-refresh
 
-# Intraday line + injury refreshes (lightweight — no model inference). Moves the
-# last Mac-dependent jobs to GitHub Actions for a fully laptop-free setup.
+# Intraday injury + starter refreshes (lightweight — no model inference).
+# PrizePicks LINES are deliberately NOT refreshed here: PrizePicks blocks
+# datacenter IPs, so the line scrape runs on the Mac (scripts/scrape_lines.sh).
+# Injuries + starters use ESPN/MLB feeds that work fine from the cloud.
 #
 # DST-safe: GitHub cron is UTC and doesn't follow DST, so each slot has a PDT and
 # a PST cron and the gate lets exactly one through, keyed on WHICH cron fired
@@ -18,7 +20,7 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: line-refresh
+  group: intraday-refresh
   cancel-in-progress: false
 
 jobs:
@@ -63,11 +65,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
       - if: steps.gate.outputs.run == 'yes'
         run: pip install -r requirements.txt
-      - name: Refresh PrizePicks lines + injuries + starters
+      - name: Refresh injuries + starters
         if: steps.gate.outputs.run == 'yes'
         run: |
-          for sport in nba mlb wnba nhl; do
-            python -m props.ingest.prizepicks --sport "$sport" || echo "WARN: $sport lines failed"
-          done
           python -m props.ingest.injuries || echo "WARN: injuries failed"
           python -m props.picks.confirm_starters || echo "WARN: confirm_starters failed"

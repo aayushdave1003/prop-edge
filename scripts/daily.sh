@@ -111,14 +111,14 @@ python -m props.features.mlb_batter_vs_pitcher
 python -m props.features.mlb_advanced_stats
 
 # ── 4. Live data refreshes ───────────────────────────────────────────────────
+# NOTE: PrizePicks lines are NOT scraped here. PrizePicks blocks datacenter IPs
+# (Cloudflare → HTTPError), so the scrape can't run on GitHub Actions — it runs
+# from the Mac via scripts/scrape_lines.sh (cron ~6:40a/10a/4p/7p PT, writes to
+# the same Railway DB). The 6:40a run lands fresh lines before this pipeline
+# generates picks; if the Mac is asleep, ingest_monitor (step 8c) flags it.
+# Injuries use ESPN, which IS datacenter-friendly, so they stay here.
 echo "--- Injuries ---"
 python -m props.ingest.injuries
-
-echo "--- PrizePicks lines ---"
-python -m props.ingest.prizepicks --sport nba  || true
-python -m props.ingest.prizepicks --sport mlb  || true
-python -m props.ingest.prizepicks --sport wnba || true
-python -m props.ingest.prizepicks --sport nhl  || true
 
 # ── 5. Settle previous picks ─────────────────────────────────────────────────
 echo "--- Settle yesterday's picks ---"
