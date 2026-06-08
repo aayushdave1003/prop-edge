@@ -73,6 +73,19 @@ MIN_LINE_BY_STAT = {
 }
 
 
+def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
+    """Resolve a model's sport_code. The combo model (`nba_combo_derived`) isn't
+    in the MODELS registry, so a plain `.get(name, "mlb")` mislabeled every NBA
+    combo pick (pts_rebs, pts_rebs_asts, …) as MLB — giving it the wrong emoji
+    AND the wrong (lenient) per-category cutoff. Fall back to the name prefix."""
+    if sport_by_model and model_name in sport_by_model:
+        return sport_by_model[model_name]
+    for prefix in ("wnba", "nba", "nhl", "mlb"):   # wnba before nba
+        if model_name.startswith(prefix):
+            return prefix
+    return "mlb"
+
+
 def _is_stale_game(game_state: dict, game_id, target_date) -> bool:
     """True if the game is already played (final/live) or dated before the
     target date — we neither log picks for it nor put it in the Discord digest."""
@@ -190,7 +203,7 @@ def main():
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     if "sport_code" not in edges.columns:
         edges = edges.copy()
-        edges["sport_code"] = edges["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
+        edges["sport_code"] = edges["model_name"].map(lambda m: sport_for_model(m, sport_by_model))
     nba_player_ids = edges[edges["sport_code"] == "nba"]["player_id"].unique().tolist()
     high_var_players = set()
     if nba_player_ids:
@@ -310,7 +323,7 @@ def main():
                 int(row["player_id"]), int(row["game_id"]),
                 row["stat_type"], row["predicted_mean"]
             )
-            sport_code = sport_by_model.get(row["model_name"], "mlb")
+            sport_code = sport_for_model(row["model_name"], sport_by_model)
             # Dedup guard: PrizePicks re-snapshots create new line_ids for the same
             # logical line (same value), and the existing unique index keys on
             # line_id so it can't catch this. Check by (player, stat, direction,
@@ -401,7 +414,7 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     # the same slate the dashboard surfaces, not a coin-flip band.
     from props.models.category_cutoffs import rec_cutoff
     e = edges.copy()
-    e["sport_code"] = e["model_name"].map(lambda m: sport_by_model.get(m, "mlb"))
+    e["sport_code"] = e["model_name"].map(lambda m: sport_for_model(m, sport_by_model))
     rec_mask = e.apply(
         lambda r: float(r["model_prob"]) >= rec_cutoff(r["sport_code"], r["stat_type"]),
         axis=1,
@@ -430,9 +443,11 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
                 "inline": False,
             })
 
-    # Best 2-pick suggestion
-    if len(top) >= 2:
-        p1, p2 = top.iloc[0], top.iloc[1]
+    # Best 2-pick suggestion — two DISTINCT players (you can't parlay two legs on
+    # the same player; they're correlated and PrizePicks blocks it).
+    distinct = top.drop_duplicates(subset=["player_id"], keep="first")
+    if len(distinct) >= 2:
+        p1, p2 = distinct.iloc[0], distinct.iloc[1]
         joint = round(p1["model_prob"] * p2["model_prob"] * 100, 1)
         parlay_note = (f"\n**Best 2-pick:** {p1['player_name']} + {p2['player_name']} "
                        f"— {joint}% joint ({round(joint * 3 / 100, 2)}x EV)")

@@ -115,6 +115,19 @@ def test_form_dots_direction():
     assert over.count("dot empty") == 1  # None renders empty
 
 
+# ── sport resolution (combo-model mislabel guard) ────────────────────────────
+from props.picks.log_picks import sport_for_model
+
+
+def test_sport_for_model_resolves_combo_and_prefixes():
+    # The bug: nba_combo_derived isn't in the registry and was defaulting to mlb.
+    assert sport_for_model("nba_combo_derived") == "nba"
+    assert sport_for_model("wnba_points_v1") == "wnba"   # wnba before nba
+    assert sport_for_model("nhl_goals_v1") == "nhl"
+    assert sport_for_model("hits_v1") == "mlb"           # no prefix -> default
+    assert sport_for_model("x", {"x": "nhl"}) == "nhl"   # registry wins
+
+
 # ── feature lookahead-safety (leakage audit guard) ───────────────────────────
 from props.features.mlb_rolling import compute_rolling_features, ALL_STATS
 
