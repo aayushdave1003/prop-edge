@@ -1,5 +1,7 @@
 """Scrape current PrizePicks projections and land them in prop_lines."""
 import json
+import unicodedata
+from collections import defaultdict
 from datetime import datetime, timezone
 from curl_cffi import requests as cc_requests
 from sqlalchemy import text
@@ -228,6 +230,109 @@ def find_game(session, sport_code, external_id) -> int | None:
     return None  # We'll resolve game linkage in a separate pass; not blocking here.
 
 
+# ── in-memory resolution (perf) ──────────────────────────────────────────────
+# Writing each line did 4-6 round-trips to the remote Railway DB (player fuzzy
+# match, team + game lookup, individual INSERT) → ~20 min/sport. We now pre-load
+# the reference tables once and resolve in memory, falling back to the DB
+# functions only for genuinely-new players/games (rare on a warm DB). The
+# fallback preserves the EXACT matching order (pp_id → similarity → last-name)
+# that settling depends on, so this is a pure speedup with no behavior change.
+
+def _norm_name(s: str) -> str:
+    """Lowercase, strip accents/punctuation, collapse spaces — a fast in-memory
+    stand-in for the pg_trgm similarity>0.8 match for the common (near-exact)
+    case. Misses fall through to the DB similarity query, so nothing regresses."""
+    s = unicodedata.normalize("NFKD", (s or "").strip().lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = "".join(c if (c.isalnum() or c == " ") else " " for c in s)
+    return " ".join(s.split())
+
+
+def _pp_date(start_time):
+    if not start_time:
+        return None
+    try:
+        return datetime.fromisoformat(start_time).date()
+    except (ValueError, TypeError):
+        try:
+            return datetime.strptime(str(start_time)[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return None
+
+
+def load_reference_maps(session) -> dict:
+    """Pre-load players/teams/recent real games + pp placeholders into dicts."""
+    m = {"player_ext": {}, "player_norm": {}, "player_last": defaultdict(list),
+         "team_abbr": defaultdict(list), "real_game": defaultdict(list),
+         "pp_game": {}}
+    for sc, eid, pid, name in session.execute(text(
+            "SELECT sport_code, external_id, player_id, full_name FROM players")):
+        m["player_ext"][(sc, eid)] = pid
+        if name:
+            m["player_norm"].setdefault((sc, _norm_name(name)), pid)
+            if not str(eid).startswith("pp_"):   # last-name match excludes pp_ rows
+                m["player_last"][(sc, name.rsplit(" ", 1)[-1].lower())].append(pid)
+    for sc, ab, tid in session.execute(text(
+            "SELECT sport_code, UPPER(abbreviation), team_id FROM teams")):
+        m["team_abbr"][(sc, ab)].append(tid)
+    for sc, gid, htid, atid, gd in session.execute(text("""
+            SELECT sport_code, game_id, home_team_id, away_team_id, game_date
+            FROM games
+            WHERE external_id NOT LIKE 'pp_%'
+              AND game_date BETWEEN CURRENT_DATE - INTERVAL '7 days'
+                                AND CURRENT_DATE + INTERVAL '7 days'""")):
+        if htid:
+            m["real_game"][(sc, htid)].append((gid, gd))
+        if atid:
+            m["real_game"][(sc, atid)].append((gid, gd))
+    for sc, eid, gid in session.execute(text(
+            "SELECT sport_code, external_id, game_id FROM games WHERE external_id LIKE 'pp_%'")):
+        m["pp_game"][(sc, eid)] = gid
+    return m
+
+
+def resolve_player_id(session, rec, m) -> int | None:
+    sc, name = rec["sport_code"], rec["player_name"] or ""
+    pp_id = f"pp_{rec['player_external_id']}"
+    pid = m["player_ext"].get((sc, pp_id))
+    if pid is not None:
+        return pid
+    pid = m["player_norm"].get((sc, _norm_name(name)))
+    if pid is not None:
+        return pid
+    cand = m["player_last"].get((sc, name.rsplit(" ", 1)[-1].lower())) if name else None
+    if cand:
+        return cand[0]
+    # Genuinely unmatched in memory → full DB path (similarity etc.), then cache.
+    pid = find_or_create_player(session, sc, rec["player_external_id"], name, rec["team_abbr"])
+    if pid is not None:
+        m["player_ext"][(sc, pp_id)] = pid
+        m["player_norm"].setdefault((sc, _norm_name(name)), pid)
+    return pid
+
+
+def resolve_game_id(session, rec, m) -> int | None:
+    sc = rec["sport_code"]
+    abbr = (rec["team_abbr"] or "").upper()
+    abbr = PP_ABBR_ALIAS.get(sc, {}).get(abbr, abbr)
+    gd = _pp_date(rec["start_time"])
+    if abbr and gd is not None:
+        tids = m["team_abbr"].get((sc, abbr), [])
+        if len(tids) == 1:
+            matches = {gid for gid, d in m["real_game"].get((sc, tids[0]), [])
+                       if abs((d - gd).days) <= 1}
+            if len(matches) == 1:
+                return next(iter(matches))
+    # Fall back to a pp_ placeholder (cached; created in DB only when new).
+    pp_ext = f"pp_{rec['game_external_id']}" if rec["game_external_id"] else None
+    if pp_ext and (sc, pp_ext) in m["pp_game"]:
+        return m["pp_game"][(sc, pp_ext)]
+    gid = ensure_pp_game(session, sc, rec["game_external_id"], rec["start_time"])
+    if gid is not None and pp_ext:
+        m["pp_game"][(sc, pp_ext)] = gid
+    return gid
+
+
 def run():
     configure_logging()
     started = datetime.now(timezone.utc)
@@ -259,6 +364,8 @@ def run():
     skipped = 0
 
     with session_scope() as session:
+        maps = load_reference_maps(session)   # one-time pre-load (avoids per-line round-trips)
+        line_rows = []
         for proj in projections:
             try:
                 rec = parse_projection(proj, included_lookup)
@@ -275,39 +382,34 @@ def run():
                 skipped += 1
                 continue
 
-            player_id = find_or_create_player(
-                session, rec["sport_code"], rec["player_external_id"],
-                rec["player_name"], rec["team_abbr"],
-            )
+            player_id = resolve_player_id(session, rec, maps)
             if player_id is None:
                 skipped += 1
                 continue
 
             # Resolve to the player's REAL game (team + date) when we can; only
             # fall back to a pp_ placeholder when the match isn't unambiguous.
-            game_id = find_real_game(
-                session, rec["sport_code"], rec["team_abbr"], rec["start_time"]
-            )
-            if game_id is None:
-                game_id = ensure_pp_game(
-                    session, rec["sport_code"], rec["game_external_id"], rec["start_time"]
-                )
+            game_id = resolve_game_id(session, rec, maps)
             if game_id is None:
                 skipped += 1
                 continue
 
+            line_rows.append({
+                "sc": rec["sport_code"], "pid": player_id, "gid": game_id,
+                "stat": rec["stat_type"], "line": rec["line_value"],
+                "variant": rec["odds_type"], "ts": snapshot_at,
+            })
+            inserted += 1
+
+        # One batched insert instead of ~7k individual round-trips.
+        if line_rows:
             session.execute(text("""
                 INSERT INTO prop_lines (
                     sportsbook, sport_code, player_id, game_id, stat_type,
                     line_value, line_variant, is_pickem, snapshot_at
                 )
                 VALUES ('prizepicks', :sc, :pid, :gid, :stat, :line, :variant, TRUE, :ts)
-            """), {
-                "sc": rec["sport_code"], "pid": player_id, "gid": game_id,
-                "stat": rec["stat_type"], "line": rec["line_value"],
-                "variant": rec["odds_type"], "ts": snapshot_at,
-            })
-            inserted += 1
+            """), line_rows)
 
     with session_scope() as session:
         session.execute(text("""

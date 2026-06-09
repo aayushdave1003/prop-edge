@@ -26,10 +26,9 @@ LOG="logs/scrape_lines_$(date +%Y-%m-%d).log"
 {
     echo "=================================================="
     echo "scrape_lines: $(date)  ->  Railway DB"
-    for sport in nba mlb wnba nhl; do
-        echo "--- prizepicks $sport ---"
-        "$PY" -m props.ingest.prizepicks --sport "$sport" || echo "WARN: $sport scrape failed"
-    done
+    # One call scrapes ALL sports — the projections endpoint returns every league
+    # in one payload, so per-sport invocations just repeat the same full scrape.
+    "$PY" -m props.ingest.prizepicks || echo "WARN: scrape failed"
     echo "done: $(date)"
 } >> "$LOG" 2>&1
 
