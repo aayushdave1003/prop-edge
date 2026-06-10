@@ -6,7 +6,7 @@ For each pick where leg_result IS NULL:
   - Compare to line, factor in direction (over/under), classify win/loss/push
   - Update the pick with actual_value, leg_result, settled_at
 """
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from sqlalchemy import text
 from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
@@ -41,7 +41,7 @@ def find_unsettled_picks():
                    g.status, g.game_date,
                    pl_player.full_name AS player_name
             FROM picks pk
-            JOIN prop_lines pl ON pl.line_id = pk.line_id
+            LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
             LEFT JOIN player_games pg
                 ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
             LEFT JOIN games g ON g.game_id = pk.game_id
@@ -134,7 +134,34 @@ def run():
                 continue
 
             if game_status != "final":
-                waiting += 1
+                # A game still not final 3+ days after its date is abandoned (a
+                # postponed/dead placeholder, e.g. unresolved pp_ rows) and will
+                # never settle — void rather than wait forever. Today's/upcoming
+                # games still legitimately wait.
+                if game_date is not None and game_date < date.today() - timedelta(days=2):
+                    session.execute(text("""
+                        UPDATE picks SET leg_result='void', settled_at=NOW()
+                        WHERE pick_id=:pid
+                    """), {"pid": pick_id})
+                    log.info("voided_stale_unplayed", pick_id=pick_id,
+                             player=player_name, game_date=str(game_date))
+                    settled += 1
+                else:
+                    waiting += 1
+                continue
+
+            if line_value is None:
+                # The prop_line this pick referenced is gone (old prune/cleanup),
+                # and INNER-joining it used to silently drop the pick from the
+                # queue forever. Without the line we can't classify win/loss, so
+                # void it — a final-game pick with no line is unsettleable.
+                session.execute(text("""
+                    UPDATE picks SET leg_result='void', settled_at=NOW()
+                    WHERE pick_id=:pid
+                """), {"pid": pick_id})
+                log.info("voided_missing_line", pick_id=pick_id, player=player_name,
+                         game_date=str(game_date))
+                settled += 1
                 continue
 
             if stats_json is None:

@@ -8,6 +8,7 @@ from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
 BOXSCORE_URL = "https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore"
+SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule?gamePk={game_pk}"
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
@@ -15,6 +16,19 @@ def fetch_boxscore(game_pk):
     resp = requests.get(BOXSCORE_URL.format(game_pk=game_pk), timeout=15)
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_game_status(game_pk):
+    """MLB abstractGameState ('Final' / 'Live' / 'Preview') for a gamePk, or None."""
+    try:
+        resp = requests.get(SCHEDULE_URL.format(game_pk=game_pk), timeout=15)
+        resp.raise_for_status()
+        dates = resp.json().get("dates", [])
+        if dates and dates[0].get("games"):
+            return dates[0]["games"][0].get("status", {}).get("abstractGameState")
+    except Exception as e:
+        log.warning("mlb_status_fetch_failed", game_pk=game_pk, error=str(e)[:100])
+    return None
 
 
 def upsert_player(session, external_id, full_name, position, team_id):
@@ -111,21 +125,28 @@ def process_side(session, boxscore, side, game_id, team_id, opponent_id, is_home
     return inserted
 
 
-def get_unprocessed_games(session):
+def get_unprocessed_games(session, since_days=5):
+    """Games lacking box scores: anything already final, plus recent games still
+    marked preview/live. The MLB schedule ingest can miss flipping a game to
+    'final' (outside its yesterday/today window, or during an outage), which used
+    to orphan picks forever — process_game now confirms 'Final' via the API and
+    flips the status itself."""
     rows = session.execute(text("""
-        SELECT g.game_id, g.external_id, g.home_team_id, g.away_team_id
+        SELECT g.game_id, g.external_id, g.home_team_id, g.away_team_id, g.status
         FROM games g
-        WHERE g.sport_code = 'mlb' AND g.status = 'final'
+        WHERE g.sport_code = 'mlb'
           AND NOT EXISTS (
               SELECT 1 FROM player_games pg WHERE pg.game_id = g.game_id
           )
+          AND (g.status = 'final'
+               OR g.game_date >= CURRENT_DATE - make_interval(days => :since))
         ORDER BY g.game_date DESC
-    """)).fetchall()
+    """), {"since": since_days}).fetchall()
     return [{"game_id": r[0], "external_id": r[1],
-             "home_team_id": r[2], "away_team_id": r[3]} for r in rows]
+             "home_team_id": r[2], "away_team_id": r[3], "status": r[4]} for r in rows]
 
 
-def run(limit=None):
+def run(limit=None, since_days=5):
     configure_logging()
     started = datetime.now()
     with session_scope() as session:
@@ -135,14 +156,20 @@ def run(limit=None):
             RETURNING run_id
         """), {"s": started}).scalar()
     with session_scope() as session:
-        games = get_unprocessed_games(session)
+        games = get_unprocessed_games(session, since_days=since_days)
     log.info("found_unprocessed_games", count=len(games))
     if limit:
         games = games[:limit]
     total_players = 0
     failed = 0
+    flipped = 0
     for i, g in enumerate(games):
         try:
+            # For games not yet marked final, confirm with the API before
+            # ingesting — skip ones that are still Preview/Live.
+            if g["status"] != "final":
+                if fetch_game_status(g["external_id"]) != "Final":
+                    continue
             box = fetch_boxscore(g["external_id"])
             with session_scope() as session:
                 home = process_side(session, box, "home", g["game_id"],
@@ -150,6 +177,13 @@ def run(limit=None):
                 away = process_side(session, box, "away", g["game_id"],
                                     g["away_team_id"], g["home_team_id"], False)
                 total_players += home + away
+                # Flip a stale preview/live row to final now that it's confirmed
+                # final and box-scored, so settle can pick it up.
+                if g["status"] != "final" and (home + away) > 0:
+                    session.execute(text(
+                        "UPDATE games SET status='final' WHERE game_id=:gid"),
+                        {"gid": g["game_id"]})
+                    flipped += 1
             if (i + 1) % 10 == 0:
                 log.info("progress", processed=i + 1, total=len(games))
         except Exception as e:
@@ -165,7 +199,7 @@ def run(limit=None):
         """), {"n": total_players, "failed": failed,
                "emsg": f"{failed} games failed", "rid": run_id})
     log.info("boxscore_ingest_complete", games=len(games),
-             players=total_players, failed=failed)
+             players=total_players, failed=failed, status_flipped=flipped)
 
 
 if __name__ == "__main__":
@@ -173,5 +207,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None,
                         help="Max games to process (default: all)")
+    parser.add_argument("--since-days", type=int, default=5,
+                        help="Also process non-final games this many days back (default: 5)")
     args, _ = parser.parse_known_args()
-    run(limit=args.limit)
+    run(limit=args.limit, since_days=args.since_days)
