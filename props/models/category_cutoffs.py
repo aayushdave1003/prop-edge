@@ -172,10 +172,20 @@ _CACHE: dict | None = None
 
 
 def load_cutoffs() -> dict:
-    """Load the committed cutoff table, with a safe default if it's missing."""
+    """Cutoff table for runtime use. Recomputes from the live DB so cutoffs
+    self-tune as picks settle (no manual regen) — e.g. a suppressed stat lifts
+    itself once it proves out. Falls back to the committed JSON if the DB is
+    unreachable, then to safe defaults. Cached per-process."""
     global _CACHE
     if _CACHE is not None:
         return _CACHE
+    try:
+        tbl = compute_from_db()
+        if tbl and tbl.get("sports"):
+            _CACHE = tbl
+            return _CACHE
+    except Exception:
+        pass  # DB unreachable / empty — fall back to the committed seed
     try:
         _CACHE = json.loads(_JSON_PATH.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
