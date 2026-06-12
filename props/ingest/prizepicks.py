@@ -96,12 +96,15 @@ STAT_TYPE_MAP = {
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=15))
 def fetch_projections() -> dict:
-    r = cc_requests.get(
-        PRIZEPICKS_URL,
-        params={"per_page": 10000, "single_stat": "true"},
-        impersonate="chrome120",
-        timeout=30,
-    )
+    from props.utils.config import settings
+    # Route through a residential proxy when configured (lets the scrape run on
+    # GitHub Actions; PrizePicks blocks datacenter IPs). Direct otherwise.
+    kwargs = {"params": {"per_page": 10000, "single_stat": "true"},
+              "impersonate": "chrome120", "timeout": 30}
+    if settings.prizepicks_proxy:
+        kwargs["proxies"] = {"http": settings.prizepicks_proxy,
+                             "https": settings.prizepicks_proxy}
+    r = cc_requests.get(PRIZEPICKS_URL, **kwargs)
     r.raise_for_status()
     return r.json()
 

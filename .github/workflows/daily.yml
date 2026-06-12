@@ -31,6 +31,7 @@ jobs:
       DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
       LOG_LEVEL: INFO
     steps:
       - name: Gate one run per day (DST-safe, delay-independent)

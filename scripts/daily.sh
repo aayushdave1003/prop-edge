@@ -111,12 +111,15 @@ python -m props.features.mlb_batter_vs_pitcher
 python -m props.features.mlb_advanced_stats
 
 # ── 4. Live data refreshes ───────────────────────────────────────────────────
-# NOTE: PrizePicks lines are NOT scraped here. PrizePicks blocks datacenter IPs
-# (Cloudflare → HTTPError), so the scrape can't run on GitHub Actions — it runs
-# from the Mac via scripts/scrape_lines.sh (cron ~6:40a/10a/4p/7p PT, writes to
-# the same Railway DB). The 6:40a run lands fresh lines before this pipeline
-# generates picks; if the Mac is asleep, ingest_monitor (step 8c) flags it.
-# Injuries use ESPN, which IS datacenter-friendly, so they stay here.
+# PrizePicks blocks datacenter IPs, so the scrape only runs here when a
+# residential proxy is configured (PRIZEPICKS_PROXY) — then the pipeline is
+# fully self-contained on GitHub Actions. Without a proxy this is skipped and
+# the Mac cron (scripts/scrape_lines.sh) owns scraping; ingest_monitor flags
+# stale lines if the Mac is asleep. Injuries use ESPN (datacenter-friendly).
+if [ -n "${PRIZEPICKS_PROXY:-}" ]; then
+    echo "--- PrizePicks lines (via proxy) ---"
+    python -m props.ingest.prizepicks || echo "WARN: prizepicks scrape failed"
+fi
 echo "--- Injuries ---"
 python -m props.ingest.injuries
 

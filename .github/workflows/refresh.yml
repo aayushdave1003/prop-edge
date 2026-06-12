@@ -32,6 +32,7 @@ jobs:
       RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
       LOG_LEVEL: INFO
     steps:
       - name: Gate slots (DST-safe, delay-independent)
@@ -65,8 +66,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
       - if: steps.gate.outputs.run == 'yes'
         run: pip install -r requirements.txt
-      - name: Refresh injuries + starters
+      - name: Refresh lines (via proxy) + injuries + starters
         if: steps.gate.outputs.run == 'yes'
         run: |
+          # PrizePicks lines only when a residential proxy is configured (it
+          # blocks datacenter IPs); otherwise the Mac cron owns scraping.
+          if [ -n "${PRIZEPICKS_PROXY:-}" ]; then
+            python -m props.ingest.prizepicks || echo "WARN: prizepicks scrape failed"
+          fi
           python -m props.ingest.injuries || echo "WARN: injuries failed"
           python -m props.picks.confirm_starters || echo "WARN: confirm_starters failed"
