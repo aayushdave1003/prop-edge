@@ -38,6 +38,9 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☐ **P1** Make suppression rules (>97% confidence, multi-game/combined-player filters) configurable + documented in one place.
 - ☐ **P2** Bankroll/Kelly tracking: simulate a running paper bankroll from the Kelly sizes already shown.
 - ☑ **P2** Per-pick "why" — DONE: each card shows a synthesized rationale line (recent form / market edge / line movement).
+- ☑ **P3** Lineup/injury suppression — DONE: log_picks skips players currently Out/Doubtful/IL (name-join to player_injuries, `_is_out_status`), cutting DNP voids.
+- ☑ **P3** Bankroll-drawdown alert — DONE: nightly scorecard flags a 🥶 cold stretch (6+ loss streak, or 6u+ paper drawdown when 7d is also sub-breakeven).
+- ☑ **P3** player_games id sequence reset (migration 0006) — was drifting behind max -> pkey collisions silently broke some box-score ingests (surfaced via 2 stuck WNBA games).
 - ☑ **P3** Morning Discord digest — DONE: the daily digest posts the recommended slate using the per-category cutoffs (not a flat 0.70).
 
 ## 5. Evaluation & Tracking

@@ -86,6 +86,17 @@ def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
     return "mlb"
 
 
+def _is_out_status(status: str) -> bool:
+    """True if an injury status means the player likely WON'T play tonight.
+    Day-to-day / questionable / probable usually play, so we keep those."""
+    s = (status or "").lower()
+    if any(k in s for k in ("day-to-day", "day to day", "questionable",
+                            "probable", "gtd", "game-time", "available")):
+        return False
+    return any(k in s for k in ("out", "doubtful", "il", "suspens",
+                                "developmental", "bereavement", "paternity"))
+
+
 def _is_stale_game(game_state: dict, game_id, target_date) -> bool:
     """True if the game is already played (final/live) or dated before the
     target date — we neither log picks for it nor put it in the Discord digest."""
@@ -262,6 +273,26 @@ def main():
         if low_minute_players:
             log.info("low_minute_players_suppressed", n=len(low_minute_players))
 
+    # Suppress picks for players currently ruled OUT (or doubtful/IL) — don't log
+    # a pick on someone who won't take the floor, which would just void later.
+    # player_injuries is name-keyed, so match by name within sport (latest report).
+    out_players: set[int] = set()
+    if all_player_ids:
+        with session_scope() as _si:
+            inj_rows = _si.execute(text("""
+                SELECT DISTINCT ON (p.player_id) p.player_id, pi.status
+                FROM players p
+                JOIN player_injuries pi
+                  ON pi.sport_code = p.sport_code
+                 AND lower(pi.player_name) = lower(p.full_name)
+                WHERE p.player_id = ANY(:ids)
+                  AND pi.fetched_at > NOW() - INTERVAL '30 hours'
+                ORDER BY p.player_id, pi.fetched_at DESC
+            """), {"ids": [int(p) for p in all_player_ids]}).fetchall()
+        out_players = {int(r[0]) for r in inj_rows if _is_out_status(r[1])}
+        if out_players:
+            log.info("out_players_suppressed", n=len(out_players))
+
     # Guard: never log a pick for a game that's already played or dated before
     # the target date. The dashboard hides these, but creating them pollutes the
     # unsettled backlog and can produce "picks" for finished games. A real game
@@ -280,10 +311,15 @@ def main():
     inserted = 0
     skipped = 0
     skipped_stale = 0
+    skipped_out = 0
     with session_scope() as session:
         for _, row in edges.iterrows():
             if abs(row["edge"]) < MIN_EDGE_TO_LOG:
                 skipped += 1
+                continue
+            # Skip players ruled out / on the IL (would just void as a DNP later).
+            if int(row["player_id"]) in out_players:
+                skipped_out += 1
                 continue
             # Skip games already played (final/live) or dated in the past.
             if _is_stale_game(game_state, row["game_id"], target_date):
@@ -390,7 +426,7 @@ def main():
             })
             inserted += 1
     log.info("picks_logged", inserted=inserted, skipped_low_edge=skipped,
-             skipped_stale_games=skipped_stale)
+             skipped_stale_games=skipped_stale, skipped_out_players=skipped_out)
 
     if inserted > 0:
         # Digest must match what we actually logged — drop stale-game rows so the

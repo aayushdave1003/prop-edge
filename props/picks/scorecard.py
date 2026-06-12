@@ -9,6 +9,7 @@ Run:  python -m props.picks.scorecard            (posts for yesterday)
       python -m props.picks.scorecard --date YYYY-MM-DD
 """
 import argparse
+import math
 from datetime import date
 
 import requests
@@ -20,6 +21,9 @@ from props.utils.logging import log, configure_logging
 from props.models.category_cutoffs import rec_cutoff
 
 BREAKEVEN = 0.577
+WIN_PL = math.sqrt(3.0) - 1.0   # per-leg P&L of a 2-pick 3x parlay on a win
+DD_UNITS_ALERT = 6.0            # flag a paper drawdown this deep (in units)
+STREAK_ALERT = 6               # …or a losing streak this long
 
 
 def _rows(session, days_back: int):
@@ -47,7 +51,29 @@ def _rec(rows):
             if float(r.model_prob) >= rec_cutoff(r.sport_code, r.stat_type)]
 
 
-def build_payload(rows, target_date):
+def _drawdown(rec_rows):
+    """Flat 1u paper P&L over rec-tier picks (chronological). Returns
+    (current_drawdown_units, current_losing_streak)."""
+    rows = sorted([r for r in rec_rows if r.leg_result in ("win", "loss")],
+                  key=lambda r: r.d)
+    cum = peak = 0.0
+    streak = 0
+    for r in rows:
+        if r.leg_result == "win":
+            cum += WIN_PL
+            streak = 0
+        else:
+            cum -= 1.0
+            streak += 1
+        peak = max(peak, cum)
+    return round(peak - cum, 1), streak
+
+
+def build_payload(rows, target_date, today=None):
+    from datetime import timedelta
+    if today is None:
+        today = target_date + timedelta(days=1)
+    last7 = [r for r in rows if r.d >= today - timedelta(days=7)]
     day = [r for r in rows if r.d == target_date]
     if not day:
         return None  # nothing settled for that date — skip (no empty spam)
@@ -71,8 +97,20 @@ def build_payload(rows, target_date):
                                 "value": f"{w}–{l} ({w/(w+l):.0%})", "inline": True})
 
     # 7-day rolling recommended tier
-    r7w, r7l = _wl(_rec(rows))
-    r7 = f"{r7w}–{r7l} ({r7w/(r7w+r7l):.0%})" if (r7w + r7l) else "—"
+    r7w, r7l = _wl(_rec(last7))
+    r7_wr = r7w / (r7w + r7l) if (r7w + r7l) else 1.0
+    r7 = f"{r7w}–{r7l} ({r7_wr:.0%})" if (r7w + r7l) else "—"
+
+    # Cold-stretch alert over the 30-day recommended history. A long losing
+    # streak always flags; a deep paper drawdown only flags if recent form is
+    # ALSO below breakeven (so a stale-but-recovering drawdown stays quiet).
+    dd, streak = _drawdown(_rec(rows))
+    cold = []
+    if streak >= STREAK_ALERT:
+        cold.append(f"{streak}-loss streak")
+    if dd >= DD_UNITS_ALERT and r7_wr < BREAKEVEN:
+        cold.append(f"down {dd:.1f}u from peak")
+    dd_line = f"\n🥶 **Cold stretch** — {' · '.join(cold)}" if cold else ""
 
     # weakest stat bucket over the window (>=8 settled, <50%)
     buckets = {}
@@ -94,7 +132,7 @@ def build_payload(rows, target_date):
     ]
     desc = (f"**Recommended: {rw}–{rl} ({rec_pct:.0%})** vs 57.7% breakeven "
             f"{'✅' if ok else '🔻'}\nOverall: {dw}–{dl} ({dw/(dw+dl):.0%})"
-            f"{weak_line}")
+            f"{dd_line}{weak_line}")
     return {"embeds": [{
         "title": f"📊 prop-edge scorecard — {target_date:%a %b %-d}",
         "description": desc,
@@ -109,15 +147,14 @@ def run(target_date: date = None):
     if not settings.discord_webhook_url:
         log.info("scorecard_skipped", reason="no_webhook")
         return
+    from datetime import timedelta, datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
     with session_scope() as s:
-        rows = _rows(s, days_back=7)
+        rows = _rows(s, days_back=30)
     if target_date is None:
-        from datetime import timedelta
-        from zoneinfo import ZoneInfo
-        from datetime import datetime
-        target_date = (datetime.now(ZoneInfo("America/Los_Angeles")).date()
-                       - timedelta(days=1))
-    payload = build_payload(rows, target_date)
+        target_date = today - timedelta(days=1)
+    payload = build_payload(rows, target_date, today)
     if payload is None:
         log.info("scorecard_skipped", reason="no_settled_picks", date=str(target_date))
         return

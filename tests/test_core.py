@@ -115,6 +115,18 @@ def test_form_dots_direction():
     assert over.count("dot empty") == 1  # None renders empty
 
 
+# ── injury suppression ────────────────────────────────────────────────────────
+from props.picks.log_picks import _is_out_status
+
+
+def test_is_out_status():
+    for s in ["Out", "Doubtful", "15-Day-IL", "60-Day-IL", "7-Day IL",
+              "suspension", "developmental list", "paternity"]:
+        assert _is_out_status(s), s
+    for s in ["Day-To-Day", "Questionable", "Probable", "GTD", "Available", "", None]:
+        assert not _is_out_status(s), s
+
+
 # ── closing line value ────────────────────────────────────────────────────────
 from props.picks.compute_clv import clv_points
 

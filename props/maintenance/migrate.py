@@ -37,6 +37,13 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  ON player_injuries (sport_code, player_name, fetched_at DESC)"),
     ("0005_picks_line_close",
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS line_close NUMERIC(8,3)"),
+    # The player_games id sequence drifted behind max(player_game_id) (a bulk
+    # load preserved ids without setval), so new box-score inserts collided on
+    # the pkey and rolled back — silently breaking ingestion for some games.
+    # Reset it to max so the serial advances cleanly again.
+    ("0006_fix_player_games_seq",
+     "SELECT setval(pg_get_serial_sequence('player_games','player_game_id'),"
+     "              (SELECT COALESCE(MAX(player_game_id), 1) FROM player_games))"),
 ]
 
 
