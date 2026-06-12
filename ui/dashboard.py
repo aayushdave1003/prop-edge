@@ -947,7 +947,9 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     inj_html  = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
 
     # The player's OWN injury status (warn before betting someone who's out/IL).
-    inj_status = (row.get("injury_status") or "").strip()
+    # NULL joins come back as NaN (a truthy float), so coerce non-strings to "".
+    _is = row.get("injury_status")
+    inj_status = _is.strip() if isinstance(_is, str) else ""
     inj_status_html = ""
     if inj_status:
         _s = inj_status.lower()
@@ -957,7 +959,8 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
                                       "doubtful", "probable", "gtd", "game-time"))
         cls = "warn" if _soft else "out"
         icon = "⚠" if _soft else "🚫"
-        note = (row.get("injury_note") or "").strip()
+        _in = row.get("injury_note")
+        note = _in.strip() if isinstance(_in, str) else ""
         note = f" · {note[:48]}" if note else ""
         inj_status_html = (f'<div class="inj-status {cls}">{icon} {inj_status}'
                            f'<span class="inj-note">{note}</span></div>')
