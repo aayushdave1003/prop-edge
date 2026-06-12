@@ -143,6 +143,10 @@ python -m props.picks.settle_picks
 echo "--- Compute CLV ---"
 python -m props.picks.compute_clv || true
 
+# ── 7c. Nightly scorecard to Discord (last night's results) ──────────────────
+echo "--- Discord scorecard ---"
+python -m props.picks.scorecard || true
+
 # ── 8. Weekly backtest (Mondays) ─────────────────────────────────────────────
 if [ "$(date +%u)" = "1" ]; then
     echo "--- Weekly backtest (Monday) ---"

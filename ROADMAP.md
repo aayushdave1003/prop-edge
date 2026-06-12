@@ -45,6 +45,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☑ **P2** Out-of-sample holdout/calibration report — DONE: `python -m props.models.holdout_report` (per sport×stat win rate, predicted-vs-realized calibration + weighted MAE, recent-vs-earlier drift).
 - ☑ **P2** ROI by parlay size — DONE: Performance tab shows 2/3/4-pick power-play ROI at the recommended-tier per-leg win rate.
 - ☑ **P2** Closing Line Value (CLV) — DONE: `compute_clv` captures the last pre-game *standard*-variant line (migration `0005` adds `picks.line_close`), wired into daily.sh; Performance tab shows beat-the-close %, avg CLV, and the +CLV-vs-−CLV win split. Finding: PrizePicks standard lines are sticky (only ~9% move), so CLV is a weaker signal here than at a sharp book — read it as a trend.
+- ☑ **P2** Nightly Discord scorecard — DONE: `props/picks/scorecard.py` (daily.sh step 7c) auto-posts last night's results each morning — recommended-tier W/L vs the 57.7% breakeven, per-sport, 7-day rolling, and the weakest stat bucket. No session/manual check needed.
 
 ## 6. UI / UX
 - ✅ Visual redesign (Inter, gradients, glass surfaces, refined cards/tabs/metrics)
