@@ -443,13 +443,14 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
                 "inline": False,
             })
 
-    # Best 2-pick suggestion — two DISTINCT players (you can't parlay two legs on
-    # the same player; they're correlated and PrizePicks blocks it).
-    distinct = top.drop_duplicates(subset=["player_id"], keep="first")
-    if len(distinct) >= 2:
-        p1, p2 = distinct.iloc[0], distinct.iloc[1]
+    # Best 2-pick suggestion — two UNCORRELATED legs (distinct players, and never
+    # two legs from the same game+direction, which bust as a block).
+    from props.picks.build_parlays import build_diversified_parlay
+    par = build_diversified_parlay(top, max_legs=2)
+    if len(par) >= 2:
+        p1, p2 = par.iloc[0], par.iloc[1]
         joint = round(p1["model_prob"] * p2["model_prob"] * 100, 1)
-        parlay_note = (f"\n**Best 2-pick:** {p1['player_name']} + {p2['player_name']} "
+        parlay_note = (f"\n**Best 2-pick (uncorrelated):** {p1['player_name']} + {p2['player_name']} "
                        f"— {joint}% joint ({round(joint * 3 / 100, 2)}x EV)")
     else:
         parlay_note = ""

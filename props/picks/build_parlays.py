@@ -279,3 +279,38 @@ def print_parlay_recommendations(combos: list[dict]):
                 f"{leg['direction'].upper():5s}  {leg['line_value']}  "
                 f"({leg['model_prob']:.0%}){game_ctx}{implied}{injury}"
             )
+
+
+# ── Diversified (correlation-AVOIDING) parlay ────────────────────────────────
+# The functions above EXPLOIT positive correlation (same-team overs underpriced
+# by PP's fixed multipliers). That only helps when the model is well-calibrated.
+# In practice the slate is near-breakeven, and the observed failure mode is the
+# DOWNSIDE of correlation: stacking legs from one game in one direction (e.g. a
+# pile of rebounds-unders) means a single game environment — a hot/cold night —
+# decides them all together, so they bust as a block. For the user-facing parlay
+# we instead DIVERSIFY: spread legs across independent game outcomes.
+
+def build_diversified_parlay(picks_df, max_legs: int = 4):
+    """Pick up to ``max_legs`` uncorrelated legs, highest-confidence first.
+
+    Rule: never take two legs from the same (game, direction) — that's the
+    strongly-correlated case that sinks a parlay when one game runs hot/cold.
+    Different games (or same game opposite directions) are ~independent and
+    allowed. Dedups players. Returns the chosen legs ordered by model_prob desc.
+    """
+    if picks_df is None or len(picks_df) == 0:
+        return picks_df
+    df = picks_df.copy()
+    if "model_prob" in df.columns:
+        df = df.sort_values("model_prob", ascending=False)
+    df = df.drop_duplicates(subset=["player_id"], keep="first")
+    chosen, used = [], set()
+    for idx, r in df.iterrows():
+        key = (r.get("game_id"), r.get("direction"))
+        if key in used:                 # same game + same direction = correlated
+            continue
+        chosen.append(idx)
+        used.add(key)
+        if len(chosen) >= max_legs:
+            break
+    return df.loc[chosen]

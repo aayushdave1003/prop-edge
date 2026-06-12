@@ -115,6 +115,36 @@ def test_form_dots_direction():
     assert over.count("dot empty") == 1  # None renders empty
 
 
+# ── diversified (correlation-avoiding) parlay ────────────────────────────────
+from props.picks.build_parlays import build_diversified_parlay
+
+
+def test_diversified_parlay_avoids_same_game_same_direction():
+    df = pd.DataFrame([
+        dict(player_id=1, game_id=99, direction="under", model_prob=0.90),
+        dict(player_id=2, game_id=99, direction="under", model_prob=0.85),  # corr — skip
+        dict(player_id=3, game_id=99, direction="under", model_prob=0.80),  # corr — skip
+        dict(player_id=4, game_id=99, direction="over",  model_prob=0.78),  # ok (opp dir)
+        dict(player_id=5, game_id=42, direction="under", model_prob=0.72),  # ok (diff game)
+    ])
+    out = build_diversified_parlay(df, max_legs=4)
+    # never two legs sharing (game, direction)
+    keys = list(zip(out["game_id"], out["direction"]))
+    assert len(keys) == len(set(keys))
+    assert set(out["player_id"]) == {1, 4, 5}      # the two redundant unders dropped
+    assert list(out["player_id"])[0] == 1           # highest confidence first
+
+
+def test_diversified_parlay_dedups_players():
+    df = pd.DataFrame([
+        dict(player_id=1, game_id=1, direction="under", model_prob=0.8),
+        dict(player_id=1, game_id=1, direction="over",  model_prob=0.7),  # same player
+        dict(player_id=2, game_id=2, direction="under", model_prob=0.6),
+    ])
+    out = build_diversified_parlay(df, max_legs=4)
+    assert list(out["player_id"]) == [1, 2]
+
+
 # ── sport resolution (combo-model mislabel guard) ────────────────────────────
 from props.picks.log_picks import sport_for_model
 

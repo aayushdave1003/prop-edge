@@ -12,6 +12,7 @@ from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
+from props.picks.build_parlays import build_diversified_parlay
 
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
@@ -1048,10 +1049,10 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     if qual.empty:
         return ""
 
-    # Top 4 by edge, one leg per player (no correlated double-dip)
-    top = (qual
-           .drop_duplicates(subset=["player_id"], keep="first")
-           .head(4))
+    # Up to 4 UNCORRELATED legs: highest-confidence first, never two legs from
+    # the same game in the same direction (those bust as a block when one game
+    # runs hot/cold). Spreads the parlay across independent game outcomes.
+    top = build_diversified_parlay(qual, max_legs=4)
     legs_html = ""
     stat_labels_slate = {
         "points": "Points", "rebounds": "Rebounds", "assists": "Assists",
@@ -1082,10 +1083,12 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     mults = {2: "3×", 3: "5×", 4: "10×"}
     if n < 2:
         return ""  # Don't show slate with fewer than 2 picks
+    joint   = float(top["model_prob"].astype(float).head(n).prod())
+    n_games = int(top["game_id"].nunique())
     return _html(f"""
 <div class="slate-card">
   <div class="slate-title">⚡ Top {n}-Pick Slate · {mults[n]} payout</div>
-  <div class="slate-meta">Ranked by model edge · paper-tracking only, not betting advice</div>
+  <div class="slate-meta">Diversified across {n_games} game{'s' if n_games != 1 else ''} · {joint:.0%} joint hit (if independent) · paper-tracking only, not betting advice</div>
   {legs_html}
 </div>""")
 
