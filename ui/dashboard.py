@@ -162,6 +162,14 @@ p, label, div { color:var(--txt2); }
     border-color:var(--line2);
     box-shadow:0 18px 40px rgba(0,0,0,0.45), 0 0 0 1px rgba(124,92,255,0.18);
 }
+.pick-card.rec {
+    border-color:rgba(255,207,92,0.45);
+    box-shadow:0 0 0 1px rgba(255,207,92,0.25), 0 8px 28px rgba(255,207,92,0.06);
+}
+.pick-card.rec:hover {
+    box-shadow:0 18px 40px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,207,92,0.5);
+}
+.rec-star { filter:drop-shadow(0 0 4px rgba(255,207,92,0.6)); }
 .card-banner {
     position:relative; height:112px; overflow:hidden;
     background:
@@ -1009,14 +1017,19 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
         why_bits.append(f"model {prob:.0%} confident")
     why_html = f'<div class="why">💡 {" · ".join(why_bits[:3])}</div>'
 
+    # ⭐ recommended picks (clear their category cutoff) — starred + highlighted.
+    is_rec = bool(row.get("_rec", False))
+    rec_cls = " rec" if is_rec else ""
+    star = '<span class="rec-star" title="Recommended — clears its category cutoff">⭐</span> ' if is_rec else ""
+
     return _html(f"""
-<div class="pick-card">
+<div class="pick-card{rec_cls}">
   <div class="card-banner">
     <img src="{logo}"  class="team-logo"    onerror="this.style.display='none'">
     <img src="{photo}" class="player-photo" onerror="this.style.display='none'">
   </div>
   <div class="card-body">
-    <div class="player-name">{result_html}{row['player']}</div>
+    <div class="player-name">{result_html}{star}{row['player']}</div>
     <div class="team-stat">{row.get('team','')}{' · ' + opp if opp else ''} · {stat_label}</div>
     {inj_status_html}
     <div class="line-row">
@@ -1168,11 +1181,11 @@ with tab_picks:
                                         default=_qp_default("dir", dir_opts, dir_opts), key="di")
 
         rec_only = st.toggle(
-            "⭐ Recommended only (per-category confidence cutoff)",
-            value=_qp.get("rec", "1") != "0", key="rec",
-            help="Each sport/stat has its own tuned cutoff from settled history: "
-                 "MLB clears breakeven broadly, NBA only at very high confidence. "
-                 "Recompute: python -m props.models.category_cutoffs.")
+            "⭐ Recommended only",
+            value=_qp.get("rec", "0") == "1", key="rec",
+            help="Off (default): show every pick, with ⭐ on the ones that clear "
+                 "their per-category confidence cutoff (sorted first). On: hide "
+                 "the rest. Cutoffs are auto-tuned from settled history.")
 
         # Write current selections back to the URL (idempotent — no rerun loop
         # once they match the widgets).
@@ -1186,11 +1199,16 @@ with tab_picks:
             df["stat_type"].isin(stat_sel) &
             df["direction"].isin(dir_sel)
         ].reset_index(drop=True)
+        # Flag recommended picks (clear their category cutoff) so the cards can
+        # star them; show ALL picks by default, recommended sorted to the top.
+        filtered["_rec"] = _rec_mask(filtered).values
         if rec_only:
-            filtered = filtered[_rec_mask(filtered).values].reset_index(drop=True)
+            filtered = filtered[filtered["_rec"]].reset_index(drop=True)
             if filtered.empty:
                 st.info("No picks clear their category cutoff today. "
                         "Toggle off to see all picks.")
+        filtered = filtered.sort_values(
+            ["_rec", "model_prob"], ascending=[False, False]).reset_index(drop=True)
 
         # Slate card — top picks across all sports by edge
         if not filtered.empty:
