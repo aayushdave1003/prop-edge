@@ -35,6 +35,8 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE player_injuries ADD COLUMN IF NOT EXISTS sport_code TEXT NOT NULL DEFAULT 'nba';"
      "CREATE INDEX IF NOT EXISTS idx_injuries_sport_player_recent"
      "  ON player_injuries (sport_code, player_name, fetched_at DESC)"),
+    ("0005_picks_line_close",
+     "ALTER TABLE picks ADD COLUMN IF NOT EXISTS line_close NUMERIC(8,3)"),
 ]
 
 

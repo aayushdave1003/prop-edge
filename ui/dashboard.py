@@ -13,6 +13,7 @@ from props.utils.db import engine, session_scope
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
 from props.picks.build_parlays import build_diversified_parlay
+from props.picks.compute_clv import clv_points
 
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
@@ -588,10 +589,11 @@ def load_all_settled_picks():
             pk.edge,
             pk.leg_result,
             pk.actual_value,
-            pl.line_value               AS line
+            pl.line_value               AS line,
+            pk.line_close
         FROM picks pk
         JOIN games g     USING (game_id)
-        JOIN prop_lines pl ON pl.line_id = pk.line_id
+        LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
         WHERE pk.leg_result IN ('win','loss','push')
         ORDER BY pk.picked_at
     """
@@ -1491,6 +1493,44 @@ with tab_perf:
                     "Win rate": f"{v['win_rate']:.1%}" if v.get("win_rate") else "—",
                 } for k, v in sorted(_st_cells.items())]),
                 hide_index=True, use_container_width=True)
+
+        # ── Closing Line Value ────────────────────────────────────────────────
+        st.divider()
+        st.subheader("📈 Closing Line Value")
+        clv_df = all_picks.copy()
+        if "line_close" in clv_df.columns:
+            clv_df["clv"] = clv_df.apply(
+                lambda r: clv_points(r["line"], r["line_close"], r["direction"]), axis=1)
+            clv_df = clv_df[clv_df["clv"].notna()]
+        else:
+            clv_df = clv_df.iloc[0:0]
+        if len(clv_df) < 5:
+            st.caption("Not enough picks with a captured closing line yet — CLV "
+                       "builds as the daily pipeline records closing lines.")
+        else:
+            beat = (clv_df["clv"] > 0).mean()
+            avg_clv = clv_df["clv"].mean()
+            moved = (clv_df["clv"] != 0).mean()
+            # The validation: do positive-CLV picks actually win more? If yes, the
+            # model has real timing edge, not just variance.
+            wl = clv_df[clv_df["leg_result"].isin(["win", "loss"])]
+            pos_wr = (wl[wl["clv"] > 0]["leg_result"] == "win").mean() if (wl["clv"] > 0).any() else float("nan")
+            neg_wr = (wl[wl["clv"] <= 0]["leg_result"] == "win").mean() if (wl["clv"] <= 0).any() else float("nan")
+            cc1, cc2, cc3 = st.columns(3)
+            cc1.metric("Beat the close", f"{beat:.0%}",
+                       help="Share of picks that got a better number than the line's "
+                            "closing value. >50% = you're picking before the market moves.")
+            cc2.metric("Avg CLV", f"{avg_clv:+.2f} pts",
+                       help="Average line points gained vs the close. Positive = sharp timing.")
+            cc3.metric("Win rate: +CLV vs −CLV",
+                       f"{pos_wr:.0%} / {neg_wr:.0%}" if pos_wr == pos_wr and neg_wr == neg_wr else "—",
+                       help="If +CLV picks win more than −CLV picks, CLV is predicting wins "
+                            "= genuine edge (not luck).")
+            st.caption(f"Over {len(clv_df)} picks with a captured close — but only "
+                       f"{moved:.0%} of standard lines moved at all (PrizePicks lines "
+                       "are sticky, so CLV is a weaker signal here than at a sharp "
+                       "book). Avg CLV near zero = neutral timing; watch whether "
+                       "+CLV picks keep out-winning −CLV ones as the sample grows.")
 
         # ── Paper bankroll / ROI ──────────────────────────────────────────────
         st.divider()

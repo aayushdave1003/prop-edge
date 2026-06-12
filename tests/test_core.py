@@ -115,6 +115,23 @@ def test_form_dots_direction():
     assert over.count("dot empty") == 1  # None renders empty
 
 
+# ── closing line value ────────────────────────────────────────────────────────
+from props.picks.compute_clv import clv_points
+
+
+def test_clv_points_sign_convention():
+    # OVER: line moved UP (we got the easier number) -> positive CLV
+    assert clv_points(5.5, 6.5, "over") == pytest.approx(1.0)
+    assert clv_points(5.5, 4.5, "over") == pytest.approx(-1.0)
+    # UNDER: line moved DOWN (we had more room) -> positive CLV
+    assert clv_points(5.5, 4.5, "under") == pytest.approx(1.0)
+    assert clv_points(5.5, 6.5, "under") == pytest.approx(-1.0)
+    # no movement -> zero; missing data -> None
+    assert clv_points(5.5, 5.5, "over") == 0.0
+    assert clv_points(None, 5.5, "over") is None
+    assert clv_points(5.5, None, "under") is None
+
+
 # ── diversified (correlation-avoiding) parlay ────────────────────────────────
 from props.picks.build_parlays import build_diversified_parlay
 

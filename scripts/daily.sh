@@ -139,6 +139,10 @@ python -m props.picks.confirm_starters --date "$TODAY" || true
 echo "--- Second settle pass ---"
 python -m props.picks.settle_picks
 
+# ── 7b. Closing line value (capture the close for started games) ─────────────
+echo "--- Compute CLV ---"
+python -m props.picks.compute_clv || true
+
 # ── 8. Weekly backtest (Mondays) ─────────────────────────────────────────────
 if [ "$(date +%u)" = "1" ]; then
     echo "--- Weekly backtest (Monday) ---"
