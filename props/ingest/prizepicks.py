@@ -94,7 +94,11 @@ STAT_TYPE_MAP = {
 }
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=15))
+# Retry generously: a rotating residential proxy draws a fresh IP each attempt,
+# and Cloudflare flags a chunk of the pool (~⅔ of IPs 403), so we cycle through
+# IPs until one is clean. ~10 attempts at ~⅓ success ≈ 98% overall. Direct (no
+# proxy) requests succeed on the first attempt, so this costs them nothing.
+@retry(stop=stop_after_attempt(10), wait=wait_exponential(min=1, max=6))
 def fetch_projections() -> dict:
     from props.utils.config import settings
     # Route through a residential proxy when configured (lets the scrape run on
