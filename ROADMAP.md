@@ -69,3 +69,10 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 
 ## 8. Compliance / Safety
 - ☐ **P2** Keep "paper-tracking only, not betting advice" framing consistent; add disclaimer/age gate if this ever goes public.
+
+## 9. Autonomous Operations (the system runs/fixes itself)
+- ☑ **P0** Cloud scrape (Option B) — DONE: `fetch_projections` routes through `PRIZEPICKS_PROXY` (residential, IPRoyal) so the scrape runs on GitHub Actions despite PrizePicks blocking datacenter IPs; retries cycle past Cloudflare-flagged pool IPs (~⅔ 403). The Mac cron is now an optional backup, not a dependency. Verified end-to-end from a GHA datacenter runner.
+- ☑ **P1** Cloud self-heal — DONE: `props/maintenance/self_heal.py` (daily.sh step 7a) detects picks stranded on final/past games and re-runs box scores + settle until clear; settle voids unrecoverable orphans. Discord note only when it heals something. No Mac/session needed.
+- ☑ **P1** Auto-tuning cutoffs — DONE: `load_cutoffs()` recomputes the per-category cutoffs from the live DB (fallback: committed JSON), so pick-gen + scorecard self-tune as picks settle — a bleeding stat auto-suppresses and lifts itself once it recovers. No manual regen.
+- ☑ **P3** Daily feature-ideas digest — DONE: `props/maintenance/feature_ideas.py` (daily.sh step 7d) posts data-driven "what to build next" ideas to Discord each morning (newly-trainable winner models, hot/cold buckets, recovering suppressed categories, the odds-API gap).
+- **Milestone:** the pipeline now scrapes, predicts, settles, self-heals, self-tunes, monitors, and reports unattended on GitHub Actions — human input is needed only for a paid-API top-up or a genuinely new feature.
