@@ -128,7 +128,7 @@ Data sources:  PrizePicks (via residential proxy) · MLB Stats API · ESPN · nb
 
 ## Dashboard
 
-PrizePicks-style cards: player photo + team logo, line/direction/confidence, **per-pick "why"** (form + market edge + line movement), form dots, Kelly sizing, injury-status badge, line-movement signal, live in-game tracker, combo cards.
+PrizePicks-style cards: player photo + team logo, line/direction/confidence, **per-pick "why"** (form + market edge + line movement), form dots, Kelly sizing, injury-status badge, line-movement signal, live in-game tracker, combo cards. Every pick is shown, with the **recommended** ones (clearing their category cutoff) **⭐ starred** and sorted first.
 
 Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value**, **ROI by parlay size**, paper P&L, calibration, win rate by stat × direction.
 
