@@ -142,6 +142,12 @@ python -m props.picks.confirm_starters --date "$TODAY" || true
 echo "--- Second settle pass ---"
 python -m props.picks.settle_picks
 
+# ── 7a. Self-heal: auto-clear any stuck picks (cloud, no human needed) ───────
+# If a transient step failure stranded picks on already-final/past games, this
+# re-attempts box scores + settle so the system fixes itself unattended.
+echo "--- Self-heal ---"
+python -m props.maintenance.self_heal || true
+
 # ── 7b. Closing line value (capture the close for started games) ─────────────
 echo "--- Compute CLV ---"
 python -m props.picks.compute_clv || true
