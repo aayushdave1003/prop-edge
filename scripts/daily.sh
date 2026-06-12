@@ -156,6 +156,10 @@ python -m props.picks.compute_clv || true
 echo "--- Discord scorecard ---"
 python -m props.picks.scorecard || true
 
+# ── 7d. Daily feature-ideas digest (something to build today) ────────────────
+echo "--- Feature ideas ---"
+python -m props.maintenance.feature_ideas || true
+
 # ── 8. Weekly backtest (Mondays) ─────────────────────────────────────────────
 if [ "$(date +%u)" = "1" ]; then
     echo "--- Weekly backtest (Monday) ---"
