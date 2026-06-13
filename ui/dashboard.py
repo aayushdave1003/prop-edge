@@ -1154,8 +1154,27 @@ tab_picks, tab_game, tab_perf, tab_recent = st.tabs(
 
 # ══ TAB 1: Today's Picks ═════════════════════════════════════════════════════
 with tab_picks:
+    # Re-read the latest picks straight from the DB. The cloud pipeline logs new
+    # picks every morning (all sports), but the dashboard caches the query for
+    # 60s and the page only re-runs on interaction — so a tab left open before
+    # the run finished can show a stale, MLB-only slate. This button clears every
+    # cached query and reruns, surfacing whatever is currently in the DB.
+    rc1, rc2 = st.columns([1, 4])
+    with rc1:
+        if st.button("🔄 Refresh picks", use_container_width=True,
+                     help="Re-read the latest picks from the database. The pipeline "
+                          "adds picks (MLB/NBA/WNBA/NHL) automatically each morning — "
+                          "tap this to pull in anything logged after you opened the page."):
+            st.cache_data.clear()
+            st.rerun()
+    with rc2:
+        from datetime import datetime as _now_dt
+        st.caption(f"Showing picks as of {_now_dt.now():%-I:%M %p}. "
+                   "New picks land each morning; refresh to pull the latest.")
+
     if df.empty:
-        st.info("No picks logged today. Daily cron runs at 7 AM.")
+        st.info("No picks logged today yet. The daily cloud run posts them each "
+                "morning — tap **🔄 Refresh picks** once it's done.")
     else:
         # Filters — persisted in the URL so they survive a reload / share link.
         _qp = st.query_params
