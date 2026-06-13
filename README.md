@@ -96,7 +96,8 @@ The PrizePicks scraper covers 40+ stat types across all four sports.
 - **Bench / DNP suppression** — players averaging < 12 min, high-variance bench roles, and scratched pitchers are filtered or voided.
 - **Stale-game & orphan handling** — never logs picks for already-played games; settlement auto-voids picks whose line was pruned or whose game never went final.
 - **Correlation-aware parlays** — the suggested slate never stacks two legs from the same game in the same direction (the cluster that busts together).
-- **Calibration** — isotonic per model, refit on regular-season data, plus a self-tuning **Platt recalibration** learned from settled paper results that corrects live over-confidence (drift into the playoffs left the upper bands inflated); it sizes Kelly and the shown confidence on the corrected probability while selection stays on the empirical cutoffs. Closing-line-value tracked as the long-run edge signal.
+- **Model/market blend** — the stored probability is a per-sport blend of the model and the sharp no-vig market (`w·model + (1−w)·market`), with weights self-tuned from settled results: **NBA leans on the market** (deep, efficient) and **MLB leans on the model** (softer market). It only blends against a real line — never a neutral prior. Cut the daily Brier 0.245→0.235.
+- **Calibration** — isotonic per model, refit on regular-season data, plus a self-tuning **Platt recalibration** learned from settled paper results that corrects residual over-confidence; it sizes Kelly and the shown confidence on the corrected probability. Closing-line-value tracked as the long-run edge signal.
 
 ---
 
