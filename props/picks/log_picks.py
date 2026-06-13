@@ -12,6 +12,7 @@ from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
+from props.models.prob_calibration import calibrate
 from props.utils.config import settings
 from props.maintenance.migrate import run_migrations
 
@@ -391,8 +392,11 @@ def main():
             )
             # Half-Kelly for a 2-pick PrizePicks parlay at 3x payout:
             #   f* = (3p - 1) / 2,  half_kelly = f* / 2 = (3p - 1) / 4
-            # Replaces the old (incorrect) edge * 2 formula.
-            half_kelly   = round(max(0.0, (3 * model_prob - 1) / 4), 4)
+            # Size on the RECALIBRATED probability — the raw model prob is
+            # over-confident (see props.models.prob_calibration), so sizing on it
+            # over-stakes. Selection still uses raw model_prob + empirical cutoffs.
+            cal_prob     = calibrate(model_prob)
+            half_kelly   = round(max(0.0, (3 * cal_prob - 1) / 4), 4)
             _me = row.get("market_edge") if hasattr(row, "get") else None
             market_edge  = (
                 round(float(_me), 4)
@@ -469,7 +473,8 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
         emoji = sport_emoji.get(sport_order, "⚡")
         for _, row in sport_picks.iterrows():
             direction = row["direction"].upper()
-            prob = int(round(row["model_prob"] * 100))
+            # Show the recalibrated win probability — honest, not over-confident.
+            prob = int(round(calibrate(float(row["model_prob"])) * 100))
             market_edge = row.get("market_edge")
             edge_str = f" | +{int(market_edge*100)}% vs mkt" if market_edge and pd.notna(market_edge) else ""
             injury = " ⚠️" if row.get("injury_flag", 0) > 0 else ""
@@ -485,7 +490,8 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     par = build_diversified_parlay(top, max_legs=2)
     if len(par) >= 2:
         p1, p2 = par.iloc[0], par.iloc[1]
-        joint = round(p1["model_prob"] * p2["model_prob"] * 100, 1)
+        joint = round(calibrate(float(p1["model_prob"]))
+                      * calibrate(float(p2["model_prob"])) * 100, 1)
         parlay_note = (f"\n**Best 2-pick (uncorrelated):** {p1['player_name']} + {p2['player_name']} "
                        f"— {joint}% joint ({round(joint * 3 / 100, 2)}x EV)")
     else:

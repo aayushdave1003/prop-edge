@@ -34,6 +34,7 @@ from props.utils.db import session_scope, engine
 from props.utils.logging import log, configure_logging
 from props.utils.config import settings
 from props.models.category_cutoffs import load_cutoffs, rec_cutoff, wilson_lower_bound
+from props.models.prob_calibration import calibrate
 
 BREAKEVEN = 0.577          # per-leg win prob where a 2-pick power play breaks even
 MIN_N_SWEEP = 15           # min settled picks before a per-bucket cutoff is trusted
@@ -107,8 +108,12 @@ def calibration(rows):
     realized outcome is simply win=1 / loss=0."""
     n = len(rows)
     if n == 0:
-        return {"brier": None, "buckets": [], "drift": {}}
-    brier = sum((r.model_prob - (1.0 if r.leg_result == "win" else 0.0)) ** 2 for r in rows) / n
+        return {"brier": None, "brier_cal": None, "buckets": [], "drift": {}}
+    def _y(r):
+        return 1.0 if r.leg_result == "win" else 0.0
+    brier = sum((r.model_prob - _y(r)) ** 2 for r in rows) / n
+    # Brier after the live Platt recalibration — confirms the correction helps.
+    brier_cal = sum((calibrate(r.model_prob) - _y(r)) ** 2 for r in rows) / n
 
     # decile calibration
     buckets = []
@@ -139,7 +144,7 @@ def calibration(rows):
         earlier = _gap([r for r in srows if r.d < mid])
         if recent is not None or earlier is not None:
             drift[sp] = {"recent_gap": recent, "earlier_gap": earlier}
-    return {"brier": brier, "buckets": buckets, "drift": drift}
+    return {"brier": brier, "brier_cal": brier_cal, "buckets": buckets, "drift": drift}
 
 
 def cutoff_sweep(rows, table):
@@ -242,6 +247,8 @@ def build_payload(run_date, window_days, wf, cal, sweep):
         worst = max((b for b in cal["buckets"] if b["n"] >= 8),
                     key=lambda b: abs(b["pred"] - b["actual"]), default=None)
         cal_line = f"Brier {cal['brier']:.3f} (lower = sharper)"
+        if cal.get("brier_cal") is not None:
+            cal_line += f" → {cal['brier_cal']:.3f} recalibrated"
         if worst:
             gap = worst["pred"] - worst["actual"]
             tag = "over-confident" if gap > 0.05 else "under-confident" if gap < -0.05 else "well-calibrated"

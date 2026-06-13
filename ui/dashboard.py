@@ -12,6 +12,7 @@ from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
+from props.models.prob_calibration import calibrate
 from props.picks.build_parlays import build_diversified_parlay
 from props.picks.compute_clv import clv_points
 
@@ -889,7 +890,10 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     logo    = team_logo_url(row.get("team_ext_id", ""), sport)
     direction = row["direction"]
     line    = float(row["line"])
-    prob    = float(row["model_prob"])
+    # Displayed confidence is recalibrated (the raw model prob is over-confident);
+    # selection/star still use the raw prob upstream, so this only changes the
+    # number shown to the user, making it honest.
+    prob    = calibrate(float(row["model_prob"]))
     edge    = float(row.get("market_edge") or row.get("edge") or 0)
     kelly   = float(row.get("kelly") or 0)
     inj     = float(row.get("injury_flag") or 0)
@@ -1109,7 +1113,7 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
 <div class="slate-leg">
   <div>
     <div class="leg-player">{row['player']} <span style="color:#5a5f72;font-size:0.75rem;font-weight:400">{sport_tag}</span></div>
-    <div class="leg-detail">{stat_label} · {float(row['line']):g} · {row['model_prob']:.0%}</div>
+    <div class="leg-detail">{stat_label} · {float(row['line']):g} · {calibrate(float(row['model_prob'])):.0%}</div>
   </div>
   <span class="badge {badge_cls} leg-badge">{badge_text}</span>
 </div>"""
@@ -1118,7 +1122,7 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     mults = {2: "3×", 3: "5×", 4: "10×"}
     if n < 2:
         return ""  # Don't show slate with fewer than 2 picks
-    joint   = float(top["model_prob"].astype(float).head(n).prod())
+    joint   = float(top["model_prob"].astype(float).head(n).map(calibrate).prod())
     n_games = int(top["game_id"].nunique())
     return _html(f"""
 <div class="slate-card">

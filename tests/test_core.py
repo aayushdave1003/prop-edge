@@ -316,6 +316,41 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── probability recalibration (Platt) ─────────────────────────────────────────
+from props.models import prob_calibration as pcal
+
+
+def test_calibrate_identity_when_too_little_data():
+    # Below MIN_N_CALIB -> identity map (don't calibrate on noise).
+    params = pcal.fit_platt([0.8, 0.6], [1, 0])
+    assert params["status"] == "identity"
+    assert pcal.calibrate(0.84, params) == pytest.approx(0.84)
+
+
+def test_platt_shrinks_overconfident_model():
+    # Build an over-confident set: predicted ~0.85 but only ~60% actually win.
+    import random
+    random.seed(0)
+    probs, wins = [], []
+    for _ in range(400):
+        probs.append(0.85)
+        wins.append(1 if random.random() < 0.60 else 0)
+    params = pcal.fit_platt(probs, wins)
+    assert params["status"] == "fit"
+    assert params["a"] < 1.0                       # slope < 1 => shrinks extremes
+    cal = pcal.calibrate(0.85, params)
+    assert cal < 0.85                              # pulled down toward the truth
+    assert abs(cal - 0.60) < 0.08                  # lands near the real rate
+
+
+def test_calibrate_is_monotonic_and_bounded():
+    params = {"a": 0.65, "b": -0.12, "n": 500, "status": "fit"}
+    xs = [0.5, 0.6, 0.7, 0.8, 0.9, 0.99]
+    cals = [pcal.calibrate(x, params) for x in xs]
+    assert all(b > a for a, b in zip(cals, cals[1:]))   # order preserved
+    assert all(0 < c < 1 for c in cals)
+
+
 # ── daily walk-forward backtest ───────────────────────────────────────────────
 from datetime import date
 from props.picks import daily_backtest as dbt
