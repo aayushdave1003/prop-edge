@@ -68,16 +68,36 @@ def wilson_upper_bound(wins: int, n: int, z: float = WILSON_Z) -> float:
     return (centre + margin) / denom
 
 
-def _best_cutoff(probs, wins, min_n: int):
-    """Lowest grid cutoff whose Wilson-LB win rate clears breakeven.
+# How much higher a cutoff's Wilson-LB win rate must be to justify stepping up
+# from a lower (higher-volume) cutoff that already clears breakeven. A flat 0.55
+# floor maximises slate size but ignores that a higher cutoff can be markedly
+# safer — and on a 2-pick parlay per-leg win rate compounds (0.70 → 49% joint,
+# 0.84 → 71% joint), so a materially safer leg is worth the lost volume.
+LB_STEPUP_MARGIN = 0.04
 
-    `probs` and `wins` are equal-length sequences (model_prob, 0/1 win) for one
-    category. Returns (cutoff, n, win_rate, wilson_lb) or None if nothing
-    qualifies / not enough data overall.
+
+def _best_cutoff(probs, wins, min_n: int, stepup: bool = False):
+    """Best grid cutoff among those whose Wilson-LB win rate clears breakeven.
+
+    Every candidate must clear the 57.7% breakeven on its conservative
+    (Wilson lower-bound) win rate. Among those, we take the *lowest* cutoff —
+    i.e. the most volume.
+
+    When ``stepup`` is set (used for per-stat cutoffs, where the sample is
+    focused) we step UP to a higher cutoff if it is meaningfully safer
+    (Wilson-LB higher by > LB_STEPUP_MARGIN), returning the lowest cutoff that
+    reaches within that margin of the safest one. This keeps volume when the
+    floor is already strong but captures a higher-quality slice when the model
+    is much sharper at higher confidence (e.g. MLB hits: 70% @0.55 vs 84%
+    @0.625). The coarse sport-level fallback stays permissive (stepup=False) so
+    it doesn't over-suppress stats that inherit it. Returns
+    (cutoff, n, win_rate, wilson_lb) or None.
     """
     pairs = list(zip(probs, wins))
     if len(pairs) < min_n:
         return None
+
+    qualifying = []  # (cutoff, n, win_rate, lb) for cutoffs clearing breakeven
     for t in GRID:
         sel = [w for p, w in pairs if p >= t]
         n = len(sel)
@@ -86,8 +106,20 @@ def _best_cutoff(probs, wins, min_n: int):
         k = sum(sel)
         lb = wilson_lower_bound(k, n)
         if lb >= BREAKEVEN:
-            return (t, n, k / n, lb)
-    return None
+            qualifying.append((t, n, k / n, lb))
+
+    if not qualifying:
+        return None
+
+    if not stepup:
+        return qualifying[0]                  # GRID ascending → lowest clearing
+
+    best_lb = max(q[3] for q in qualifying)
+    # Lowest cutoff whose Wilson-LB is within the step-up margin of the safest.
+    for t, n, wr, lb in qualifying:           # GRID is ascending → lowest first
+        if lb >= best_lb - LB_STEPUP_MARGIN:
+            return (t, n, wr, lb)
+    return qualifying[0]
 
 
 def compute_cutoffs(rows) -> dict:
@@ -137,7 +169,7 @@ def compute_cutoffs(rows) -> dict:
         probs = [p for p, _ in pairs]
         wins = [w for _, w in pairs]
         n_all, k_all = len(pairs), sum(wins)
-        res = _best_cutoff(probs, wins, MIN_N_STAT)
+        res = _best_cutoff(probs, wins, MIN_N_STAT, stepup=True)
         if res is not None:
             t, n, wr, lb = res
             stats[f"{sport}|{stat}"] = {

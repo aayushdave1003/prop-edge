@@ -245,6 +245,19 @@ def test_compute_picks_lowest_qualifying_cutoff():
     assert table["sports"]["mlb"]["cutoff"] == cc.GRID[0]  # lowest grid point
 
 
+def test_stat_cutoff_steps_up_to_safer_slice():
+    # The 0.55 floor clears breakeven, but a higher-confidence slice is markedly
+    # safer -> the per-stat cutoff steps up to capture it (the MLB-hits pattern:
+    # 70% @0.55 vs 84% @0.625). The coarse SPORT fallback stays at the floor.
+    rows = (_rows("mlb", "hits", 0.55, 33, 22)     # ~60% near the floor
+            + _rows("mlb", "hits", 0.70, 53, 7))   # ~88% high-confidence slice
+    table = cc.compute_cutoffs(rows)
+    stat = table["stats"]["mlb|hits"]
+    assert stat["cutoff"] > cc.GRID[0]             # stepped up off the 0.55 floor
+    assert stat["win_rate"] > 0.80                 # captured the safer slice
+    assert table["sports"]["mlb"]["cutoff"] == cc.GRID[0]  # fallback stays permissive
+
+
 def test_compute_suppresses_losing_model():
     # coin-flip with plenty of data => never clears breakeven => suppressed
     table = cc.compute_cutoffs(_rows("nba", "points", 0.65, 50, 50))
