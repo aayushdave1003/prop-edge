@@ -95,7 +95,6 @@ The PrizePicks scraper covers 40+ stat types across all four sports.
 - **Injury suppression** — picks aren't logged for players currently Out / Doubtful / IL.
 - **Bench / DNP suppression** — players averaging < 12 min, high-variance bench roles, and scratched pitchers are filtered or voided.
 - **Stale-game & orphan handling** — never logs picks for already-played games; settlement auto-voids picks whose line was pruned or whose game never went final.
-- **Per-sport market-disagreement filter** — in efficient prop markets (NBA) a pick whose model probability wildly exceeds the sharp no-vig market is usually a model error (those won 45% vs 55% at a moderate gap), so they're dropped; soft markets (MLB) where the same disagreement is real edge (62%) are left alone. Inert until the odds feed is live.
 - **Correlation-aware parlays** — the suggested slate never stacks two legs from the same game in the same direction (the cluster that busts together).
 - **Calibration** — isotonic per model, refit on regular-season data, plus a self-tuning **Platt recalibration** learned from settled paper results that corrects live over-confidence (drift into the playoffs left the upper bands inflated); it sizes Kelly and the shown confidence on the corrected probability while selection stays on the empirical cutoffs. Closing-line-value tracked as the long-run edge signal.
 

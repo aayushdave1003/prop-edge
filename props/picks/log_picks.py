@@ -13,7 +13,6 @@ from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
 from props.models.prob_calibration import calibrate
-from props.models.market_filter import market_disagrees
 from props.utils.config import settings
 from props.maintenance.migrate import run_migrations
 
@@ -353,15 +352,6 @@ def main():
             if row.get("sport_code") == "nba" and int(row["player_id"]) in high_var_players:
                 log.info("suppressed_high_var_pick", player=row.get("player_name"),
                          stat=row["stat_type"])
-                skipped += 1
-                continue
-            # Sharp-market disagreement: in efficient prop markets (NBA) a model
-            # that wildly out-prices the no-vig market is usually erroring — those
-            # picks won only 45%. Drop them. No-op until the odds feed is live
-            # (market_edge is None) and never touches soft markets like MLB.
-            if market_disagrees(row.get("sport_code"), row.get("market_edge")):
-                log.info("suppressed_market_disagreement", player=row.get("player_name"),
-                         stat=row["stat_type"], market_edge=row.get("market_edge"))
                 skipped += 1
                 continue
             mv_id = mv_map[row["model_name"]]
