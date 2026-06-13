@@ -351,13 +351,26 @@ def test_cutoff_sweep_flags_profitable_suppressed_bucket():
     # stat whose best slice still loses should NOT be.
     table = {"default_cutoff": 0.70, "sports": {"nba": {"cutoff": 0.70}},
              "stats": {"nba|points": {"cutoff": 0.99}, "nba|assists": {"cutoff": 0.99}}}
-    # points: 20 picks at 0.85 prob, 80% win -> very profitable above any cutoff
-    rows = [_pick("nba", "points", 0.85, "win" if i < 16 else "loss") for i in range(20)]
+    # points: 20 picks at 0.85 prob, 90% win -> Wilson-LB clears breakeven
+    # comfortably, so the suppressed-but-proven slice is flagged material.
+    rows = [_pick("nba", "points", 0.85, "win" if i < 18 else "loss") for i in range(20)]
     # assists: 20 picks at 0.85 prob but only 40% win -> losing, stay suppressed
     rows += [_pick("nba", "assists", 0.85, "win" if i < 8 else "loss") for i in range(20)]
     findings = {f["stat"]: f for f in dbt.cutoff_sweep(rows, table)}
     assert findings["points"]["material"] is True
     assert findings["assists"]["material"] is False
+
+
+def test_cutoff_sweep_ignores_small_sample_hot_streak():
+    # A high raw win rate that does NOT clear breakeven on its Wilson lower bound
+    # (e.g. 67% on n=18 -> LB ~0.55) is a small-sample mirage, not a real edge:
+    # a suppressed stat with only that slice must NOT be flagged material.
+    table = {"default_cutoff": 0.70, "sports": {"nba": {"cutoff": 0.70}},
+             "stats": {"nba|points": {"cutoff": 0.99}}}
+    rows = ([_pick("nba", "points", 0.85, "win" if i < 12 else "loss") for i in range(18)]
+            + [_pick("nba", "points", 0.60, "loss") for i in range(40)])  # losing low band
+    findings = {f["stat"]: f for f in dbt.cutoff_sweep(rows, table)}
+    assert findings["points"]["material"] is False
 
 
 def test_compute_does_not_suppress_borderline_stat():

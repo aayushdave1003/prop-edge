@@ -33,7 +33,7 @@ from sqlalchemy import text
 from props.utils.db import session_scope, engine
 from props.utils.logging import log, configure_logging
 from props.utils.config import settings
-from props.models.category_cutoffs import load_cutoffs, rec_cutoff
+from props.models.category_cutoffs import load_cutoffs, rec_cutoff, wilson_lower_bound
 
 BREAKEVEN = 0.577          # per-leg win prob where a 2-pick power play breaks even
 MIN_N_SWEEP = 15           # min settled picks before a per-bucket cutoff is trusted
@@ -153,6 +153,12 @@ def cutoff_sweep(rows, table):
         if len(sub) < MIN_N_SWEEP:
             continue
         live = rec_cutoff(sp, stat, table)
+        # Rank candidate cutoffs by a CONFIDENCE-ADJUSTED EV — 2-pick ROI on the
+        # Wilson lower bound, not the raw win rate. A raw 67% on n=18 (Wilson-LB
+        # 0.55, below breakeven) is a small-sample mirage; ranking by raw win
+        # rate would flag it as a missed edge and tempt us to un-suppress noise.
+        # Using the lower bound mirrors how the auto-tuner itself decides, so the
+        # backtest never recommends a cutoff the tuner would (correctly) reject.
         best = None
         for c in SWEEP:
             qual = [r for r in sub if r.model_prob >= c]
@@ -161,26 +167,29 @@ def cutoff_sweep(rows, table):
             if n < MIN_N_SWEEP:
                 continue
             wr = w / n
-            ev = roi_2pick(wr)
-            if best is None or ev > best["ev"]:
-                best = {"cutoff": round(c, 3), "n": n, "winrate": wr, "ev": ev}
+            lb = wilson_lower_bound(w, n)
+            lb_ev = roi_2pick(lb)
+            if best is None or lb_ev > best["lb_ev"]:
+                best = {"cutoff": round(c, 3), "n": n, "winrate": wr,
+                        "lb": lb, "ev": roi_2pick(wr), "lb_ev": lb_ev}
         if best is None:
             continue
         live_qual = [r for r in sub if r.model_prob >= live]
         live_w = sum(r.leg_result == "win" for r in live_qual)
         live_n = len(live_qual)
         live_wr = (live_w / live_n) if live_n else None
-        # "material" only when acting on it would actually make money:
-        #   - the optimal cutoff must clear breakeven with margin (a still-losing
-        #     "best" means suppression / a high cutoff is correct — not a gap), and
+        # "material" only when acting on it is statistically justified:
+        #   - the optimal slice must clear breakeven on its Wilson lower bound
+        #     (proven, not a hot streak); a still-unproven "best" means
+        #     suppression / a high cutoff is correct — not a gap to act on, and
         #   - either the bucket is currently suppressed (no live picks) so that
-        #     profitable sub-slice is going unused, or the live cutoff is far off
-        #     and meaningfully worse than optimal.
-        opt_profitable = best["winrate"] >= BREAKEVEN + 0.02
+        #     proven sub-slice is going unused, or the live cutoff is far off and
+        #     meaningfully worse than optimal.
+        opt_proven = best["lb"] >= BREAKEVEN
         if live_n == 0:
-            material = opt_profitable
+            material = opt_proven
         else:
-            material = (opt_profitable and abs(best["cutoff"] - live) > 0.05
+            material = (opt_proven and abs(best["cutoff"] - live) > 0.05
                         and abs(live_wr - best["winrate"]) > 0.07)
         findings.append({
             "sport": sp, "stat": stat, "live": round(live, 3),
