@@ -27,10 +27,45 @@ LINES_STALE_HOURS = 18      # refresh.yml scrapes ~3x/day; >18h = scrape broken
 LINES_THIN_FRAC = 0.30      # today < 30% of the 7-day avg distinct lines = thin
 LINES_MIN_BASELINE = 50     # only flag "thin" once there's a real baseline
 INJURY_STALE_HOURS = 40     # injuries refresh daily; >40h = feed cold
+ODDS_QUOTA_LOW = 1500       # warn while there's still runway to top up
 
 
 def _scalar(conn, sql, **params):
     return conn.execute(text(sql), params).scalar()
+
+
+def _odds_quota_finding() -> dict | None:
+    """Read The Odds API remaining-requests via the FREE /sports endpoint (costs
+    0 requests) and warn before the quota exhausts — so the market_edge feed
+    never silently dies mid-month again. Skipped when no key is configured."""
+    key = getattr(settings, "odds_api_key", "") or ""
+    if not key:
+        return None
+    import requests
+    try:
+        r = requests.get("https://api.the-odds-api.com/v4/sports/",
+                         params={"apiKey": key}, timeout=10)
+    except Exception as e:
+        return {"level": "warn", "name": "odds_api_unreachable",
+                "detail": f"could not reach The Odds API ({str(e)[:60]})"}
+    if r.status_code == 401:
+        return {"level": "warn", "name": "odds_api_key_invalid",
+                "detail": "401 — Odds API key rejected (expired/revoked)"}
+    remaining = r.headers.get("x-requests-remaining")
+    used = r.headers.get("x-requests-used")
+    if remaining is None:
+        return {"level": "ok", "name": "odds_api",
+                "detail": f"reachable (HTTP {r.status_code}), no quota header"}
+    rem = int(float(remaining))
+    if rem <= 0:
+        return {"level": "warn", "name": "odds_quota_exhausted",
+                "detail": f"0 requests left (used {used}) — market_edge is off until "
+                          "the plan is topped up at the-odds-api.com"}
+    if rem < ODDS_QUOTA_LOW:
+        return {"level": "warn", "name": "odds_quota_low",
+                "detail": f"{rem} requests left (used {used}) — top up soon to keep market_edge live"}
+    return {"level": "ok", "name": "odds_quota",
+            "detail": f"{rem} requests remaining (used {used})"}
 
 
 def run_checks() -> list[dict]:
@@ -97,6 +132,11 @@ def run_checks() -> list[dict]:
         else:
             findings.append({"level": "ok", "name": "injuries_fresh",
                              "detail": f"newest injury report {ihrs:.1f}h old"})
+
+    # ── odds API quota (drives market_edge) ──────────────────────────────────
+    odds = _odds_quota_finding()
+    if odds is not None:
+        findings.append(odds)
 
     return findings
 
