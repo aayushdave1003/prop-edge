@@ -1,0 +1,23 @@
+{
+  "default_w": 1.0,
+  "sports": {
+    "mlb": 0.75,
+    "nba": 0.15
+  },
+  "detail": {
+    "mlb": {
+      "w": 0.75,
+      "n": 205,
+      "brier": 0.2313,
+      "brier_model_only": 0.2334,
+      "status": "tuned"
+    },
+    "nba": {
+      "w": 0.15,
+      "n": 207,
+      "brier": 0.2502,
+      "brier_model_only": 0.2777,
+      "status": "tuned"
+    }
+  }
+}

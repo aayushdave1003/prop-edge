@@ -316,6 +316,45 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── model/market blend weights ────────────────────────────────────────────────
+from props.models import blend_weights as bw
+
+
+def test_blend_no_market_returns_pure_model():
+    # The critical guard: no real line -> NEVER blend on a prior, return model.
+    w = {"default_w": 1.0, "sports": {"nba": 0.15}}
+    assert bw.blend("nba", 0.80, None, w) == 0.80
+
+
+def test_blend_applies_per_sport_weight():
+    w = {"default_w": 1.0, "sports": {"nba": 0.15, "mlb": 0.75}}
+    # NBA leans on the market (85%): 0.15*0.9 + 0.85*0.5 = 0.56
+    assert bw.blend("nba", 0.90, 0.50, w) == pytest.approx(0.56)
+    # MLB leans on the model (75%): 0.75*0.90 + 0.25*0.50 = 0.80
+    assert bw.blend("mlb", 0.90, 0.50, w) == pytest.approx(0.80)
+    # unknown sport -> default (pure model)
+    assert bw.blend("nhl", 0.90, 0.50, w) == pytest.approx(0.90)
+
+
+def test_fit_weights_recovers_market_when_model_is_noise():
+    # model is pure noise (0.5 always), market tracks the outcome -> w -> 0.
+    import random
+    random.seed(1)
+    rows = []
+    for _ in range(80):
+        y = 1 if random.random() < 0.6 else 0
+        rows.append((0.5, 0.6 if y else 0.4, y))   # market separates, model doesn't
+    tbl = bw.fit_weights({"nba": rows})
+    assert tbl["sports"]["nba"]["status"] == "tuned"
+    assert tbl["sports"]["nba"]["w"] <= 0.25        # leans hard on the market
+
+
+def test_fit_weights_untuned_below_min_n():
+    tbl = bw.fit_weights({"mlb": [(0.7, 0.6, 1)] * 5})
+    assert tbl["sports"]["mlb"]["status"] == "untuned"
+    assert tbl["sports"]["mlb"]["w"] == bw.DEFAULT_W
+
+
 # ── probability recalibration (Platt) ─────────────────────────────────────────
 from props.models import prob_calibration as pcal
 
