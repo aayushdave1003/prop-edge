@@ -71,11 +71,20 @@ def _no_vig_prob(over_price: float, under_price: float) -> float:
     return round(p_over / (p_over + p_under), 4)
 
 
+# Running count of billed API requests this process — drives the --max-requests
+# budget so a weekly refresh can't drain the monthly quota.
+_requests_made = 0
+_last_remaining: int | None = None
+
+
 def _get(url: str, params: dict, retries: int = 3) -> dict | None:
+    global _requests_made, _last_remaining
     for attempt in range(retries):
         try:
             r = requests.get(url, params=params, timeout=20)
+            _requests_made += 1
             remaining = int(r.headers.get("x-requests-remaining", 9999))
+            _last_remaining = remaining
             if remaining < 20:
                 log.warning("odds_api_quota_critical", remaining=remaining)
                 return None
@@ -239,39 +248,64 @@ def upsert_market_odds(rows: list[dict]):
         session.execute(sql, rows)
 
 
-def run(sport: str = "nba", since: date = None, dry_run: bool = False):
+def run(sport: str = "nba", since: date = None, dry_run: bool = False,
+        max_requests: int | None = None, recent_first: bool = False):
+    """Backfill / refresh market_odds for games not yet covered.
+
+    ``max_requests`` caps billed API calls this run (a budget) so a scheduled
+    *refresh* can top up recent games without draining the monthly quota; once
+    the budget is hit the run stops cleanly and the next run resumes where it
+    left off (load_games_by_date already skips games already in market_odds).
+    ``recent_first`` processes the newest dates first — what a refresh wants, so
+    the backtest gets current data even if the budget runs out mid-backfill."""
     configure_logging()
     if since is None:
         since = date(2024, 10, 1)
 
+    n_markets = len(NBA_MARKETS if sport == "nba" else MLB_MARKETS)
     games_by_date = load_games_by_date(sport, since)
     name_map      = load_player_name_map(sport)
 
     total_dates = len(games_by_date)
     total_games = sum(len(v) for v in games_by_date.values())
-    est_requests = total_dates * 1 + total_games * len(
-        NBA_MARKETS if sport == "nba" else MLB_MARKETS
-    )
+    est_requests = total_dates * 1 + total_games * n_markets
 
-    log.info("backfill_plan", sport=sport, dates=total_dates,
-             games=total_games, est_requests=est_requests)
+    log.info("backfill_plan", sport=sport, dates=total_dates, games=total_games,
+             est_requests=est_requests, max_requests=max_requests,
+             recent_first=recent_first)
 
     if dry_run:
+        budget = f", budget {max_requests}" if max_requests else ""
         print(f"\nDry run: {total_dates} dates, {total_games} games, "
-              f"~{est_requests} requests needed")
+              f"~{est_requests} requests needed{budget}")
         return
 
     total_rows = 0
     matched    = 0
     unmatched  = 0
+    stopped    = False
 
-    for i, (game_date, day_games) in enumerate(sorted(games_by_date.items())):
+    def _budget_left(cost: int) -> bool:
+        # True if we can afford `cost` more requests under the budget.
+        return max_requests is None or (_requests_made + cost) <= max_requests
+
+    items = sorted(games_by_date.items(), reverse=recent_first)
+    for i, (game_date, day_games) in enumerate(items):
+        # An events fetch can cost up to 2 (snapshot + next-day fallback); plus
+        # at least one game's worth of props to be worth doing this date.
+        if not _budget_left(2 + n_markets):
+            stopped = True
+            break
+
         events = fetch_events_for_date(sport, game_date)
         if not events:
             unmatched += len(day_games)
             continue
 
         for game in day_games:
+            if not _budget_left(n_markets):
+                stopped = True
+                break
             event = match_event_to_game(events, game)
             if not event:
                 log.debug("no_event_match", game_id=game["game_id"],
@@ -287,13 +321,18 @@ def run(sport: str = "nba", since: date = None, dry_run: bool = False):
             total_rows += len(rows)
             matched += 1
 
+        if stopped:
+            break
         if i % 10 == 0:
             log.info("backfill_progress", dates_done=i, total_dates=total_dates,
-                     matched=matched, unmatched=unmatched, rows=total_rows)
+                     matched=matched, unmatched=unmatched, rows=total_rows,
+                     requests=_requests_made)
         time.sleep(0.1)
 
     log.info("backfill_complete", sport=sport, dates=total_dates,
-             matched=matched, unmatched=unmatched, total_rows=total_rows)
+             matched=matched, unmatched=unmatched, total_rows=total_rows,
+             requests_made=_requests_made, remaining=_last_remaining,
+             stopped_on_budget=stopped)
 
 
 if __name__ == "__main__":
@@ -301,6 +340,10 @@ if __name__ == "__main__":
     parser.add_argument("--sport",    default="nba", choices=["nba", "mlb"])
     parser.add_argument("--since",    default=None)
     parser.add_argument("--dry-run",  action="store_true")
+    parser.add_argument("--max-requests", type=int, default=None,
+                        help="cap billed API requests this run (budget for a refresh)")
+    parser.add_argument("--recent-first", action="store_true",
+                        help="process newest dates first (for keeping the backtest current)")
     args = parser.parse_args()
 
     since_date = None
@@ -309,4 +352,5 @@ if __name__ == "__main__":
     elif args.sport == "mlb":
         since_date = date(2025, 4, 1)
 
-    run(sport=args.sport, since=since_date, dry_run=args.dry_run)
+    run(sport=args.sport, since=since_date, dry_run=args.dry_run,
+        max_requests=args.max_requests, recent_first=args.recent_first)

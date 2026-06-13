@@ -175,6 +175,19 @@ python -m props.picks.daily_backtest --window 45 || true
 # This one needs the paid odds feed (market_odds); it only has signal while that
 # feed is live. Kept weekly + Monday-gated so it doesn't slow the daily run.
 if [ "$(date +%u)" = "1" ]; then
+    # First top up market_odds for recently-final games (newest first), on a
+    # strict per-run request budget so this can never drain the monthly Odds API
+    # quota. Only runs when a key is configured. ~1000 req/sport/week is a small
+    # slice of a 100k plan and keeps the model-vs-market backtest current.
+    if [ -n "${ODDS_API_KEY:-}" ]; then
+        echo "--- Weekly market_odds refresh (budgeted) ---"
+        SINCE_45=$(date -v-45d +%Y-%m-%d 2>/dev/null || date -d '45 days ago' +%Y-%m-%d)
+        python -m props.ingest.historical_odds --sport nba --since "$SINCE_45" \
+               --recent-first --max-requests 1000 || true
+        python -m props.ingest.historical_odds --sport mlb --since "$SINCE_45" \
+               --recent-first --max-requests 1000 || true
+    fi
+
     echo "--- Weekly model-vs-market backtest (Monday) ---"
     SINCE_90=$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)
     python -m props.picks.backtest --sport nba --since "$SINCE_90" || true
