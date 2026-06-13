@@ -71,19 +71,33 @@ def _no_vig_prob(over_price: float, under_price: float) -> float:
     return round(p_over / (p_over + p_under), 4)
 
 
-# Running count of billed API requests this process — drives the --max-requests
-# budget so a weekly refresh can't drain the monthly quota.
-_requests_made = 0
-_last_remaining: int | None = None
+# Drives the --max-requests budget. IMPORTANT: historical endpoints bill ~20×
+# per HTTP call (per market × the historical multiplier), so the budget must be
+# measured in BILLED requests (the x-requests-remaining delta), not HTTP calls —
+# otherwise a "1000" budget could burn ~20k real credits. We track both.
+_requests_made = 0                 # HTTP calls made (diagnostic)
+_last_remaining: int | None = None # most recent x-requests-remaining
+_start_remaining: int | None = None  # remaining before our first billed call
+
+
+def _billed_used() -> int:
+    """Credits this process has actually consumed (header delta), falling back to
+    the HTTP-call count if the quota header was never seen."""
+    if _start_remaining is not None and _last_remaining is not None:
+        return max(0, _start_remaining - _last_remaining)
+    return _requests_made
 
 
 def _get(url: str, params: dict, retries: int = 3) -> dict | None:
-    global _requests_made, _last_remaining
+    global _requests_made, _last_remaining, _start_remaining
     for attempt in range(retries):
         try:
             r = requests.get(url, params=params, timeout=20)
             _requests_made += 1
             remaining = int(r.headers.get("x-requests-remaining", 9999))
+            # Capture the pre-call balance once, so billed = start - current.
+            if _start_remaining is None:
+                _start_remaining = remaining + 1
             _last_remaining = remaining
             if remaining < 20:
                 log.warning("odds_api_quota_critical", remaining=remaining)
@@ -285,15 +299,14 @@ def run(sport: str = "nba", since: date = None, dry_run: bool = False,
     unmatched  = 0
     stopped    = False
 
-    def _budget_left(cost: int) -> bool:
-        # True if we can afford `cost` more requests under the budget.
-        return max_requests is None or (_requests_made + cost) <= max_requests
+    def _over_budget() -> bool:
+        # Stop once we've actually CONSUMED the budget in billed credits (the
+        # header delta), since one historical call bills many credits.
+        return max_requests is not None and _billed_used() >= max_requests
 
     items = sorted(games_by_date.items(), reverse=recent_first)
     for i, (game_date, day_games) in enumerate(items):
-        # An events fetch can cost up to 2 (snapshot + next-day fallback); plus
-        # at least one game's worth of props to be worth doing this date.
-        if not _budget_left(2 + n_markets):
+        if _over_budget():
             stopped = True
             break
 
@@ -303,7 +316,7 @@ def run(sport: str = "nba", since: date = None, dry_run: bool = False,
             continue
 
         for game in day_games:
-            if not _budget_left(n_markets):
+            if _over_budget():
                 stopped = True
                 break
             event = match_event_to_game(events, game)
@@ -331,8 +344,8 @@ def run(sport: str = "nba", since: date = None, dry_run: bool = False,
 
     log.info("backfill_complete", sport=sport, dates=total_dates,
              matched=matched, unmatched=unmatched, total_rows=total_rows,
-             requests_made=_requests_made, remaining=_last_remaining,
-             stopped_on_budget=stopped)
+             http_calls=_requests_made, billed_credits=_billed_used(),
+             remaining=_last_remaining, stopped_on_budget=stopped)
 
 
 if __name__ == "__main__":
