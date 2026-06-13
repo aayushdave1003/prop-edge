@@ -1154,17 +1154,25 @@ tab_picks, tab_game, tab_perf, tab_recent = st.tabs(
 
 # ══ TAB 1: Today's Picks ═════════════════════════════════════════════════════
 with tab_picks:
-    # Re-read the latest picks straight from the DB. The cloud pipeline logs new
-    # picks every morning (all sports), but the dashboard caches the query for
-    # 60s and the page only re-runs on interaction — so a tab left open before
-    # the run finished can show a stale, MLB-only slate. This button clears every
-    # cached query and reruns, surfacing whatever is currently in the DB.
+    # Re-read the latest picks straight from the DB AND reset the filters. The
+    # cloud pipeline logs picks for each sport at different times of the morning;
+    # if the page first rendered when only MLB was in, the sport filter offered
+    # only "mlb" and persisted ?sport=mlb to the URL — which then hides NBA/WNBA
+    # even after their picks land. So a refresh must clear both the cached query
+    # AND the persisted/sticky filters, otherwise a stale narrow filter survives.
     rc1, rc2 = st.columns([1, 4])
     with rc1:
         if st.button("🔄 Refresh picks", use_container_width=True,
-                     help="Re-read the latest picks from the database. The pipeline "
-                          "adds picks (MLB/NBA/WNBA/NHL) automatically each morning — "
-                          "tap this to pull in anything logged after you opened the page."):
+                     help="Re-read the latest picks from the database and reset the "
+                          "filters to show every sport. The pipeline adds picks "
+                          "(MLB/NBA/WNBA/NHL) automatically each morning — tap this "
+                          "to pull in anything logged after you opened the page."):
+            # Drop the URL-persisted filters and the sticky widget state so the
+            # sport/stat/direction selectors fall back to "all" on the rerun.
+            for _k in ("sport", "stat", "dir", "rec"):
+                st.query_params.pop(_k, None)
+            for _k in ("sp", "st", "di", "rec"):
+                st.session_state.pop(_k, None)
             st.cache_data.clear()
             st.rerun()
     with rc2:
@@ -1206,12 +1214,23 @@ with tab_picks:
                  "their per-category confidence cutoff (sorted first). On: hide "
                  "the rest. Cutoffs are auto-tuned from settled history.")
 
-        # Write current selections back to the URL (idempotent — no rerun loop
-        # once they match the widgets).
-        _qp.update({
-            "sport": ",".join(sport_sel), "stat": ",".join(stat_sel),
-            "dir": ",".join(dir_sel), "rec": "1" if rec_only else "0",
-        })
+        # Persist filters to the URL only when they actually NARROW the slate.
+        # If a selection equals every available option (e.g. an early-morning
+        # MLB-only slate where "all" == just mlb), writing ?sport=mlb would later
+        # hide NBA/WNBA picks once they land. Persisting only strict subsets means
+        # an un-narrowed filter never poisons the URL and new sports auto-appear.
+        def _persist(name, sel, opts):
+            if sel and set(sel) != set(opts):
+                _qp[name] = ",".join(sel)
+            else:
+                _qp.pop(name, None)
+        _persist("sport", sport_sel, sport_opts)
+        _persist("stat", stat_sel, stat_opts)
+        _persist("dir", dir_sel, dir_opts)
+        if rec_only:
+            _qp["rec"] = "1"
+        else:
+            _qp.pop("rec", None)
 
         filtered = df[
             df["sport_code"].isin(sport_sel) &
