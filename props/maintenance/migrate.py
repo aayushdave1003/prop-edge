@@ -44,6 +44,23 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("0006_fix_player_games_seq",
      "SELECT setval(pg_get_serial_sequence('player_games','player_game_id'),"
      "              (SELECT COALESCE(MAX(player_game_id), 1) FROM player_games))"),
+    # Daily walk-forward backtest snapshots — one row per run_date so the
+    # recommended-tier edge, calibration, and cutoff-fit trends accumulate over
+    # time (the dashboard + Discord digest read the history).
+    ("0007_backtest_daily",
+     "CREATE TABLE IF NOT EXISTS backtest_daily ("
+     "  run_date     DATE PRIMARY KEY,"
+     "  window_days  INT  NOT NULL,"
+     "  rec_n        INT,"
+     "  rec_w        INT,"
+     "  rec_l        INT,"
+     "  rec_winrate  DOUBLE PRECISION,"
+     "  rec_roi_2pick DOUBLE PRECISION,"
+     "  all_n        INT,"
+     "  all_winrate  DOUBLE PRECISION,"
+     "  brier        DOUBLE PRECISION,"
+     "  detail       JSONB,"
+     "  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW())"),
 ]
 
 

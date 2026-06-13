@@ -583,6 +583,23 @@ def load_backtest_trend():
 
 
 @st.cache_data(ttl=300)
+def load_daily_backtest():
+    """Daily walk-forward backtest snapshots (props.picks.daily_backtest)."""
+    try:
+        return pd.read_sql(text("""
+            SELECT run_date, window_days, rec_n, rec_w, rec_l,
+                   ROUND(rec_winrate * 100, 1)   AS rec_win_pct,
+                   ROUND(rec_roi_2pick * 100, 1) AS rec_roi_pct,
+                   ROUND(brier::numeric, 3)      AS brier, detail
+            FROM backtest_daily
+            ORDER BY run_date DESC
+            LIMIT 60
+        """), engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
 def load_all_settled_picks():
     """Full settled pick history for analytics."""
     sql = """
@@ -1631,6 +1648,57 @@ with tab_perf:
                 nba_bt["breakeven"] = 57.7
                 st.line_chart(nba_bt[["win_pct","breakeven"]], height=180)
                 st.caption("NBA backtest win rate vs 57.7% breakeven across runs")
+
+        # ── Daily walk-forward backtest (on the system's own settled picks) ─────
+        wf = load_daily_backtest()
+        if not wf.empty:
+            st.divider()
+            st.subheader("🧪 Daily walk-forward backtest")
+            latest = wf.iloc[0]
+            w1, w2, w3, w4 = st.columns(4)
+            w1.metric("Rec-tier win rate",
+                      f"{latest['rec_win_pct']:.1f}%",
+                      f"{latest['rec_win_pct'] - 57.7:+.1f} vs breakeven",
+                      delta_color="normal" if latest['rec_win_pct'] >= 57.7 else "inverse")
+            w2.metric("2-pick ROI", f"{latest['rec_roi_pct']:+.0f}%",
+                      delta_color="normal" if latest['rec_roi_pct'] >= 0 else "inverse")
+            w3.metric("Rec sample", f"{int(latest['rec_w'])}–{int(latest['rec_l'])}",
+                      f"{int(latest['window_days'])}d window")
+            w4.metric("Brier", f"{latest['brier']:.3f}", "lower = sharper",
+                      delta_color="off")
+
+            if len(wf) >= 2:
+                chart = wf.sort_values("run_date").set_index("run_date")[["rec_win_pct"]].copy()
+                chart["breakeven"] = 57.7
+                st.line_chart(chart, height=180)
+                st.caption("Recommended-tier win rate per daily run vs 57.7% breakeven "
+                           "(rolling window of settled picks).")
+
+            # Counterfactual cutoff findings from the latest run
+            detail = latest.get("detail") or {}
+            if isinstance(detail, str):
+                import json as _json
+                try:
+                    detail = _json.loads(detail)
+                except Exception:
+                    detail = {}
+            material = [f for f in detail.get("cutoff_sweep", []) if f.get("material")]
+            if material:
+                with st.expander(f"⚠️ Cutoff-fit findings ({len(material)}) — auto-tuner check"):
+                    rows_disp = []
+                    for f in material:
+                        lw = (f"{f['live_winrate']*100:.0f}%"
+                              if f.get("live_winrate") is not None else "suppressed")
+                        rows_disp.append({
+                            "Bucket": f"{f['sport']} {f['stat']}",
+                            "Live cutoff": f"{f['live']:.2f} ({lw}, n={f['live_n']})",
+                            "Optimal": f"{f['opt']['cutoff']:.2f} "
+                                       f"({f['opt']['winrate']*100:.0f}%, n={f['opt']['n']})",
+                            "Opt ROI": f"{f['opt']['ev']*100:+.0f}%",
+                        })
+                    st.dataframe(pd.DataFrame(rows_disp), use_container_width=True, hide_index=True)
+                    st.caption("Where a different cutoff would have made more money on the "
+                               "settled window. The auto-tuner moves toward these as data accrues.")
 
         st.divider()
 

@@ -163,9 +163,19 @@ python -m props.picks.scorecard || true
 echo "--- Feature ideas ---"
 python -m props.maintenance.feature_ideas || true
 
-# ── 8. Weekly backtest (Mondays) ─────────────────────────────────────────────
+# ── 7e. Daily walk-forward backtest ──────────────────────────────────────────
+# Replays the recommended-tier strategy over a rolling window of SETTLED picks
+# (not the frozen market_odds the old weekly backtest needed): rec-tier W/L vs
+# breakeven + trend, model calibration/drift, and a counterfactual cutoff sweep
+# that checks the auto-tuner. Persists a daily snapshot + posts a Discord digest.
+echo "--- Daily backtest ---"
+python -m props.picks.daily_backtest --window 45 || true
+
+# ── 8. Weekly model-vs-market backtest (Mondays) ─────────────────────────────
+# This one needs the paid odds feed (market_odds); it only has signal while that
+# feed is live. Kept weekly + Monday-gated so it doesn't slow the daily run.
 if [ "$(date +%u)" = "1" ]; then
-    echo "--- Weekly backtest (Monday) ---"
+    echo "--- Weekly model-vs-market backtest (Monday) ---"
     SINCE_90=$(date -v-90d +%Y-%m-%d 2>/dev/null || date -d '90 days ago' +%Y-%m-%d)
     python -m props.picks.backtest --sport nba --since "$SINCE_90" || true
     python -m props.picks.backtest --sport mlb --since "$SINCE_90" || true

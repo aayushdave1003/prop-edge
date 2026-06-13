@@ -44,7 +44,7 @@ The thing that makes prop-edge unusual isn't the models — it's that the whole 
 - **Self-healing** — if a transient failure strands picks on already-final games, an end-of-run step re-attempts box scores + settlement until they clear, and the settle path auto-voids truly-unrecoverable orphans. It pings Discord only when it actually fixes something.
 - **Self-tuning** — per-category cutoffs (per sport, and per sport×stat where there's data) are recomputed from the live DB as picks settle: a stat that drifts below breakeven is **auto-suppressed**, and lifts itself once it proves out again. No manual retuning.
 - **Self-monitoring** — an ingest monitor checks line freshness, slate volume, box-score coverage, and the injury feed, and alerts on anomalies before they zero out a slate.
-- **Self-reporting** — a nightly **scorecard** (recommended-tier W/L vs breakeven, by sport, 7-day rolling, cold-streak alert), a **closing-line-value** tracker, and a **daily feature-ideas digest** that surfaces data-driven opportunities to build next.
+- **Self-reporting** — a nightly **scorecard** (recommended-tier W/L vs breakeven, by sport, 7-day rolling, cold-streak alert), a **closing-line-value** tracker, a **daily walk-forward backtest** (replays the recommended-tier strategy over a rolling window of settled picks — win rate vs breakeven + trend, model calibration/Brier + drift, and a counterfactual cutoff sweep that audits the auto-tuner), and a **daily feature-ideas digest** that surfaces data-driven opportunities to build next.
 
 ---
 
@@ -130,7 +130,7 @@ Data sources:  PrizePicks (via residential proxy) · MLB Stats API · ESPN · nb
 
 PrizePicks-style cards: player photo + team logo, line/direction/confidence, **per-pick "why"** (form + market edge + line movement), form dots, Kelly sizing, injury-status badge, line-movement signal, live in-game tracker, combo cards. Every pick is shown, with the **recommended** ones (clearing their category cutoff) **⭐ starred** and sorted first. A **🔄 Refresh picks** button re-reads the DB on demand so a slate logged after you opened the page (NBA/WNBA picks often land after MLB) shows up without waiting on the cache.
 
-Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value**, **ROI by parlay size**, paper P&L, calibration, win rate by stat × direction.
+Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value**, **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
 
 ---
 

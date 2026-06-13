@@ -303,6 +303,50 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── daily walk-forward backtest ───────────────────────────────────────────────
+from datetime import date
+from props.picks import daily_backtest as dbt
+
+
+def test_roi_2pick_breakeven():
+    # A 2-pick power play (3x for 2/2) breaks even at the 57.7% per-leg line.
+    assert dbt.roi_2pick(dbt.BREAKEVEN) == pytest.approx(0.0, abs=2e-3)
+    assert dbt.roi_2pick(1.0) == pytest.approx(2.0)      # both legs certain -> 3x
+    assert dbt.roi_2pick(0.50) < 0                       # coin flip loses
+
+
+class _R(types.SimpleNamespace):
+    """Stand-in for a settled-pick row (attribute access like the SQL Row)."""
+
+
+def _pick(sport, stat, prob, result, d=None):
+    return _R(sport_code=sport, stat_type=stat, model_prob=prob,
+              leg_result=result, direction="over",
+              d=d or date.today())
+
+
+def test_calibration_brier_and_perfect_split():
+    # Perfectly confident + correct -> Brier 0; perfectly wrong -> Brier 1.
+    assert dbt.calibration([_pick("mlb", "hits", 1.0, "win")])["brier"] == pytest.approx(0.0)
+    assert dbt.calibration([_pick("mlb", "hits", 1.0, "loss")])["brier"] == pytest.approx(1.0)
+    assert dbt.calibration([])["brier"] is None
+
+
+def test_cutoff_sweep_flags_profitable_suppressed_bucket():
+    # A stat suppressed live (cutoff 0.99 -> 0 qualifying) but with a clearly
+    # profitable high-confidence slice should be flagged material; a suppressed
+    # stat whose best slice still loses should NOT be.
+    table = {"default_cutoff": 0.70, "sports": {"nba": {"cutoff": 0.70}},
+             "stats": {"nba|points": {"cutoff": 0.99}, "nba|assists": {"cutoff": 0.99}}}
+    # points: 20 picks at 0.85 prob, 80% win -> very profitable above any cutoff
+    rows = [_pick("nba", "points", 0.85, "win" if i < 16 else "loss") for i in range(20)]
+    # assists: 20 picks at 0.85 prob but only 40% win -> losing, stay suppressed
+    rows += [_pick("nba", "assists", 0.85, "win" if i < 8 else "loss") for i in range(20)]
+    findings = {f["stat"]: f for f in dbt.cutoff_sweep(rows, table)}
+    assert findings["points"]["material"] is True
+    assert findings["assists"]["material"] is False
+
+
 def test_compute_does_not_suppress_borderline_stat():
     # ~53% with modest n is NOT confidently losing -> defer to sport, no override.
     table = cc.compute_cutoffs(_rows("mlb", "strikeouts_pitcher", 0.66, 38, 34))
