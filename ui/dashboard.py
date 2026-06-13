@@ -1198,7 +1198,9 @@ with tab_picks:
             st.rerun()
     with rc2:
         from datetime import datetime as _now_dt
-        st.caption(f"Showing picks as of {_now_dt.now():%-I:%M %p}. "
+        from zoneinfo import ZoneInfo as _ZI
+        _now_pt = _now_dt.now(_ZI("America/Los_Angeles"))
+        st.caption(f"Showing picks as of {_now_pt:%-I:%M %p %Z}. "
                    "New picks land each morning; refresh to pull the latest.")
 
     if df.empty:
