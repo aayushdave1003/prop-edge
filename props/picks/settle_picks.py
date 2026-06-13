@@ -39,7 +39,9 @@ def find_unsettled_picks():
                    pl.line_value,
                    pg.player_game_id, pg.stats,
                    g.status, g.game_date,
-                   pl_player.full_name AS player_name
+                   pl_player.full_name AS player_name,
+                   EXISTS(SELECT 1 FROM player_games pg2
+                          WHERE pg2.game_id = pk.game_id) AS game_has_box
             FROM picks pk
             LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
             LEFT JOIN player_games pg
@@ -126,7 +128,8 @@ def run():
     with session_scope() as session:
         for r in rows:
             (pick_id, stat_type, direction, line_value,
-             player_game_id, stats_json, game_status, game_date, player_name) = r
+             player_game_id, stats_json, game_status, game_date, player_name,
+             game_has_box) = r
 
             if game_status is None:
                 log.warning("game_missing", pick_id=pick_id)
@@ -165,8 +168,27 @@ def run():
                 continue
 
             if stats_json is None:
-                # Game is final but player has no box score row — they were scratched/DNP.
-                # Void the pick so it doesn't block the unsettled queue forever.
+                # The player has no box-score row. Two very different cases:
+                #   (a) the GAME has box scores for other players → this player was
+                #       genuinely scratched/DNP → void.
+                #   (b) the game has NO box scores at all yet → it's flagged final
+                #       but hasn't been ingested (the daily --limit cap / API lag).
+                #       Voiding here permanently discards a real W/L the moment box
+                #       scores land, so WAIT instead — unless the game is old enough
+                #       to be abandoned, in which case void as stale.
+                if not game_has_box:
+                    if game_date is not None and game_date < date.today() - timedelta(days=2):
+                        session.execute(text("""
+                            UPDATE picks SET leg_result='void', settled_at=NOW()
+                            WHERE pick_id=:pid
+                        """), {"pid": pick_id})
+                        log.info("voided_stale_unplayed", pick_id=pick_id,
+                                 player=player_name, game_date=str(game_date))
+                        settled += 1
+                    else:
+                        # box scores not ingested yet — settle on a later pass
+                        waiting += 1
+                    continue
                 session.execute(text("""
                     UPDATE picks SET leg_result='void', settled_at=NOW()
                     WHERE pick_id=:pid

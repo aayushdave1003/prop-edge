@@ -72,11 +72,14 @@ python -m props.ingest.nhl_schedule "$TODAY"
 python -m props.ingest.nhl_schedule "$TOMORROW"
 
 # ── 2. Box scores ────────────────────────────────────────────────────────────
-# When writing to Railway (remote DB), cap at 30 games to avoid backfilling
-# years of history. Railway only needs recent data for inference.
+# When writing to Railway (remote DB), cap the batch to avoid backfilling years
+# of history. The universe is already bounded to the last 5 days
+# (get_unprocessed_games since_days=5 ≈ 75 MLB games), so the cap only needs to
+# clear a full 5-day window — 30 was too low and left recent finals un-boxscored,
+# which made settle void real picks as phantom DNPs. 90 covers the window.
 echo "--- Box scores ---"
 if [ -n "${RAILWAY_DATABASE_URL:-}" ] && [ "$DATABASE_URL" = "$RAILWAY_DATABASE_URL" ]; then
-    python -m props.ingest.mlb_boxscores --limit 30
+    python -m props.ingest.mlb_boxscores --limit 90
 else
     python -m props.ingest.mlb_boxscores
 fi
