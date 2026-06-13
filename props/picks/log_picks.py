@@ -13,6 +13,7 @@ from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
 from props.models.prob_calibration import calibrate
+from props.models.blend_weights import blend
 from props.utils.config import settings
 from props.maintenance.migrate import run_migrations
 
@@ -384,17 +385,28 @@ def main():
             if already:
                 skipped += 1
                 continue
-            model_prob   = round(float(row["model_prob"]), 4)
+            # Model/market BLEND: combine the raw model prob with the sharp
+            # market's no-vig prob for this side, weighted per sport (see
+            # props.models.blend_weights — NBA leans market, MLB leans model).
+            # market_implied is None when no real line exists, in which case the
+            # blend returns the pure model prob — we NEVER blend on a prior. The
+            # blended value becomes `model_prob`, so selection, cutoffs,
+            # calibration, and display all use it; the raw output is kept in
+            # model_prob_raw so the blend weight stays tunable.
+            raw_prob     = float(row["model_prob"])
+            _mi = row.get("market_implied") if hasattr(row, "get") else None
+            market_prob  = (float(_mi) if _mi is not None and pd.notna(_mi) else None)
+            model_prob     = round(blend(sport_code, raw_prob, market_prob), 4)
+            model_prob_raw = round(raw_prob, 4)
+            market_prob_v  = round(market_prob, 4) if market_prob is not None else None
             edge_val     = round(float(row["edge"]), 4)
             line_open, line_movement = _get_line_movement(
                 int(row["player_id"]), row["stat_type"],
                 sport_code, float(row["line_value"])
             )
-            # Half-Kelly for a 2-pick PrizePicks parlay at 3x payout:
-            #   f* = (3p - 1) / 2,  half_kelly = f* / 2 = (3p - 1) / 4
-            # Size on the RECALIBRATED probability — the raw model prob is
-            # over-confident (see props.models.prob_calibration), so sizing on it
-            # over-stakes. Selection still uses raw model_prob + empirical cutoffs.
+            # Half-Kelly for a 2-pick PrizePicks parlay at 3x payout, sized on the
+            # RECALIBRATED blended probability (raw is over-confident — see
+            # props.models.prob_calibration). f*=(3p-1)/2, half_kelly=f*/2.
             cal_prob     = calibrate(model_prob)
             half_kelly   = round(max(0.0, (3 * cal_prob - 1) / 4), 4)
             _me = row.get("market_edge") if hasattr(row, "get") else None
@@ -410,12 +422,13 @@ def main():
                 INSERT INTO picks (
                     parlay_size, sport_code, player_id, game_id, stat_type,
                     line_id, direction, model_version_id, prediction_id,
-                    model_prob, edge, expected_value, market_edge,
+                    model_prob, model_prob_raw, market_prob,
+                    edge, expected_value, market_edge,
                     line_open, line_movement, injury_flag, picked_at
                 ) VALUES (
                     1, :sport, :pid, :gid, :st,
                     :lid, :dir, :mvid, :prid,
-                    :mp, :edge, :ev, :me,
+                    :mp, :mpr, :mkp, :edge, :ev, :me,
                     :lo, :lm, :inj, NOW()
                 )
                 ON CONFLICT (player_id, line_id, ((picked_at AT TIME ZONE 'America/Los_Angeles')::date)) DO NOTHING
@@ -424,7 +437,8 @@ def main():
                 "pid": int(row["player_id"]), "gid": int(row["game_id"]),
                 "st": row["stat_type"], "lid": int(row["line_id"]),
                 "dir": row["direction"], "mvid": mv_id, "prid": pred_id,
-                "mp": model_prob, "edge": edge_val, "ev": half_kelly,
+                "mp": model_prob, "mpr": model_prob_raw, "mkp": market_prob_v,
+                "edge": edge_val, "ev": half_kelly,
                 "me": market_edge,
                 "lo": line_open, "lm": line_movement, "inj": injury_flag,
             })

@@ -61,6 +61,14 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  brier        DOUBLE PRECISION,"
      "  detail       JSONB,"
      "  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW())"),
+    # Model/market blend: picks.model_prob now stores the BLENDED probability
+    # (what selection, cutoffs, calibration, and display all read). The raw model
+    # output is preserved in model_prob_raw (so the blend weight stays tunable)
+    # and the real market-implied prob for the pick's side in market_prob (NULL
+    # when no line). See props.models.blend_weights.
+    ("0008_picks_blend_cols",
+     "ALTER TABLE picks ADD COLUMN IF NOT EXISTS model_prob_raw NUMERIC(8,4);"
+     "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_prob NUMERIC(8,4)"),
 ]
 
 
