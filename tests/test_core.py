@@ -316,6 +316,28 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── per-sport market-disagreement filter ─────────────────────────────────────
+from props.models.market_filter import market_disagrees, DISAGREE_MAX
+
+
+def test_market_disagreement_filter_is_sport_specific():
+    # NBA (sharp market): a big model-over-market gap is dropped...
+    assert market_disagrees("nba", DISAGREE_MAX + 0.05) is True
+    assert market_disagrees("nba", DISAGREE_MAX - 0.05) is False   # modest gap kept
+    assert market_disagrees("nba", -0.20) is False                 # model UNDER market kept
+    # ...but MLB / soft markets are never filtered (disagreement = real edge there)
+    assert market_disagrees("mlb", 0.30) is False
+    assert market_disagrees("wnba", 0.30) is False
+
+
+def test_market_disagreement_noop_without_odds():
+    # No market line (feed off) -> never drops anything, whatever the sport.
+    import numpy as np
+    assert market_disagrees("nba", None) is False
+    assert market_disagrees("nba", float("nan")) is False
+    assert market_disagrees("nba", np.nan) is False
+
+
 # ── probability recalibration (Platt) ─────────────────────────────────────────
 from props.models import prob_calibration as pcal
 
