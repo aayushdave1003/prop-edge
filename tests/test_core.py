@@ -117,6 +117,16 @@ def test_form_dots_direction():
 
 # ── injury suppression ────────────────────────────────────────────────────────
 from props.picks.log_picks import _is_out_status
+from props.picks import suppression as supp
+
+
+def test_suppression_line_in_range():
+    # within band -> kept; below MIN or above MAX -> dropped
+    assert supp.line_in_range("points", 25.5) is True
+    assert supp.line_in_range("points", 2.5) is False     # below 5.0 min
+    assert supp.line_in_range("points", 60.0) is False    # above 55 max (multi-game)
+    assert supp.line_in_range("strikeouts_pitcher", 6.5) is True
+    assert supp.line_in_range("unknown_stat", 999) is True  # no band -> allow
 
 
 def test_is_out_status():

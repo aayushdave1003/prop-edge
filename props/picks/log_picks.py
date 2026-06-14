@@ -18,61 +18,15 @@ from props.utils.config import settings
 from props.maintenance.migrate import run_migrations
 
 
-MIN_EDGE_TO_LOG = 0.05  # model_prob > 0.55; 2-pick breakeven is 57.7% — warn below that
-
-# Minimum line value per stat — filters trivially low lines (OVER 2.5 pts etc.)
-# that are set low for injured/bench players returning and carry no real signal.
-# Maximum line value per stat — filters multi-game cumulative lines that
-# PrizePicks sometimes serves alongside standard single-game lines.
-# A WNBA player scoring 35+ in one game is extremely rare; 37 is impossible as a
-# normal prop. These inflated values are 2-game or fantasy-format accumulations.
-MAX_LINE_BY_STAT = {
-    # Basketball (NBA/WNBA/NHL share keys — use the NBA max as ceiling)
-    "points":             55.0,
-    "rebounds":           22.0,
-    "assists":            20.0,
-    "threes_made":        10.0,
-    "pts_rebs_asts":      80.0,
-    "pts_rebs":           60.0,
-    "pts_asts":           60.0,
-    "rebs_asts":          35.0,
-    "blocks":              8.0,
-    "steals":              8.0,
-    "blocks_steals":      12.0,
-    # MLB
-    "strikeouts_pitcher": 17.0,
-    "home_runs":           4.0,
-    "hits":                6.0,
-    "rbis":               10.0,
-    "total_bases":        14.0,
-    # NHL
-    "goals":               5.0,
-    "saves":              50.0,
-}
-
-MIN_LINE_BY_STAT = {
-    # NBA / WNBA
-    "points":             5.0,
-    "rebounds":           3.0,
-    "assists":            1.5,
-    "threes_made":        0.5,
-    "pts_rebs_asts":     15.0,
-    "pts_rebs":          10.0,
-    "pts_asts":          10.0,
-    "rebs_asts":          5.0,
-    "blocks":             0.5,
-    "steals":             0.5,
-    "blocks_steals":      1.0,
-    # MLB
-    "strikeouts_pitcher": 2.5,
-    "hits":               1.5,
-    "rbis":               0.5,
-    "total_bases":        1.5,
-    "home_runs":          0.5,
-    # NHL
-    "goals":              0.5,
-    "saves":             15.0,
-}
+# All pick-suppression policy lives in props.picks.suppression (one documented
+# place). Imported here; `_is_out_status` kept as a back-compat alias.
+from props.picks.suppression import (
+    MIN_EDGE_TO_LOG, MAX_CONFIDENCE, MIN_MINUTES_HARD, MIN_MINUTES_HIGHVAR,
+    MIN_LINE_BY_STAT, MAX_LINE_BY_STAT, is_out_status, is_stale_game,
+    line_in_range,
+)
+_is_out_status = is_out_status
+_is_stale_game = is_stale_game
 
 
 def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
@@ -86,27 +40,6 @@ def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
         if model_name.startswith(prefix):
             return prefix
     return "mlb"
-
-
-def _is_out_status(status: str) -> bool:
-    """True if an injury status means the player likely WON'T play tonight.
-    Day-to-day / questionable / probable usually play, so we keep those."""
-    s = (status or "").lower()
-    if any(k in s for k in ("day-to-day", "day to day", "questionable",
-                            "probable", "gtd", "game-time", "available")):
-        return False
-    return any(k in s for k in ("out", "doubtful", "il", "suspens",
-                                "developmental", "bereavement", "paternity"))
-
-
-def _is_stale_game(game_state: dict, game_id, target_date) -> bool:
-    """True if the game is already played (final/live) or dated before the
-    target date — we neither log picks for it nor put it in the Discord digest."""
-    gstate = game_state.get(int(game_id))
-    if gstate is None:
-        return False
-    status, gdate = gstate
-    return status in ("final", "live") or (gdate is not None and gdate < target_date)
 
 
 def ensure_model_version(model_name, stat_type, sport_code="mlb"):
@@ -246,7 +179,7 @@ def main():
                         ORDER BY g.game_date DESC LIMIT 1
                     """), {"pid": pid}).first()
                 avg_min = float(avg_row[0]) if avg_row and avg_row[0] else 0
-                if avg_min < 18:
+                if avg_min < MIN_MINUTES_HIGHVAR:
                     high_var_players.add(pid)
         if high_var_players:
             log.info("high_variance_players_suppressed", n=len(high_var_players))
@@ -270,7 +203,7 @@ def main():
             """), {"ids": [int(p) for p in all_player_ids]}).fetchall()
         for r in rows_min:
             pid, avg_min, sc = r[0], r[1], r[2]
-            if avg_min is not None and avg_min < 12:
+            if avg_min is not None and avg_min < MIN_MINUTES_HARD:
                 low_minute_players.add(pid)
         if low_minute_players:
             log.info("low_minute_players_suppressed", n=len(low_minute_players))
@@ -327,22 +260,17 @@ def main():
             if _is_stale_game(game_state, row["game_id"], target_date):
                 skipped_stale += 1
                 continue
-            # Skip trivially low lines (OVER 2.5 pts, OVER 2.5 reb, etc.)
-            min_line = MIN_LINE_BY_STAT.get(row["stat_type"], 0)
-            if float(row["line_value"]) < min_line:
+            # Skip lines outside the plausible single-game band: trivially low
+            # lines (set for returning bench players) and absurdly high ones
+            # (multi-game/fantasy cumulatives PrizePicks serves alongside normal
+            # lines). See props.picks.suppression for the per-stat bands.
+            if not line_in_range(row["stat_type"], row["line_value"]):
                 skipped += 1
                 continue
-            # Skip absurdly high lines — these are multi-game cumulative totals or
-            # fantasy-format lines that PrizePicks serves alongside normal lines.
-            max_line = MAX_LINE_BY_STAT.get(row["stat_type"], float("inf"))
-            if float(row["line_value"]) > max_line:
-                skipped += 1
-                continue
-            # Skip near-100% confidence picks — no real single-game prop should
-            # be >97% certain. This catches multi-game lines where the model's
-            # single-game lambda is tiny relative to the inflated line (e.g. reb
-            # avg 6, line 12.5 → P(under) ≈ 100% but the pick is meaningless).
-            if float(row["model_prob"]) > 0.97:
+            # Skip near-certain picks — no real single-game prop is >97% certain;
+            # that high a model prob means the line is a mis-priced multi-game
+            # cumulative (e.g. reb avg 6, line 12.5 → P(under) ≈ 100%, meaningless).
+            if float(row["model_prob"]) > MAX_CONFIDENCE:
                 skipped += 1
                 continue
             # Suppress players averaging < 12 min (DNP risk)
