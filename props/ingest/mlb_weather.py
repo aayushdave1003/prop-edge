@@ -141,6 +141,12 @@ def run(since_days: int = 0):
             """), {"gid": g.game_id, "t": wx["temp_f"], "w": wx["wind_mph"],
                    "wd": wx["wind_dir"], "wo": wout, "h": wx["humidity"], "dome": dome})
             wrote += 1
+            # Commit incrementally so a long backfill (years of games over the
+            # Railway proxy) doesn't hold one hour-long transaction that drops +
+            # rolls back everything; progress survives a mid-run failure.
+            if wrote % 50 == 0:
+                s.commit()
+                log.info("mlb_weather_progress", wrote=wrote, total=len(games))
     log.info("mlb_weather_done", games=len(games), wrote=wrote)
 
 
