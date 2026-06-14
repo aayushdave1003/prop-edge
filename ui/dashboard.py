@@ -148,11 +148,22 @@ p, label, div { color:var(--txt2); }
 .stTabs [data-baseweb="tab-highlight"] { background:transparent !important; }
 
 /* Pick cards */
+/* Responsive card grid: as many ~300px columns as fit (≈3-4 on desktop),
+   auto-stacking to a single column on phones — no fixed per-row count. */
+.card-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+    gap:18px;
+    align-items:start;
+}
+@media (max-width:520px){
+    .card-grid { grid-template-columns:1fr; gap:12px; }
+}
 .pick-card {
     background:linear-gradient(180deg, var(--surface2), var(--surface));
     border:1px solid var(--line);
     border-radius:18px;
-    padding:0; margin-bottom:18px;
+    padding:0; margin-bottom:0;
     overflow:hidden; min-height:344px;
     display:flex; flex-direction:column;
     position:relative;
@@ -1331,19 +1342,17 @@ with tab_picks:
         @st.fragment(run_every=("45s" if any_live else None))
         def _render_cards():
             live = _live_lookup() if any_live else {}
-            cols_per_row = 3
-            rows = [filtered.iloc[i:i+cols_per_row]
-                    for i in range(0, len(filtered), cols_per_row)]
-            for row_picks in rows:
-                cols = st.columns(cols_per_row)
-                for col, (_, pick) in zip(cols, row_picks.iterrows()):
-                    sport = pick["sport_code"]
-                    stat  = pick["stat_type"]
-                    fdf   = form_cache.get((sport, stat), pd.DataFrame())
-                    lv    = live.get((sport, _norm_name(pick["player"])))
-                    with col:
-                        st.markdown(build_pick_card(pick, fdf, lv),
-                                    unsafe_allow_html=True)
+            # One responsive CSS grid instead of fixed 3-wide st.columns, so the
+            # cards reflow (3-4 desktop → 1 on a phone) instead of squishing.
+            cards = []
+            for _, pick in filtered.iterrows():
+                sport = pick["sport_code"]
+                stat  = pick["stat_type"]
+                fdf   = form_cache.get((sport, stat), pd.DataFrame())
+                lv    = live.get((sport, _norm_name(pick["player"])))
+                cards.append(build_pick_card(pick, fdf, lv))
+            st.markdown('<div class="card-grid">' + "".join(cards) + "</div>",
+                        unsafe_allow_html=True)
 
         _render_cards()
 
