@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-14
+- ✅ **TEST** auto-archive verification (delete me)
 - ✅ **P2** **Per-direction cutoffs** — DONE: `category_cutoffs` tunes a third level `sport|stat|direction` above `sport|stat` (a stat can perform very differently over vs under). `rec_cutoff` checks dir → stat → sport → default; all callers pass direction. On prod: MLB hits UNDER gets its own 0.55 cutoff (84%, n=94, captures all) while total_bases-under / nba-points-over suppress per-direction; falls back to the stat level where a direction lacks the sample.
 - ✅ **P3** **Same-game correlated parlays** — DONE: a "🔗 Correlated stacks" section pairs a pitcher's strikeouts OVER with an opposing-team batter UNDER in the same game (positively correlated — a dominant pitcher suppresses the opposing offense, so the legs hit/miss together), ranked by correlation-bumped joint probability.
 - ✅ **P3** **Prediction intervals** — DONE: each card shows a confidence band, not just a point prob — the model's `predicted_mean` (Poisson rate) → a 25–75% "likely" range (e.g. "Projection 6.2 · likely 4–8").
