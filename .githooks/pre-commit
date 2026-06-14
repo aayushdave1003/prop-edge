@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Auto-archive finished ROADMAP items (- ✅ / - ☑) to CHANGELOG.md on commit.
+# No-op when there's nothing done to move. Never blocks the commit.
+root="$(git rev-parse --show-toplevel)"
+if [ -f "$root/ROADMAP.md" ]; then
+    python3 "$root/scripts/clean_roadmap.py" || exit 0
+    git add "$root/ROADMAP.md" "$root/CHANGELOG.md" 2>/dev/null || true
+fi
+exit 0
