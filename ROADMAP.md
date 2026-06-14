@@ -24,9 +24,9 @@ The autonomous build is **complete** — the pipeline scrapes, predicts, **blend
 ### Product / UX
 - ✅ **P2** **One-click "tail this slate"** — DONE: a "📋 Tail this slate" expander on Today's Picks shows the recommended picks + best 2-pick as a copyable `st.code` block (built-in copy button), formatted by the shared `notify.format_slate`.
 - ✅ **P3** **Email push of the morning slate** — DONE: `props/utils/notify.send_email` (SMTP, free, optional) sends the recommended slate; wired into the morning digest alongside Discord (each fires independently if configured). Set `SMTP_USER`/`SMTP_PASSWORD`/`EMAIL_TO`. *(Paid SMS and Telegram were considered and declined.)*
-- ☐ **P3** **Public results page** — shareable, read-only proof of record (67.8% rec-tier).
-- ☐ **P3** **Historical pick browser** — filter settled picks by sport/stat/edge to explore.
-- ☐ **P3** Dark/light toggle, historical-slate date picker.
+- ✅ **P3** **Public results page** — DONE: `?view=results` renders a clean, read-only shareable record (recommended-tier W/L + win% vs the 57.7% breakeven, overall, and per-sport) and stops — a link you can share as proof of record. Sidebar shows the share link.
+- ✅ **P3** **Historical pick browser** — DONE: the Recent Picks tab gained sport/stat/direction/result filters (up to 60 days) with a live settled-record summary for the current filter.
+- ✅ **P3** **Dark/light toggle + historical-slate date picker** — DONE: a sidebar ☀️ Light-mode toggle (persisted in `?theme=`, overrides the design tokens) and a Date selector in the browser to jump to any specific past slate.
 
 ### Ops / quality
 - ☐ **P2** **A/B model shadow-logging** — run a candidate model alongside prod and compare without risk.

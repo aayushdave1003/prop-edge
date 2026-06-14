@@ -693,6 +693,63 @@ def load_recent_picks(days: int = 7):
     return pd.read_sql(text(sql), engine, params={"days": days})
 
 
+@st.cache_data(ttl=300)
+def load_results_summary():
+    """Headline record for the public results view — overall + recommended-tier
+    W/L and per-sport, computed from all settled picks."""
+    df = pd.read_sql(text("""
+        SELECT sport_code, stat_type, model_prob::float AS model_prob, leg_result
+        FROM picks WHERE leg_result IN ('win','loss') AND model_prob IS NOT NULL
+    """), engine)
+    if df.empty:
+        return None
+    df["_rec"] = df.apply(
+        lambda r: r["model_prob"] >= rec_cutoff(r["sport_code"], r["stat_type"]), axis=1)
+
+    def wl(d):
+        w = int((d["leg_result"] == "win").sum()); return w, len(d)
+
+    rec_df = df[df["_rec"]]
+    by_sport = {sp: wl(g[g["_rec"]]) for sp, g in df.groupby("sport_code")
+                if g["_rec"].any()}
+    return {"overall": wl(df), "rec": wl(rec_df), "by_sport": by_sport}
+
+
+def render_results_view():
+    """Clean, shareable read-only record (reached via ?view=results)."""
+    s = load_results_summary()
+    st.markdown(
+        '<h1 style="font-size:2.2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0">'
+        '<span style="background:linear-gradient(135deg,#9d7bff,#22d3ee);'
+        '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">'
+        '⚡ prop-edge — track record</span></h1>'
+        '<p style="color:#5f6678;margin-top:2px;font-size:0.82rem;text-transform:uppercase;'
+        'letter-spacing:0.08em">paper-tracking · not betting advice</p>',
+        unsafe_allow_html=True)
+    if not s:
+        st.info("No settled picks yet.")
+        st.stop()
+    rw, rn = s["rec"]; aw, an = s["overall"]
+    c1, c2, c3 = st.columns(3)
+    rwr = rw / rn * 100 if rn else 0
+    c1.metric("Recommended tier", f"{rw}–{rn-rw}", f"{rwr:.1f}% win",
+              delta_color="normal" if rwr >= 57.7 else "inverse")
+    c2.metric("vs 57.7% breakeven", f"{rwr-57.7:+.1f} pts",
+              "2-pick parlay breakeven", delta_color="normal" if rwr >= 57.7 else "inverse")
+    c3.metric("All picks", f"{aw}–{an-aw}", f"{aw/an*100:.1f}% win" if an else "—")
+    st.caption(f"{an} picks settled. The recommended tier is the slate the system "
+               "actually surfaces — picks clearing an auto-tuned per-category cutoff.")
+    rows = []
+    for sp, (w, n) in sorted(s["by_sport"].items(), key=lambda x: -x[1][1]):
+        rows.append({"Sport": sp.upper(), "Recommended record": f"{w}–{n-w}",
+                     "Win rate": f"{w/n*100:.1f}%" if n else "—",
+                     "vs 57.7%": f"{w/n*100-57.7:+.1f}%" if n else "—"})
+    if rows:
+        st.markdown("##### Recommended tier by sport")
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.stop()
+
+
 @st.cache_data(ttl=60)
 def load_game_predictions_data():
     """Fetch today's game predictions if winner model has run."""
@@ -1198,6 +1255,35 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
   {legs_html}
 </div>""")
 
+
+# ── Sidebar controls: theme toggle + share link ─────────────────────────────
+with st.sidebar:
+    st.markdown("### ⚙️ Settings")
+    _theme_qp = st.query_params.get("theme", "dark")
+    _light = st.toggle("☀️ Light mode", value=(_theme_qp == "light"), key="theme")
+    st.query_params["theme"] = "light" if _light else "dark"
+    st.markdown("---")
+    st.caption("📣 Share your record — read-only results page:")
+    st.code("?view=results", language=None)
+
+# Light palette: override the design tokens (cards/components use the variables).
+if _light:
+    st.markdown("""<style>
+    :root {
+      --bg:#f4f5fa; --surface:#ffffff; --surface2:#eef0f6;
+      --line:rgba(0,0,0,0.08); --line2:rgba(0,0,0,0.15);
+      --txt:#13151c; --txt2:#475066; --txt3:#8b91a4;
+    }
+    [data-testid="stAppViewContainer"]{ background:
+      radial-gradient(900px 500px at 12% -8%, rgba(124,92,255,0.07), transparent 60%),
+      var(--bg); }
+    section[data-testid="stSidebar"]{ background:#e9ebf2; }
+    body, [class*="css"], [data-testid="stMarkdownContainer"] { color:var(--txt); }
+    </style>""", unsafe_allow_html=True)
+
+# ── Public results view (shareable, read-only) ───────────────────────────────
+if st.query_params.get("view") == "results":
+    render_results_view()    # renders the record and st.stop()s
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
@@ -1972,13 +2058,45 @@ with tab_soft:
 
 # ══ TAB 5: Recent Picks ══════════════════════════════════════════════════════
 with tab_recent:
-    days = st.slider("Days back", 1, 30, 7)
+    st.markdown("##### 🔎 Browse settled & recent picks")
+    days = st.slider("Days back", 1, 60, 7)
     recent = load_recent_picks(days)
 
     if recent.empty:
         st.info("No picks in this range.")
     else:
-        # Color code results
+        # Filters — sport / stat / direction / result + a historical date picker.
+        f1, f2, f3, f4, f5 = st.columns(5)
+        with f1:
+            sp_sel = st.multiselect("Sport", sorted(recent["sport_code"].unique()), key="rb_sp")
+        with f2:
+            stat_sel = st.multiselect("Stat", sorted(recent["stat_type"].unique()), key="rb_st")
+        with f3:
+            dir_sel = st.multiselect("Direction", ["over", "under"], key="rb_di")
+        with f4:
+            res_sel = st.multiselect("Result", ["win", "loss", "push"], key="rb_re")
+        with f5:
+            _dates = ["All dates"] + [str(d) for d in
+                                      sorted(recent["date"].unique(), reverse=True)]
+            day_sel = st.selectbox("Date", _dates, key="rb_date")
+
+        view = recent.copy()
+        if sp_sel:   view = view[view["sport_code"].isin(sp_sel)]
+        if stat_sel: view = view[view["stat_type"].isin(stat_sel)]
+        if dir_sel:  view = view[view["direction"].isin(dir_sel)]
+        if res_sel:  view = view[view["leg_result"].isin(res_sel)]
+        if day_sel != "All dates":
+            view = view[view["date"].astype(str) == day_sel]
+
+        # Settled-record summary for the current filter.
+        _wl = view[view["leg_result"].isin(["win", "loss"])]
+        if len(_wl):
+            _w = int((_wl["leg_result"] == "win").sum())
+            st.caption(f"{len(view)} picks shown · settled **{_w}–{len(_wl)-_w}** "
+                       f"({_w/len(_wl)*100:.0f}%) vs 57.7% breakeven")
+        else:
+            st.caption(f"{len(view)} picks shown (none settled in this filter)")
+
         def result_color(val):
             if val == "win":   return "color: #00d4a0; font-weight:600"
             if val == "loss":  return "color: #ff6b6b; font-weight:600"
@@ -1986,8 +2104,8 @@ with tab_recent:
             return ""
 
         st.dataframe(
-            recent.style.map(result_color, subset=["leg_result"]),
-            use_container_width=True, hide_index=True, height=600
+            view.style.map(result_color, subset=["leg_result"]),
+            use_container_width=True, hide_index=True, height=560
         )
 
 st.markdown('<p style="color:#3a3d4e;font-size:0.72rem;text-align:center;margin-top:2rem">'
