@@ -87,6 +87,12 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  game_id         INTEGER,"
      "  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
      "  PRIMARY KEY (run_date, player_name, stat_type, pp_line))"),
+    # Sharp-market CLV: the sharp-implied prob for the pick's side captured near
+    # game time (the close). picks.market_prob holds the same at pick-time, so
+    # market_prob_close − market_prob is the closing-line-value edge against a
+    # SHARP book (vs the existing, sticky PrizePicks line_close).
+    ("0010_picks_market_close",
+     "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_prob_close NUMERIC(8,4)"),
 ]
 
 

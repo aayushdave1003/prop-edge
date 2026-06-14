@@ -76,3 +76,8 @@ jobs:
           fi
           python -m props.ingest.injuries || echo "WARN: injuries failed"
           python -m props.picks.confirm_starters || echo "WARN: confirm_starters failed"
+          # Capture the sharp market's near-game prob for open picks (CLV close).
+          # Runs each intraday slot; the last one before tip-off is ~the close.
+          if [ -n "${ODDS_API_KEY:-}" ]; then
+            python -m props.picks.capture_sharp_close || echo "WARN: sharp close capture failed"
+          fi

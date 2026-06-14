@@ -616,6 +616,20 @@ def load_soft_lines():
 
 
 @st.cache_data(ttl=300)
+def load_sharp_clv():
+    """Settled picks with a sharp pick-time AND close prob — for sharp-market CLV."""
+    try:
+        return pd.read_sql(text("""
+            SELECT (market_prob_close - market_prob)::float AS clv, leg_result
+            FROM picks
+            WHERE market_prob IS NOT NULL AND market_prob_close IS NOT NULL
+              AND leg_result IN ('win', 'loss')
+        """), engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
 def load_all_settled_picks():
     """Full settled pick history for analytics."""
     sql = """
@@ -1629,6 +1643,32 @@ with tab_perf:
                        "are sticky, so CLV is a weaker signal here than at a sharp "
                        "book). Avg CLV near zero = neutral timing; watch whether "
                        "+CLV picks keep out-winning −CLV ones as the sample grows.")
+
+        # ── Sharp-market CLV (the real signal — DK/FD move, PrizePicks doesn't) ─
+        sclv = load_sharp_clv()
+        if len(sclv) >= 5:
+            st.markdown("**Sharp-market CLV** — vs the DraftKings/FanDuel close (in "
+                        "win-probability points; the sharp line actually moves).")
+            beat_s = (sclv["clv"] > 0).mean()
+            avg_s  = sclv["clv"].mean()
+            pos = sclv[sclv["clv"] > 0]; neg = sclv[sclv["clv"] <= 0]
+            pos_wr = (pos["leg_result"] == "win").mean() if len(pos) else float("nan")
+            neg_wr = (neg["leg_result"] == "win").mean() if len(neg) else float("nan")
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("Beat the sharp close", f"{beat_s:.0%}",
+                       help="Share of picks whose side the sharp market moved TOWARD after "
+                            "we picked — i.e. we got a better number than it closed at.")
+            sc2.metric("Avg sharp CLV", f"{avg_s*100:+.1f} pp",
+                       help="Average win-probability points gained vs the sharp close. "
+                            "Positive = genuine timing edge against a market that moves.",
+                       delta_color="normal" if avg_s >= 0 else "inverse")
+            sc3.metric("Win rate: +CLV vs −CLV",
+                       f"{pos_wr:.0%} / {neg_wr:.0%}" if pos_wr == pos_wr and neg_wr == neg_wr else "—",
+                       help="If +sharp-CLV picks win more, the model has real edge the sharp "
+                            "market later agrees with.")
+            st.caption(f"Over {len(sclv)} picks with both a pick-time and closing sharp prob "
+                       "(captured by the intraday refresh near tip-off). This is the "
+                       "gold-standard edge signal — builds as the sample grows.")
 
         # ── Paper bankroll / ROI ──────────────────────────────────────────────
         st.divider()
