@@ -358,10 +358,9 @@ def main():
 
 
 def _send_discord_alert(edges: pd.DataFrame, target_date):
-    """Post top picks to Discord. Fires only if webhook is configured."""
+    """Post the recommended slate to Discord AND email — each fires independently
+    if configured (webhook / SMTP)."""
     webhook = settings.discord_webhook_url
-    if not webhook:
-        return
 
     # Derive sport_code from model_name using the registry
     sport_by_model = {m.name: m.sport_code for m in MODELS}
@@ -414,24 +413,40 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     else:
         parlay_note = ""
 
-    payload = {
-        "embeds": [{
-            "title": f"⚡ prop-edge recommended — {target_date.strftime('%a %b %-d')}",
-            "description": f"{len(top)} recommended picks (per-category cutoffs){parlay_note}",
-            "color": 0x5932d9,
-            "fields": fields,
-            "footer": {"text": "prop-edge • auto-generated"},
-        }]
-    }
+    if webhook:
+        payload = {
+            "embeds": [{
+                "title": f"⚡ prop-edge recommended — {target_date.strftime('%a %b %-d')}",
+                "description": f"{len(top)} recommended picks (per-category cutoffs){parlay_note}",
+                "color": 0x5932d9,
+                "fields": fields,
+                "footer": {"text": "prop-edge • auto-generated"},
+            }]
+        }
+        try:
+            r = requests.post(webhook, json=payload, timeout=10)
+            if r.status_code in (200, 204):
+                log.info("discord_alert_sent", picks=len(top))
+            else:
+                log.warning("discord_alert_failed", status=r.status_code)
+        except Exception as e:
+            log.warning("discord_alert_error", error=str(e))
 
-    try:
-        r = requests.post(webhook, json=payload, timeout=10)
-        if r.status_code in (200, 204):
-            log.info("discord_alert_sent", picks=len(top))
-        else:
-            log.warning("discord_alert_failed", status=r.status_code)
-    except Exception as e:
-        log.warning("discord_alert_error", error=str(e))
+    # Email push — same recommended slate, free + reliable phone notification.
+    from props.utils.notify import format_slate, send_email
+    picks_list = [{
+        "sport": r["sport_code"], "player": r["player_name"],
+        "direction": r["direction"], "line": r["line_value"],
+        "stat": r["stat_type"], "prob": calibrate(float(r["model_prob"])),
+    } for _, r in top.iterrows()]
+    parlay_list = None
+    if len(par) >= 2:
+        parlay_list = [{
+            "player": pr["player_name"],
+            "prob": calibrate(float(pr["model_prob"])),
+        } for _, pr in par.iterrows()]
+    body = format_slate(picks_list, parlay_list, target_date.strftime("%a %b %-d"))
+    send_email(f"⚡ prop-edge slate — {target_date:%a %b %-d}", body)
 
 
 if __name__ == "__main__":

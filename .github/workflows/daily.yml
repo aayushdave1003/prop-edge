@@ -32,6 +32,9 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
       LOG_LEVEL: INFO
     steps:
       - name: Gate one run per day (DST-safe, delay-independent)

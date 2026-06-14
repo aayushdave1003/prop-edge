@@ -1316,6 +1316,25 @@ with tab_picks:
         if not filtered.empty:
             st.markdown(build_slate_card(filtered), unsafe_allow_html=True)
 
+        # ── Tail this slate — one-click copyable text of the RECOMMENDED picks ──
+        _rec_df = filtered[filtered["_rec"]] if "_rec" in filtered.columns else filtered.iloc[0:0]
+        if not _rec_df.empty:
+            from props.utils.notify import format_slate
+            from datetime import datetime as _td
+            from zoneinfo import ZoneInfo as _tz
+            _picks = [{"sport": r["sport_code"], "player": r["player"],
+                       "direction": r["direction"], "line": r["line"],
+                       "stat": r["stat_type"], "prob": calibrate(float(r["model_prob"]))}
+                      for _, r in _rec_df.head(10).iterrows()]
+            _par = build_diversified_parlay(_rec_df, max_legs=2)
+            _parlay = ([{"player": p["player"], "prob": calibrate(float(p["model_prob"]))}
+                        for _, p in _par.iterrows()] if len(_par) >= 2 else None)
+            _label = _td.now(_tz("America/Los_Angeles")).strftime("%a %b %-d")
+            with st.expander(f"📋 Tail this slate — copy {len(_picks)} recommended picks"):
+                st.code(format_slate(_picks, _parlay, _label), language=None)
+                st.caption("Tap the copy icon (top-right of the box) to grab the slate. "
+                           "Paper-tracking only — not betting advice.")
+
         # Batch load form data per sport/stat group
         form_cache: dict[tuple, pd.DataFrame] = {}
         for (sport, stat), grp in filtered.groupby(["sport_code", "stat_type"]):

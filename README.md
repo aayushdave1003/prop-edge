@@ -133,7 +133,7 @@ PrizePicks-style cards: player photo + team logo, line/direction/confidence, **p
 
 Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value** (incl. **sharp-market CLV** vs the DK/FD close), **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
 
-A **💰 Soft Lines** tab ranks tonight's PrizePicks props the sharp market prices as +EV — independent of the model. It recovers the sharp book's implied projection (Poisson mean from its no-vig prob) and re-prices it at the PrizePicks line; a side clearing the 57.7% breakeven is a soft line.
+A **💰 Soft Lines** tab ranks tonight's PrizePicks props the sharp market prices as +EV — independent of the model. It recovers the sharp book's implied projection (Poisson mean from its no-vig prob) and re-prices it at the PrizePicks line; a side clearing the 57.7% breakeven is a soft line. A **📋 Tail this slate** box exports the recommended picks as copyable text, and the morning slate can also be **emailed** (free SMTP push) alongside the Discord digest.
 
 ---
 

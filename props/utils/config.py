@@ -12,5 +12,12 @@ class Settings(BaseSettings):
     # (PrizePicks blocks datacenter IPs). Format: http://user:pass@host:port.
     # Empty = scrape direct (works only from a residential IP, e.g. the Mac).
     prizepicks_proxy: str = ""
+    # Email push for the morning recommended slate (free, optional). For Gmail use
+    # an App Password as smtp_password. Empty smtp_user/password = no email sent.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    email_to: str = ""          # recipient; defaults to smtp_user when empty
 
 settings = Settings()

@@ -326,6 +326,30 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── notifications / slate formatter ───────────────────────────────────────────
+from props.utils import notify
+
+
+def test_format_slate_text():
+    picks = [{"sport": "mlb", "player": "Trey Yesavage", "direction": "under",
+              "line": 6.0, "stat": "strikeouts_pitcher", "prob": 0.78}]
+    out = notify.format_slate(picks, date_label="Sun Jun 14")
+    assert "Trey Yesavage" in out and "UNDER 6 Ks" in out and "78%" in out
+    assert "not betting advice" in out
+    # parlay line shows joint prob
+    par = picks + [{"sport": "nba", "player": "Josh Hart", "direction": "over",
+                    "line": 4.5, "stat": "assists", "prob": 0.5}]
+    out2 = notify.format_slate(picks, parlay=par, date_label=None)
+    assert "Best 2-pick" in out2
+
+
+def test_send_email_noop_without_config(monkeypatch):
+    # No SMTP creds -> returns False, never raises.
+    monkeypatch.setattr(notify.settings, "smtp_user", "", raising=False)
+    monkeypatch.setattr(notify.settings, "smtp_password", "", raising=False)
+    assert notify.send_email("subj", "body") is False
+
+
 # ── static guard against NameError-class bugs ────────────────────────────────
 def test_no_undefined_names():
     """Catch undefined-name / use-before-assignment bugs across the codebase.
