@@ -93,7 +93,7 @@ The PrizePicks scraper covers 40+ stat types across all four sports.
 - **Lookahead discipline** — every rolling feature uses `shift(1)` before aggregating; a regression test fails if a `shift(1)` is ever dropped. Time-based train/test splits, never random.
 - **Per-category cutoffs** — recommended picks must clear a cutoff auto-derived (Wilson lower bound vs breakeven) per sport/stat; confidently-losing buckets are auto-suppressed.
 - **Injury suppression** — picks aren't logged for players currently Out / Doubtful / IL.
-- **Bench / DNP suppression** — players averaging < 12 min, high-variance bench roles, and scratched pitchers are filtered or voided.
+- **Availability / projected minutes** — a recency-weighted minutes projection (last-5 > last-10 > last-20) drops likely-DNP basketball picks and minutes that are collapsing out of the rotation, without over-suppressing returnees (a teammate-out bump keeps bench players who'll absorb minutes). Plus scratched-pitcher voids. All suppression rules live in one documented module.
 - **Stale-game & orphan handling** — never logs picks for already-played games; settlement auto-voids picks whose line was pruned or whose game never went final.
 - **Correlation-aware parlays** — the suggested slate never stacks two legs from the same game in the same direction (the cluster that busts together).
 - **Model/market blend** — the stored probability is a per-sport blend of the model and the sharp no-vig market (`w·model + (1−w)·market`), with weights self-tuned from settled results: **NBA leans on the market** (deep, efficient) and **MLB leans on the model** (softer market). It only blends against a real line — never a neutral prior. Cut the daily Brier 0.245→0.235.

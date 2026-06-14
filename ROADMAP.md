@@ -35,7 +35,8 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☑ **P3** Line-shopping vs sharp books — DONE: the **soft-line finder** (`props/picks/soft_lines.py`, daily.sh 7e2) prices tonight's PrizePicks props against the DK/FD no-vig market — recovers the sharp implied Poisson mean and re-prices at the PrizePicks line; a side clearing the 57.7% breakeven is a soft line (a +EV edge **independent of the model**). Guards against alt-line/thin-market noise (anchors on the main line, skips lopsided anchors). Persists daily (`soft_lines`, migration 0009), posts a Discord digest, and renders on a **💰 Soft Lines** dashboard tab. First live run: 4 real soft lines (top +6%).
 
 ## 4. Pick Generation & Product
-- ☐ **P1** Make suppression rules (>97% confidence, multi-game/combined-player filters) configurable + documented in one place.
+- ☑ **P1** Suppression rules in one documented place — DONE: `props/picks/suppression.py` holds every log-time filter (MIN_EDGE_TO_LOG, MAX_CONFIDENCE >97%, MIN/MAX_LINE_BY_STAT, minute floors, injury/stale predicates) with a rationale for each; `log_picks` imports from it. Magic numbers became named constants.
+- ☑ **P2** Player availability / projected-minutes model — DONE: `props/picks/availability.py` projects tonight's basketball minutes recency-weighted (last_5>10>20) and flags DNP risk (recent non-rotation floor or a sharp collapse vs the longer window), with a teammate-out bump so role players who'll absorb minutes aren't dropped. `log_picks` suppresses on the projection instead of two flat thresholds (and the N+1 minute lookups became one batch query). Validated on 214 settled picks: the 3 it suppresses all lost (kept WR 53.7%→54.5%); catches trend-based DNP risk going forward. *Refinement:* wire tonight's actual injury context into the teammate bump (currently bump=0 at log time — conservative).
 - ☑ **P2** Bankroll/Kelly tracking — DONE: the Performance tab's **Paper P&L** (`simulate_bankroll`) charts a running unit bankroll with units won, ROI/yield, settled-bet count, and max drawdown, scoped to recommended or all picks.
 - ☑ **P2** Per-pick "why" — DONE: each card shows a synthesized rationale line (recent form / market edge / line movement).
 - ☑ **P3** Lineup/injury suppression — DONE: log_picks skips players currently Out/Doubtful/IL (name-join to player_injuries, `_is_out_status`), cutting DNP voids.
@@ -62,7 +63,7 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ✅ WNBA + NHL market-implied game cards
 - ✅ Card-height alignment
 - ☐ **P2** Loading states/spinners for the slow tab (moot after §1 precompute).
-- ☐ **P2** Mobile / narrow-screen layout (cards fixed at 3-per-row).
+- ☑ **P2** Mobile / narrow-screen layout — DONE: pick cards render in a responsive CSS grid (`repeat(auto-fill, minmax(300px,1fr))`) that shows 3-4 across on desktop and stacks to one column under 520px, instead of fixed 3-wide `st.columns`.
 - ☐ **P3** Historical-slate date picker, dark/light toggle. *(filter persistence DONE — Today's Picks filters now persist in URL query params.)*
 
 ## 7. Code Quality & Observability
