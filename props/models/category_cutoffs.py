@@ -130,6 +130,7 @@ def compute_cutoffs(rows) -> dict:
     """
     by_sport: dict[str, list] = {}
     by_stat: dict[tuple, list] = {}
+    by_dir: dict[tuple, list] = {}     # (sport, stat, direction)
     for r in rows:
         sport = r["sport"]
         stat = r["stat_type"]
@@ -137,6 +138,9 @@ def compute_cutoffs(rows) -> dict:
         w = int(r["win"])
         by_sport.setdefault(sport, []).append((p, w))
         by_stat.setdefault((sport, stat), []).append((p, w))
+        direction = (r.get("direction") if hasattr(r, "get") else None)
+        if direction in ("over", "under"):
+            by_dir.setdefault((sport, stat, direction), []).append((p, w))
 
     sports: dict[str, dict] = {}
     for sport, pairs in sorted(by_sport.items()):
@@ -190,11 +194,33 @@ def compute_cutoffs(rows) -> dict:
                 "status": "suppressed",
             }
 
+    # Per-DIRECTION cutoffs (sport|stat|direction) — a stat can perform very
+    # differently over vs under (e.g. MLB hits: 84% under, 58% over). Only
+    # created when a direction has its own MIN_N_STAT sample; otherwise the pick
+    # falls back to the stat/sport cutoff. Sits ABOVE the stat level in rec_cutoff.
+    dir_stats: dict[str, dict] = {}
+    for (sport, stat, direction), pairs in sorted(by_dir.items()):
+        probs = [p for p, _ in pairs]
+        wins = [w for _, w in pairs]
+        n_all, k_all = len(pairs), sum(wins)
+        res = _best_cutoff(probs, wins, MIN_N_STAT, stepup=True)
+        key = f"{sport}|{stat}|{direction}"
+        if res is not None:
+            t, n, wr, lb = res
+            dir_stats[key] = {"cutoff": t, "n": n, "win_rate": round(wr, 4),
+                              "wilson_lb": round(lb, 4), "status": "tuned"}
+        elif n_all >= MIN_N_STAT and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
+            dir_stats[key] = {"cutoff": SUPPRESS_CUTOFF, "n": n_all,
+                              "win_rate": round(k_all / n_all, 4),
+                              "wilson_ub": round(wilson_upper_bound(k_all, n_all), 4),
+                              "status": "suppressed"}
+
     return {
         "breakeven": BREAKEVEN,
         "default_cutoff": DEFAULT_CUTOFF,
         "sports": sports,
         "stats": stats,
+        "dir_stats": dir_stats,
     }
 
 
@@ -231,15 +257,20 @@ def load_cutoffs() -> dict:
 
 
 def rec_cutoff(sport: str | None, stat_type: str | None = None,
-               table: dict | None = None) -> float:
+               table: dict | None = None, direction: str | None = None) -> float:
     """Recommended `model_prob` cutoff for a pick.
 
-    Hierarchy: sport×stat (if tuned) -> sport (if tuned/suppressed) -> default.
-    Pass `table` to use a freshly computed table (e.g. the dashboard's live,
-    cached recompute); otherwise the committed JSON is used.
+    Hierarchy: sport×stat×direction -> sport×stat -> sport -> default. Each level
+    is used only when it has its own tuned/suppressed entry. Pass `table` to use a
+    freshly computed table (e.g. the dashboard's live recompute); otherwise the
+    committed JSON is used.
     """
     table = table if table is not None else load_cutoffs()
     sport = (sport or "").lower()
+    if stat_type and direction in ("over", "under"):
+        cell = table.get("dir_stats", {}).get(f"{sport}|{stat_type}|{direction}")
+        if cell:
+            return float(cell["cutoff"])
     if stat_type:
         cell = table.get("stats", {}).get(f"{sport}|{stat_type}")
         if cell:
@@ -259,7 +290,7 @@ def _fetch_rows(engine=None):
         from props.utils.db import engine as engine
 
     df = pd.read_sql(text("""
-        SELECT g.sport_code AS sport, pk.stat_type,
+        SELECT g.sport_code AS sport, pk.stat_type, pk.direction,
                pk.model_prob, pk.leg_result
         FROM picks pk JOIN games g USING (game_id)
         WHERE pk.leg_result IN ('win', 'loss')

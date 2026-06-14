@@ -67,7 +67,8 @@ def _rec_mask(df: pd.DataFrame) -> pd.Series:
         return pd.Series([], dtype=bool)
     return df.apply(
         lambda r: float(r["model_prob"]) >= rec_cutoff(
-            r.get("sport_code"), r.get("stat_type"), table=CUTOFFS),
+            r.get("sport_code"), r.get("stat_type"), table=CUTOFFS,
+            direction=r.get("direction")),
         axis=1,
     )
 
@@ -698,13 +699,14 @@ def load_results_summary():
     """Headline record for the public results view — overall + recommended-tier
     W/L and per-sport, computed from all settled picks."""
     df = pd.read_sql(text("""
-        SELECT sport_code, stat_type, model_prob::float AS model_prob, leg_result
+        SELECT sport_code, stat_type, direction, model_prob::float AS model_prob, leg_result
         FROM picks WHERE leg_result IN ('win','loss') AND model_prob IS NOT NULL
     """), engine)
     if df.empty:
         return None
     df["_rec"] = df.apply(
-        lambda r: r["model_prob"] >= rec_cutoff(r["sport_code"], r["stat_type"]), axis=1)
+        lambda r: r["model_prob"] >= rec_cutoff(r["sport_code"], r["stat_type"],
+                                                direction=r["direction"]), axis=1)
 
     def wl(d):
         w = int((d["leg_result"] == "win").sum()); return w, len(d)

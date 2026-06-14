@@ -38,6 +38,8 @@ from props.models.prob_calibration import calibrate
 
 BREAKEVEN = 0.577          # per-leg win prob where a 2-pick power play breaks even
 MIN_N_SWEEP = 15           # min settled picks before a per-bucket cutoff is trusted
+DRIFT_WORSEN = 0.08        # recent calibration gap worse than earlier by this = drift
+DRIFT_MIN_GAP = 0.10       # ...and the recent gap itself exceeds this to alert
 SWEEP = [0.50 + 0.025 * i for i in range(13)]   # 0.500 → 0.800
 
 
@@ -69,7 +71,9 @@ def load_settled(session, window_days: int):
 
 def walk_forward(rows, table):
     """Recommended-tier strategy over the window + recent-vs-prior trend."""
-    rec = [r for r in rows if r.model_prob >= rec_cutoff(r.sport_code, r.stat_type, table)]
+    rec = [r for r in rows
+           if r.model_prob >= rec_cutoff(r.sport_code, r.stat_type, table,
+                                         direction=r.direction)]
     rw = sum(r.leg_result == "win" for r in rec)
     rl = sum(r.leg_result == "loss" for r in rec)
     aw = sum(r.leg_result == "win" for r in rows)
@@ -270,6 +274,22 @@ def build_payload(run_date, window_days, wf, cal, sweep):
     else:
         fields.append({"name": "Cutoff fit",
                        "value": f"✓ all {len(sweep)} buckets within tolerance of live cutoffs",
+                       "inline": False})
+
+    # Model-drift alert: a sport whose recent calibration gap (predicted − actual)
+    # has worsened materially vs its earlier window — the model is degrading there
+    # and likely needs a retrain.
+    drift_lines = []
+    for sp, d in (cal.get("drift") or {}).items():
+        rg, eg = d.get("recent_gap"), d.get("earlier_gap")
+        if rg is None or eg is None:
+            continue
+        if rg - eg > DRIFT_WORSEN and rg > DRIFT_MIN_GAP:
+            drift_lines.append(
+                f"`{sp}` over-confidence {eg:+.0%} → **{rg:+.0%}** (worsening — "
+                "recent picks predicted higher than they hit)")
+    if drift_lines:
+        fields.append({"name": "🚨 Model drift", "value": "\n".join(drift_lines),
                        "inline": False})
 
     return {"embeds": [{

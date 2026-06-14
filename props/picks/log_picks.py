@@ -372,7 +372,8 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     e = edges.copy()
     e["sport_code"] = e["model_name"].map(lambda m: sport_for_model(m, sport_by_model))
     rec_mask = e.apply(
-        lambda r: float(r["model_prob"]) >= rec_cutoff(r["sport_code"], r["stat_type"]),
+        lambda r: float(r["model_prob"]) >= rec_cutoff(r["sport_code"], r["stat_type"],
+                                                       direction=r["direction"]),
         axis=1,
     )
     top = e[rec_mask].sort_values("model_prob", ascending=False).head(8)

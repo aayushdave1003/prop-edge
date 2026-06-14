@@ -4,17 +4,17 @@
   "sports": {
     "mlb": {
       "cutoff": 0.55,
-      "n": 412,
-      "win_rate": 0.6214,
-      "wilson_lb": 0.5972,
+      "n": 441,
+      "win_rate": 0.61,
+      "wilson_lb": 0.5865,
       "status": "tuned"
     },
     "nba": {
-      "cutoff": 0.99,
-      "n": 223,
-      "win_rate": 0.5291,
-      "wilson_lb": null,
-      "status": "suppressed"
+      "cutoff": 0.6,
+      "n": 41,
+      "win_rate": 0.6585,
+      "wilson_lb": 0.5815,
+      "status": "tuned"
     },
     "nhl": {
       "cutoff": 0.7,
@@ -25,8 +25,8 @@
     },
     "wnba": {
       "cutoff": 0.7,
-      "n": 7,
-      "win_rate": 0.5714,
+      "n": 9,
+      "win_rate": 0.4444,
       "wilson_lb": null,
       "status": "unproven"
     }
@@ -34,23 +34,46 @@
   "stats": {
     "mlb|hits": {
       "cutoff": 0.625,
+      "n": 95,
+      "win_rate": 0.8421,
+      "wilson_lb": 0.8012,
+      "status": "tuned"
+    },
+    "mlb|total_bases": {
+      "cutoff": 0.99,
+      "n": 92,
+      "win_rate": 0.4783,
+      "wilson_ub": 0.5303,
+      "status": "suppressed"
+    },
+    "nba|points": {
+      "cutoff": 0.99,
+      "n": 107,
+      "win_rate": 0.514,
+      "wilson_ub": 0.562,
+      "status": "suppressed"
+    }
+  },
+  "dir_stats": {
+    "mlb|hits|under": {
+      "cutoff": 0.55,
       "n": 94,
       "win_rate": 0.8404,
       "wilson_lb": 0.7991,
       "status": "tuned"
     },
-    "mlb|total_bases": {
+    "mlb|total_bases|under": {
       "cutoff": 0.99,
-      "n": 78,
-      "win_rate": 0.5,
-      "wilson_ub": 0.5563,
+      "n": 92,
+      "win_rate": 0.4783,
+      "wilson_ub": 0.5303,
       "status": "suppressed"
     },
-    "nba|points": {
+    "nba|points|over": {
       "cutoff": 0.99,
-      "n": 96,
-      "win_rate": 0.4896,
-      "wilson_ub": 0.5404,
+      "n": 54,
+      "win_rate": 0.5,
+      "wilson_ub": 0.5674,
       "status": "suppressed"
     }
   }
