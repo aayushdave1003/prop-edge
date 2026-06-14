@@ -21,6 +21,30 @@ _WINDOW_WEIGHTS = [("last_5_avg_minutes", 0.5),
                    ("last_10_avg_minutes", 0.3),
                    ("last_20_avg_minutes", 0.2)]
 
+# Teammate-out bump: the team must be losing a real rotation player's minutes,
+# and the bumped player must already be enough of a rotation piece to plausibly
+# absorb them — a deep-bench scrub doesn't suddenly play because a starter sits.
+TEAMMATE_OUT_MIN = 15.0       # team minutes lost to injury before we bump anyone
+ROTATION_FLOOR = 5.0          # the player's own recent floor must clear this
+
+
+def teammate_bump_from_injury(derived: dict, team_minutes_out: float) -> float:
+    """Convert tonight's team injury context (sum of out rotation-teammate minutes,
+    i.e. detect_injury_expansion's value) into a minutes bump for THIS player.
+
+    Returns 0 unless a meaningful injury exists AND the player is already a
+    plausible rotation piece — then we expect them to clear the minutes floor, so
+    we don't suppress them. Conservative: it rescues fringe rotation players on a
+    depleted team without inflating a scrub who still won't play."""
+    if (team_minutes_out or 0.0) < TEAMMATE_OUT_MIN:
+        return 0.0
+    floor = _f(derived, "last_5_avg_minutes")
+    if floor is None:
+        floor = _f(derived, "season_avg_minutes") or 0.0
+    if floor < ROTATION_FLOOR:
+        return 0.0
+    return MIN_MINUTES_HARD + 2.0
+
 
 def _f(derived: dict, key: str):
     v = derived.get(key) if derived else None

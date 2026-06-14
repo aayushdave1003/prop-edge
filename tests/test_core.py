@@ -375,6 +375,20 @@ def test_availability_suppresses_low_and_dnp():
     assert av.should_suppress(bench, teammate_bump=26)[0] is False
 
 
+def test_teammate_bump_rescues_rotation_not_scrubs():
+    rotation = {"last_5_avg_minutes": 10, "season_avg_minutes": 12}   # plausible piece
+    scrub    = {"last_5_avg_minutes": 2,  "season_avg_minutes": 3}    # deep bench
+    # No meaningful injury -> no bump for anyone.
+    assert av.teammate_bump_from_injury(rotation, team_minutes_out=0) == 0.0
+    # Big teammate injury: rescue the rotation player, not the scrub.
+    assert av.teammate_bump_from_injury(rotation, team_minutes_out=28) > 0
+    assert av.teammate_bump_from_injury(scrub, team_minutes_out=28) == 0.0
+    # End-to-end: the rotation player flips from suppressed to kept on injury news.
+    out_team = av.teammate_bump_from_injury(rotation, team_minutes_out=28)
+    assert av.should_suppress(rotation, 0)[0] is True
+    assert av.should_suppress(rotation, out_team)[0] is False
+
+
 # ── soft-line finder (PrizePicks vs sharp market) ─────────────────────────────
 from props.picks import soft_lines as sl
 

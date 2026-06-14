@@ -25,7 +25,7 @@ from props.picks.suppression import (
     MIN_LINE_BY_STAT, MAX_LINE_BY_STAT, is_out_status, is_stale_game,
     line_in_range,
 )
-from props.picks.availability import should_suppress
+from props.picks.availability import should_suppress, teammate_bump_from_injury
 _is_out_status = is_out_status
 _is_stale_game = is_stale_game
 
@@ -158,6 +158,13 @@ def main():
     # out of the rotation and one returning to it (see props.picks.availability).
     # One batch query replaces the old per-player N+1 lookups.
     unavailable: dict[int, str] = {}      # player_id -> reason
+    # Tonight's injury context: detect_injury_expansion put the team's lost
+    # rotation minutes on edges.injury_flag — used to bump (rescue) plausible
+    # rotation players on a depleted team from the minutes suppression.
+    flag_map: dict[int, float] = {}
+    if "injury_flag" in edges.columns:
+        flag_map = {int(p): float(f or 0)
+                    for p, f in zip(edges["player_id"], edges["injury_flag"])}
     bball_ids = edges[edges["sport_code"].isin(("nba", "wnba"))]["player_id"].unique().tolist()
     if bball_ids:
         with session_scope() as _s:
@@ -171,7 +178,8 @@ def main():
                 ORDER BY pg.player_id, g.game_date DESC
             """), {"ids": [int(p) for p in bball_ids]}).fetchall()
         for pid, derived in mrows:
-            drop, reason = should_suppress(derived or {})
+            bump = teammate_bump_from_injury(derived or {}, flag_map.get(int(pid), 0.0))
+            drop, reason = should_suppress(derived or {}, bump)
             if drop:
                 unavailable[int(pid)] = reason
         if unavailable:
