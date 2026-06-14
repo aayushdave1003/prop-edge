@@ -326,6 +326,26 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── static guard against NameError-class bugs ────────────────────────────────
+def test_no_undefined_names():
+    """Catch undefined-name / use-before-assignment bugs across the codebase.
+
+    These are runtime-only — byte-compile, `import <module>`, and the unit suite
+    all PASS even when a function body references a name that doesn't exist (a
+    missing `all_player_ids` once crashed pick generation -> 0 picks for a day,
+    because the crash only fires when that branch runs). flake8 F821/F823 flag
+    them statically, so this is the smoke test for the whole pick-gen path.
+    """
+    pytest.importorskip("flake8")
+    import subprocess
+    root = Path(__file__).resolve().parent.parent
+    r = subprocess.run(
+        [sys.executable, "-m", "flake8", "--select=F821,F823", "props", "ui"],
+        cwd=root, capture_output=True, text=True)
+    assert r.returncode == 0, ("undefined name / use-before-assignment found "
+                               "(would crash at runtime):\n" + r.stdout)
+
+
 # ── player availability / projected minutes ───────────────────────────────────
 from props.picks import availability as av
 

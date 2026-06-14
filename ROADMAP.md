@@ -70,7 +70,8 @@ Suggested execution order: **§1 (P0s) → §2/§3 (P1s) → §7 tests → §6 p
 - ☑ **P1** Tests — DONE: 20 unit tests (settle, de-vig, `_html`, form dots, derived-writer guard, per-category cutoffs, ESPN stat parsing). Run on every push via CI.
 - ☑ **P2** Clean repo root — DONE: `.gitignore` already covered the scratch (`*.log`, `backtest_*.csv`, `logs/`) so nothing was ever tracked; consolidated the redundant per-file log entries and deleted the stale local artifacts (old cron/backfill logs + March/May backtest CSVs). `git status` is clean.
 - ☐ **P2** Standardize structlog usage; add run/request IDs.
-- ☑ **P3** CI on push — DONE: `.github/workflows/ci.yml` byte-compiles + runs the 20-test suite on push/PR to main.
+- ☑ **P3** CI on push — DONE: `.github/workflows/ci.yml` byte-compiles, **lints for NameError-class bugs** (`flake8 --select=F821,F823` — undefined names / use-before-assign), and runs the test suite on push/PR to main.
+- ☑ **P1** Pick-generation smoke test — DONE: a refactor once deleted a variable still used in `log_picks` → a runtime `NameError` that byte-compile, `import`, and the unit suite all passed → 0 picks logged for a day. Now `flake8 --select=F821,F823` runs both as a unit test (`test_no_undefined_names`) and a CI step, catching undefined-name / use-before-assign across `props`+`ui` statically — the cheap guard that closes that gap.
 
 ## 8. Compliance / Safety
 - ☐ **P2** Keep "paper-tracking only, not betting advice" framing consistent; add disclaimer/age gate if this ever goes public.
