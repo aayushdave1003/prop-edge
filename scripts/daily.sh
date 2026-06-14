@@ -87,6 +87,12 @@ python -m props.ingest.nba_boxscores
 python -m props.ingest.wnba_boxscores
 python -m props.ingest.nhl_boxscores
 
+# ── 2b. MLB ballpark weather (Open-Meteo, free) ──────────────────────────────
+# Wind blowing out drives offense (validated: 65% over-rate vs 43% calm/in).
+# Fetches today's games + backfills a few recent days for settled-pick coverage.
+echo "--- MLB weather ---"
+python -m props.ingest.mlb_weather --since-days 3 || echo "WARN: mlb_weather failed"
+
 # ── 3. Rolling features ──────────────────────────────────────────────────────
 echo "--- NBA rolling features ---"
 python -m props.features.nba_rolling

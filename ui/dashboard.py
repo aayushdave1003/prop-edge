@@ -182,6 +182,11 @@ p, label, div { color:var(--txt2); }
     box-shadow:0 18px 40px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,207,92,0.5);
 }
 .rec-star { filter:drop-shadow(0 0 4px rgba(255,207,92,0.6)); }
+.wx-chip { display:inline-block; margin-top:5px; padding:2px 8px; border-radius:999px;
+           font-size:0.72rem; font-weight:600; background:rgba(255,255,255,0.06);
+           color:#9aa0b4; border:1px solid var(--line); }
+.wx-chip.wx-out { background:rgba(0,212,160,0.12); color:#00d4a0; border-color:rgba(0,212,160,0.3); }
+.wx-chip.wx-in  { background:rgba(232,99,99,0.10); color:#e86363; border-color:rgba(232,99,99,0.25); }
 .card-banner {
     position:relative; height:112px; overflow:hidden;
     background:
@@ -486,7 +491,10 @@ def load_todays_picks():
             inj.short_comment AS injury_note,
             g.status          AS game_status,
             ht.abbreviation   AS home_team,
-            at.abbreviation   AS away_team
+            at.abbreviation   AS away_team,
+            wx.temp_f         AS wx_temp,
+            wx.wind_out_mph   AS wx_wind_out,
+            wx.is_dome        AS wx_dome
         FROM picks pk
         JOIN players p    USING (player_id)
         LEFT JOIN teams t ON t.team_id = p.current_team_id
@@ -494,6 +502,7 @@ def load_todays_picks():
         JOIN prop_lines pl ON pl.line_id = pk.line_id
         LEFT JOIN teams ht ON ht.team_id = g.home_team_id
         LEFT JOIN teams at ON at.team_id = g.away_team_id
+        LEFT JOIN game_weather wx ON wx.game_id = pk.game_id
         -- The player's own current injury status (warn on Out / IL / Day-To-Day),
         -- most recent report within ~36h, matched by name within the sport.
         LEFT JOIN LATERAL (
@@ -1083,6 +1092,23 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     rec_cls = " rec" if is_rec else ""
     star = '<span class="rec-star" title="Recommended — clears its category cutoff">⭐</span> ' if is_rec else ""
 
+    # Weather chip (MLB) — wind blowing out drives offense (validated: 65% over
+    # rate vs 43% calm/in). Only meaningful for hit/TB/HR-type props.
+    weather_html = ""
+    if sport == "mlb":
+        _wt, _wo, _dome = row.get("wx_temp"), row.get("wx_wind_out"), row.get("wx_dome")
+        if _dome:
+            weather_html = '<div class="wx-chip">🏟️ dome (neutral)</div>'
+        elif _wo is not None and pd.notna(_wo):
+            wo = float(_wo)
+            t = f"{float(_wt):.0f}°F · " if _wt is not None and pd.notna(_wt) else ""
+            if wo >= 5:
+                weather_html = f'<div class="wx-chip wx-out" title="Wind blowing out — boosts hits/TB/HR">{t}💨 wind out +{wo:.0f}</div>'
+            elif wo <= -5:
+                weather_html = f'<div class="wx-chip wx-in" title="Wind blowing in — suppresses offense">{t}🍃 wind in {wo:.0f}</div>'
+            else:
+                weather_html = f'<div class="wx-chip">{t}🍃 calm</div>'
+
     return _html(f"""
 <div class="pick-card{rec_cls}">
   <div class="card-banner">
@@ -1092,6 +1118,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
   <div class="card-body">
     <div class="player-name">{result_html}{star}{row['player']}</div>
     <div class="team-stat">{row.get('team','')}{' · ' + opp if opp else ''} · {stat_label}</div>
+    {weather_html}
     {inj_status_html}
     <div class="line-row">
       <span class="line-value">{line:g}</span>

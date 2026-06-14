@@ -78,7 +78,7 @@ The PrizePicks scraper covers 40+ stat types across all four sports.
 
 ## Feature engineering
 
-**MLB (137)** — rolling form (5/10/20/season) for all batting & pitching stats · opposing-pitcher quality (ERA, K/9, H/9, BB/9, HR/9) · batter-vs-pitcher history · platoon splits · opposing-lineup quality · park factors · advanced metrics (BABIP, ISO, K%, BB%, hard-contact) · rest.
+**MLB (137)** — rolling form (5/10/20/season) for all batting & pitching stats · opposing-pitcher quality (ERA, K/9, H/9, BB/9, HR/9) · batter-vs-pitcher history · platoon splits · opposing-lineup quality · park factors · **ballpark weather** (temp/wind, with a park-orientation wind-out component — wind blowing out hit 65% overs vs 43% calm/in) · advanced metrics (BABIP, ISO, K%, BB%, hard-contact) · rest.
 
 **NBA (120)** — rolling box-score form · basketball IQ (usage, spacing, foul-drawing, paint scoring, AST/PTS, pts/FGA) · play-type distribution (iso/PnR/spot-up) · opponent positional defense (pace-adjusted) · teammate-absence usage bump · home/away & back-to-back splits · playoff/series context · market over-prob.
 

@@ -326,6 +326,20 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── MLB weather (wind-out component) ──────────────────────────────────────────
+from props.ingest.mlb_weather import wind_out_mph
+
+
+def test_wind_out_component():
+    # CF bearing 0 (due north). Wind FROM the south (180) blows TO the north (0)
+    # = straight out -> full speed positive.
+    assert wind_out_mph(10, 180, 0) == pytest.approx(10, abs=0.1)
+    # Wind FROM the north (0) blows TO the south = straight in -> negative.
+    assert wind_out_mph(10, 0, 0) == pytest.approx(-10, abs=0.1)
+    # Crosswind (FROM the east, blowing west) along a north CF axis -> ~0.
+    assert abs(wind_out_mph(10, 90, 0)) < 0.1
+
+
 # ── notifications / slate formatter ───────────────────────────────────────────
 from props.utils import notify
 

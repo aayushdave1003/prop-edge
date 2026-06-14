@@ -93,6 +93,17 @@ MIGRATIONS: list[tuple[str, str]] = [
     # SHARP book (vs the existing, sticky PrizePicks line_close).
     ("0010_picks_market_close",
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_prob_close NUMERIC(8,4)"),
+    # MLB ballpark weather per game (Open-Meteo) — drives hits/TB/HR offense.
+    ("0011_game_weather",
+     "CREATE TABLE IF NOT EXISTS game_weather ("
+     "  game_id      INTEGER PRIMARY KEY,"
+     "  temp_f       NUMERIC(6,1),"
+     "  wind_mph     NUMERIC(6,1),"
+     "  wind_dir     NUMERIC(6,1),"
+     "  wind_out_mph NUMERIC(6,1),"
+     "  humidity     NUMERIC(6,1),"
+     "  is_dome      BOOLEAN,"
+     "  fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW())"),
 ]
 
 

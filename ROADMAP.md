@@ -10,7 +10,7 @@ The autonomous build is **complete** — the pipeline scrapes, predicts, **blend
 ## Open — new features (not data-gated; pick by value)
 
 ### New data → real accuracy upside (MLB is the biggest slate)
-- ☐ **P1** **Weather for MLB** — wind/temp/park strongly drive hits, total bases, HRs. Free APIs, plugs into the existing feature pipeline. Highest-value new signal.
+- ◧ **P1** **Weather for MLB** — INGEST + VALIDATED, model-use pending. `props/ingest/mlb_weather.py` (Open-Meteo, free, no key) stores per-game temp/wind/humidity + a park-orientation **wind-out** component in `game_weather` (migration 0011); wired into daily.sh, surfaced as a chip on MLB pick cards (💨 wind out / 🍃 in / 🏟️ dome). **Validated on 80 settled offense picks:** wind blowing out (≥5mph) → **65% over-rate vs 43% calm/in** and +1.26 vs +0.21 actual-minus-line — a real signal. *Next:* a full historical-weather backfill (best from a GHA runner, not the dev sandbox) → **retrain the MLB hits/TB/HR models** with the weather features to convert the signal into model accuracy.
 - ☐ **P2** **Confirmed lineups + batting order** — batting 1st vs 8th changes plate appearances → directly moves hits/TB/RBI props. Extend the existing starter scrape to order.
 - ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency is a real edge for strikeout props.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds now flow; a high implied team total = more offense. Feed it into the MLB/NBA models.
