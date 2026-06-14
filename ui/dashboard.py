@@ -72,6 +72,33 @@ def _rec_mask(df: pd.DataFrame) -> pd.Series:
         axis=1,
     )
 
+
+_STACK_STAT = {"hits": "hits", "total_bases": "TB", "rbis": "RBI", "home_runs": "HR"}
+
+
+def correlated_stacks(df: pd.DataFrame) -> list[dict]:
+    """Same-game positively-correlated stacks: a pitcher's strikeouts OVER paired
+    with an opposing-team batter UNDER — when the pitcher deals, the opposing
+    offense falls short, so the legs tend to hit (or miss) together. Returns the
+    pairs sorted by (correlation-bumped) joint probability."""
+    if df.empty or "game_id" not in df.columns:
+        return []
+    pitch = df[(df["stat_type"] == "strikeouts_pitcher") & (df["direction"] == "over")]
+    unders = df[(df["direction"] == "under") & (df["stat_type"].isin(_STACK_STAT))]
+    out = []
+    for _, p in pitch.iterrows():
+        opp = unders[(unders["game_id"] == p["game_id"])
+                     & (unders["team"].astype(str) != str(p.get("team")))]
+        for _, b in opp.iterrows():
+            joint = min(0.99, calibrate(float(p["model_prob"]))
+                        * calibrate(float(b["model_prob"])) + 0.06)   # +corr bump
+            out.append({"pitcher": p["player"], "p_line": float(p["line"]),
+                        "batter": b["player"], "b_line": float(b["line"]),
+                        "b_stat": _STACK_STAT.get(b["stat_type"], b["stat_type"]),
+                        "joint": joint})
+    out.sort(key=lambda x: -x["joint"])
+    return out
+
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
                    page_icon="⚡")
@@ -188,6 +215,8 @@ p, label, div { color:var(--txt2); }
            color:#9aa0b4; border:1px solid var(--line); }
 .wx-chip.wx-out { background:rgba(0,212,160,0.12); color:#00d4a0; border-color:rgba(0,212,160,0.3); }
 .wx-chip.wx-in  { background:rgba(232,99,99,0.10); color:#e86363; border-color:rgba(232,99,99,0.25); }
+.proj-line { font-size:0.76rem; color:var(--txt2); margin-top:6px; }
+.proj-line b { color:var(--txt); }
 .card-banner {
     position:relative; height:112px; overflow:hidden;
     background:
@@ -495,7 +524,9 @@ def load_todays_picks():
             at.abbreviation   AS away_team,
             wx.temp_f         AS wx_temp,
             wx.wind_out_mph   AS wx_wind_out,
-            wx.is_dome        AS wx_dome
+            wx.is_dome        AS wx_dome,
+            pr.predicted_mean AS predicted_mean,
+            pr.distribution   AS distribution
         FROM picks pk
         JOIN players p    USING (player_id)
         LEFT JOIN teams t ON t.team_id = p.current_team_id
@@ -504,6 +535,7 @@ def load_todays_picks():
         LEFT JOIN teams ht ON ht.team_id = g.home_team_id
         LEFT JOIN teams at ON at.team_id = g.away_team_id
         LEFT JOIN game_weather wx ON wx.game_id = pk.game_id
+        LEFT JOIN predictions pr ON pr.prediction_id = pk.prediction_id
         -- The player's own current injury status (warn on Out / IL / Day-To-Day),
         -- most recent report within ~36h, matched by name within the sport.
         LEFT JOIN LATERAL (
@@ -1151,6 +1183,21 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     rec_cls = " rec" if is_rec else ""
     star = '<span class="rec-star" title="Recommended — clears its category cutoff">⭐</span> ' if is_rec else ""
 
+    # Projection + likely range — a confidence band, not just a point prob. The
+    # model's predicted_mean is a Poisson rate for counting stats, so the 25–75%
+    # quantiles give an honest "likely" range around the projection.
+    proj_html = ""
+    _pm = row.get("predicted_mean")
+    if _pm is not None and pd.notna(_pm) and float(_pm) > 0:
+        pm = float(_pm)
+        try:
+            from scipy.stats import poisson
+            lo, hi = int(poisson.ppf(0.25, pm)), int(poisson.ppf(0.75, pm))
+            proj_html = (f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b>'
+                         f' · likely <b>{lo}–{hi}</b></div>')
+        except Exception:
+            proj_html = f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b></div>'
+
     # Weather chip (MLB) — wind blowing out drives offense (validated: 65% over
     # rate vs 43% calm/in). Only meaningful for hit/TB/HR-type props.
     weather_html = ""
@@ -1183,6 +1230,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
       <span class="line-value">{line:g}</span>
       <span class="badge {badge_cls}">{badge_text}</span>
     </div>
+    {proj_html}
     {live_html}
     <div class="prob-row">
       <span class="prob-label">Model confidence</span>
@@ -1459,6 +1507,23 @@ with tab_picks:
                 st.code(format_slate(_picks, _parlay, _label), language=None)
                 st.caption("Tap the copy icon (top-right of the box) to grab the slate. "
                            "Paper-tracking only — not betting advice.")
+
+        # ── Correlated same-game stacks ──────────────────────────────────────
+        # A dominant pitcher (Ks OVER) and the opposing offense's UNDERs move
+        # together — when he deals, the opposing batters fall short. Stacking
+        # positively-correlated legs busts/wins as a block (higher joint hit rate
+        # than independent legs), the opposite of the diversified parlay.
+        _stacks = correlated_stacks(_rec_df) if not _rec_df.empty else []
+        if _stacks:
+            with st.expander(f"🔗 Correlated stacks ({len(_stacks)}) — pitcher Ks + opposing unders"):
+                for s in _stacks[:5]:
+                    st.markdown(
+                        f"⚾ **{s['pitcher']}** OVER {s['p_line']:g} Ks  ＋  "
+                        f"**{s['batter']}** UNDER {s['b_line']:g} {s['b_stat']}  "
+                        f"<span style='color:#5f6678'>· joint ~{s['joint']:.0%} "
+                        f"(they move together)</span>", unsafe_allow_html=True)
+                st.caption("Positively-correlated: a pitcher dealing suppresses the "
+                           "opposing offense, so these tend to hit (or miss) as a pair.")
 
         # Batch load form data per sport/stat group
         form_cache: dict[tuple, pd.DataFrame] = {}

@@ -15,11 +15,11 @@ The autonomous build is **complete** — the pipeline scrapes, predicts, **blend
 - ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency is a real edge for strikeout props.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds now flow; a high implied team total = more offense. Feed it into the MLB/NBA models.
 
-### Model / analytics
-- ☐ **P2** **Per-direction cutoffs** — tune over vs under independently (the MLB-hits 26pp over/under split proves asymmetry is real). Future-proofing; modest on today's data (the hot side is already captured).
-- ☐ **P3** **Same-game *correlated* parlays** — the builder avoids negative correlation; add the upside version (stack a pitcher's Ks with the opposing offense's unders).
-- ☐ **P3** **Prediction intervals** — show a confidence band, not just a point probability.
-- ☐ **P2** **Model-drift auto-alert** — Discord ping when a model's live calibration degrades (the daily backtest already has the raw→recalibrated Brier).
+### Model / analytics — ✅ all done
+- ✅ **P2** **Per-direction cutoffs** — DONE: `category_cutoffs` tunes a third level `sport|stat|direction` above `sport|stat` (a stat can perform very differently over vs under). `rec_cutoff` checks dir → stat → sport → default; all callers pass direction. On prod: MLB hits UNDER gets its own 0.55 cutoff (84%, n=94, captures all) while total_bases-under / nba-points-over suppress per-direction; falls back to the stat level where a direction lacks the sample.
+- ✅ **P3** **Same-game correlated parlays** — DONE: a "🔗 Correlated stacks" section pairs a pitcher's strikeouts OVER with an opposing-team batter UNDER in the same game (positively correlated — a dominant pitcher suppresses the opposing offense, so the legs hit/miss together), ranked by correlation-bumped joint probability.
+- ✅ **P3** **Prediction intervals** — DONE: each card shows a confidence band, not just a point prob — the model's `predicted_mean` (Poisson rate) → a 25–75% "likely" range (e.g. "Projection 6.2 · likely 4–8").
+- ✅ **P2** **Model-drift auto-alert** — DONE: the daily backtest digest flags a sport whose recent calibration gap worsened materially vs its earlier window (>8pp worse and >10pp gap) — the model degrading there, likely needs a retrain.
 
 ### Product / UX
 - ✅ **P2** **One-click "tail this slate"** — DONE: a "📋 Tail this slate" expander on Today's Picks shows the recommended picks + best 2-pick as a copyable `st.code` block (built-in copy button), formatted by the shared `notify.format_slate`.
