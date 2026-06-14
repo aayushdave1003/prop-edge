@@ -25,6 +25,7 @@ from props.picks.suppression import (
     MIN_LINE_BY_STAT, MAX_LINE_BY_STAT, is_out_status, is_stale_game,
     line_in_range,
 )
+from props.picks.availability import should_suppress
 _is_out_status = is_out_status
 _is_stale_game = is_stale_game
 
@@ -145,68 +146,36 @@ def main():
 
     # Fetch min_stddev_last_10 for all NBA players in this slate to suppress
     # high-variance bench picks (e.g. Carter Bryant 83% on 2.5 pts)
-    HIGH_VAR_THRESHOLD = 7.0
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     if "sport_code" not in edges.columns:
         edges = edges.copy()
         edges["sport_code"] = edges["model_name"].map(lambda m: sport_for_model(m, sport_by_model))
-    nba_player_ids = edges[edges["sport_code"] == "nba"]["player_id"].unique().tolist()
-    high_var_players = set()
-    if nba_player_ids:
-        with session_scope() as _s:
-            rows_hv = _s.execute(text("""
-                SELECT DISTINCT ON (pg.player_id) pg.player_id,
-                       (pg.derived->>'min_stddev_last_10')::float AS stddev
-                FROM player_games pg
-                JOIN games g ON g.game_id = pg.game_id
-                WHERE pg.player_id = ANY(:ids)
-                  AND g.sport_code = 'nba'
-                  AND pg.derived->>'min_stddev_last_10' IS NOT NULL
-                ORDER BY pg.player_id, g.game_date DESC
-            """), {"ids": [int(p) for p in nba_player_ids]}).fetchall()
-        # Only suppress if high variance AND low avg minutes — catches bench DNP risks
-        # (Carter Bryant: stddev=8, avg=7min) without suppressing starters with OT variance
-        # (Wemby: stddev=9.5, avg=33min — keep)
-        high_var_players = set()
-        for r in rows_hv:
-            pid, stddev = r[0], r[1]
-            if stddev and stddev > HIGH_VAR_THRESHOLD:
-                with session_scope() as _s2:
-                    avg_row = _s2.execute(text("""
-                        SELECT (pg.derived->>'last_10_avg_minutes')::float
-                        FROM player_games pg JOIN games g ON g.game_id = pg.game_id
-                        WHERE pg.player_id = :pid AND g.sport_code = 'nba'
-                        ORDER BY g.game_date DESC LIMIT 1
-                    """), {"pid": pid}).first()
-                avg_min = float(avg_row[0]) if avg_row and avg_row[0] else 0
-                if avg_min < MIN_MINUTES_HIGHVAR:
-                    high_var_players.add(pid)
-        if high_var_players:
-            log.info("high_variance_players_suppressed", n=len(high_var_players))
 
-    # Hard minimum minutes floor: skip any player averaging < 12 min regardless of edge.
-    # Catches bench DNP risks that slip past the high-variance filter.
-    low_minute_players = set()
-    all_player_ids = edges["player_id"].unique().tolist()
-    if all_player_ids:
+    # ── Availability / projected minutes (basketball) ───────────────────────
+    # Minutes/DNP swings are the biggest variance source. Project tonight's
+    # minutes from each player's latest rolling features and drop likely-DNP /
+    # low-minute picks — recency-weighted, so it catches both a player falling
+    # out of the rotation and one returning to it (see props.picks.availability).
+    # One batch query replaces the old per-player N+1 lookups.
+    unavailable: dict[int, str] = {}      # player_id -> reason
+    bball_ids = edges[edges["sport_code"].isin(("nba", "wnba"))]["player_id"].unique().tolist()
+    if bball_ids:
         with session_scope() as _s:
-            rows_min = _s.execute(text("""
-                SELECT DISTINCT ON (pg.player_id)
-                       pg.player_id,
-                       (pg.derived->>'last_10_avg_minutes')::float AS avg_min,
-                       g.sport_code
+            mrows = _s.execute(text("""
+                SELECT DISTINCT ON (pg.player_id) pg.player_id, pg.derived
                 FROM player_games pg
                 JOIN games g ON g.game_id = pg.game_id
                 WHERE pg.player_id = ANY(:ids)
-                  AND pg.derived->>'last_10_avg_minutes' IS NOT NULL
+                  AND g.sport_code IN ('nba', 'wnba')
+                  AND pg.derived IS NOT NULL
                 ORDER BY pg.player_id, g.game_date DESC
-            """), {"ids": [int(p) for p in all_player_ids]}).fetchall()
-        for r in rows_min:
-            pid, avg_min, sc = r[0], r[1], r[2]
-            if avg_min is not None and avg_min < MIN_MINUTES_HARD:
-                low_minute_players.add(pid)
-        if low_minute_players:
-            log.info("low_minute_players_suppressed", n=len(low_minute_players))
+            """), {"ids": [int(p) for p in bball_ids]}).fetchall()
+        for pid, derived in mrows:
+            drop, reason = should_suppress(derived or {})
+            if drop:
+                unavailable[int(pid)] = reason
+        if unavailable:
+            log.info("availability_suppressed", n=len(unavailable))
 
     # Suppress picks for players currently ruled OUT (or doubtful/IL) — don't log
     # a pick on someone who won't take the floor, which would just void later.
@@ -273,14 +242,11 @@ def main():
             if float(row["model_prob"]) > MAX_CONFIDENCE:
                 skipped += 1
                 continue
-            # Suppress players averaging < 12 min (DNP risk)
-            if int(row["player_id"]) in low_minute_players:
-                skipped += 1
-                continue
-            # Suppress NBA bench players with wildly inconsistent minutes
-            if row.get("sport_code") == "nba" and int(row["player_id"]) in high_var_players:
-                log.info("suppressed_high_var_pick", player=row.get("player_name"),
-                         stat=row["stat_type"])
+            # Availability: skip likely-DNP / low-projected-minutes basketball picks.
+            _reason = unavailable.get(int(row["player_id"]))
+            if _reason is not None:
+                log.info("suppressed_availability", player=row.get("player_name"),
+                         stat=row["stat_type"], reason=_reason)
                 skipped += 1
                 continue
             mv_id = mv_map[row["model_name"]]

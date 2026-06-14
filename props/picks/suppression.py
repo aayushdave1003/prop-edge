@@ -26,8 +26,9 @@ Each rule and its rationale:
 
 MIN_EDGE_TO_LOG = 0.05        # model_prob > 0.55
 MAX_CONFIDENCE = 0.97         # above this = a mis-priced multi-game/fantasy line
-MIN_MINUTES_HARD = 12.0       # hard floor: skip players averaging fewer minutes
+MIN_MINUTES_HARD = 12.0       # hard floor: skip players PROJECTED below this
 MIN_MINUTES_HIGHVAR = 18.0    # NBA bench role players below this are high-variance
+DNP_MINUTES = 8.0             # recent minutes under this = DNP / garbage-time risk
 
 # Minimum line value per stat — filters trivially low lines (OVER 2.5 pts etc.).
 MIN_LINE_BY_STAT = {

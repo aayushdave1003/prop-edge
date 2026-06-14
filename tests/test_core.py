@@ -326,6 +326,34 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── player availability / projected minutes ───────────────────────────────────
+from props.picks import availability as av
+
+
+def test_projected_minutes_is_recency_weighted():
+    # Minutes rising (recent > older) -> projection leans toward the recent value.
+    d = {"last_5_avg_minutes": 30, "last_10_avg_minutes": 22, "last_20_avg_minutes": 18}
+    p = av.project_minutes(d)
+    assert 24 < p["projected"] <= 30          # above the 20-game avg, near last-5
+    assert p["dnp_risk"] is False
+
+
+def test_availability_suppresses_low_and_dnp():
+    # Solid starter -> kept.
+    starter = {"last_5_avg_minutes": 34, "last_10_avg_minutes": 35, "last_20_avg_minutes": 33}
+    assert av.should_suppress(starter)[0] is False
+    # Fringe bench (recent floor below DNP threshold) -> suppressed.
+    fringe = {"last_5_avg_minutes": 4, "last_10_avg_minutes": 5, "last_20_avg_minutes": 6}
+    assert av.should_suppress(fringe)[0] is True
+    # Minutes collapsing (fell out of the rotation) -> DNP risk even if season ok.
+    collapsing = {"last_5_avg_minutes": 9, "last_10_avg_minutes": 16, "last_20_avg_minutes": 24}
+    assert av.project_minutes(collapsing)["dnp_risk"] is True
+    # A teammate-out bump rescues a bench player who'd otherwise be borderline.
+    bench = {"last_5_avg_minutes": 10, "last_10_avg_minutes": 11, "last_20_avg_minutes": 11}
+    assert av.should_suppress(bench, teammate_bump=0)[0] is True
+    assert av.should_suppress(bench, teammate_bump=26)[0] is False
+
+
 # ── soft-line finder (PrizePicks vs sharp market) ─────────────────────────────
 from props.picks import soft_lines as sl
 
