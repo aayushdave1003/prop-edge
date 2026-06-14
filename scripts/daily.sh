@@ -163,6 +163,15 @@ python -m props.picks.scorecard || true
 echo "--- Feature ideas ---"
 python -m props.maintenance.feature_ideas || true
 
+# ── 7e2. Soft-line finder (PrizePicks vs sharp market) ───────────────────────
+# Surfaces PrizePicks lines the sharp market prices as +EV, independent of the
+# model. Needs the odds key (live sharp odds, ~20 credits). Posts a Discord
+# digest + persists to soft_lines for the dashboard.
+if [ -n "${ODDS_API_KEY:-}" ]; then
+    echo "--- Soft-line finder ---"
+    python -m props.picks.soft_lines || true
+fi
+
 # ── 7e. Daily walk-forward backtest ──────────────────────────────────────────
 # Replays the recommended-tier strategy over a rolling window of SETTLED picks
 # (not the frozen market_odds the old weekly backtest needed): rec-tier W/L vs

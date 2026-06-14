@@ -69,6 +69,24 @@ MIGRATIONS: list[tuple[str, str]] = [
     ("0008_picks_blend_cols",
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS model_prob_raw NUMERIC(8,4);"
      "ALTER TABLE picks ADD COLUMN IF NOT EXISTS market_prob NUMERIC(8,4)"),
+    # Soft-line finder: where a PrizePicks line is softer than the sharp market's
+    # read (converted to the PP line via the market-implied Poisson lambda) — a
+    # market-grounded +EV edge independent of the model. One snapshot per day.
+    ("0009_soft_lines",
+     "CREATE TABLE IF NOT EXISTS soft_lines ("
+     "  run_date        DATE NOT NULL,"
+     "  sport_code      TEXT,"
+     "  player_name     TEXT NOT NULL,"
+     "  stat_type       TEXT NOT NULL,"
+     "  pp_line         NUMERIC(8,2) NOT NULL,"
+     "  sharp_line      NUMERIC(8,2),"
+     "  sharp_over_prob NUMERIC(8,4),"
+     "  best_side       TEXT,"
+     "  best_prob       NUMERIC(8,4),"
+     "  edge            NUMERIC(8,4),"
+     "  game_id         INTEGER,"
+     "  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  PRIMARY KEY (run_date, player_name, stat_type, pp_line))"),
 ]
 
 

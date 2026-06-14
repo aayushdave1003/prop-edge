@@ -316,6 +316,39 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── soft-line finder (PrizePicks vs sharp market) ─────────────────────────────
+from props.picks import soft_lines as sl
+
+
+def test_implied_lambda_roundtrips():
+    # Recover the Poisson mean from its own over-prob at a line, then back.
+    for lam in (3.0, 5.0, 8.0):
+        line = 4.5
+        prob = sl.p_over_at(line, lam)
+        assert sl.implied_lambda(line, prob) == pytest.approx(lam, abs=0.15)
+
+
+def test_p_over_decreases_with_line():
+    lam = 6.0
+    assert sl.p_over_at(3.5, lam) > sl.p_over_at(5.5, lam) > sl.p_over_at(7.5, lam)
+
+
+def test_soft_line_picks_better_side_and_edge():
+    # Sharp main line 4.5 @ ~0.5 -> lambda ~4.7. PrizePicks offers 3.5, so the
+    # OVER is easier at PP -> market-implied over-prob clears breakeven.
+    class R:  # stand-in for the SQL row
+        def __init__(s, pn, st, ppl, sport="mlb", gid=1):
+            s.player_name, s.stat_type, s.pp_line, s.sport_code, s.game_id = pn, st, ppl, sport, gid
+    sharp = {("joe pitcher", "strikeouts_pitcher"): [(4.5, 0.50)]}
+    out = sl.compute_soft_lines([R("Joe Pitcher", "strikeouts_pitcher", 3.5)], sharp)
+    assert len(out) == 1
+    assert out[0]["best_side"] == "over"
+    assert out[0]["best_prob"] > sl.BREAKEVEN
+    # an extreme/illiquid sharp anchor is skipped (not a trustworthy mean)
+    sharp_bad = {("joe pitcher", "strikeouts_pitcher"): [(4.5, 0.95)]}
+    assert sl.compute_soft_lines([R("Joe Pitcher", "strikeouts_pitcher", 3.5)], sharp_bad) == []
+
+
 # ── model/market blend weights ────────────────────────────────────────────────
 from props.models import blend_weights as bw
 
