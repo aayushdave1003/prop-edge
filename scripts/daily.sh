@@ -92,6 +92,7 @@ python -m props.ingest.nhl_boxscores
 # Fetches today's games + backfills a few recent days for settled-pick coverage.
 echo "--- MLB weather ---"
 python -m props.ingest.mlb_weather --since-days 3 || echo "WARN: mlb_weather failed"
+python -m props.features.mlb_weather_features --since-days 5 || echo "WARN: mlb_weather_features failed"
 
 # ── 3. Rolling features ──────────────────────────────────────────────────────
 echo "--- NBA rolling features ---"

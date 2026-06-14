@@ -32,6 +32,7 @@ FEATURE_KEYS = [
     "last_10_avg_batter_hard_contact","last_10_avg_batter_hr_rate",
     "last_10_avg_batter_k_rate","season_avg_batter_hard_contact",
     "last_10_avg_pitcher_command","last_10_avg_pitcher_hr9","park_factor",
+    "wx_temp", "wx_wind_out",   # ballpark weather — wind out drives offense
 ]
 
 def load_training_data():

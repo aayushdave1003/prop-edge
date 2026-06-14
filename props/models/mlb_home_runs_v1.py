@@ -51,6 +51,7 @@ FEATURE_KEYS = [
     "park_factor",
     "days_rest",
     "games_played_season",
+    "wx_temp", "wx_wind_out",   # ballpark weather — wind out drives offense
 ]
 
 

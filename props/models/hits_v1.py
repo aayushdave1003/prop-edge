@@ -79,6 +79,7 @@ FEATURE_KEYS = [
     "last_10_avg_pitcher_command",
     "last_10_avg_pitcher_bb9",
     "park_factor",
+    "wx_temp", "wx_wind_out",   # ballpark weather — wind out drives offense
 ]
 
 

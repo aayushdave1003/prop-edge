@@ -1,0 +1,50 @@
+name: weather-backfill
+
+# Manual: backfill historical MLB ballpark weather (Open-Meteo) for training.
+# Runs on GitHub's reliable network (the dev sandbox times out on Open-Meteo).
+# After it finishes, retrain the MLB offense models locally (they read the now-
+# populated prod DB — no network) and commit the updated model files.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Days of history to backfill (800 ≈ 2 seasons)"
+        required: true
+        default: "800"
+
+concurrency:
+  group: weather-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: System deps (libgomp for LightGBM imports)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Apply migrations
+        run: python -m props.maintenance.migrate
+      - name: Backfill ballpark weather (Open-Meteo, free)
+        run: python -m props.ingest.mlb_weather --since-days ${{ github.event.inputs.days }}
+      - name: Inject weather into player_games.derived
+        run: python -m props.features.mlb_weather_features --since-days ${{ github.event.inputs.days }}
+      - name: Summary
+        run: |
+          echo "Weather backfilled + injected into derived for the last ${{ github.event.inputs.days }} days."
+          echo "Next: retrain the MLB offense models (read the prod DB, no network):"
+          echo "  python -m props.models.total_bases_v1"
+          echo "  python -m props.models.hits_v1"
+          echo "  python -m props.models.mlb_home_runs_v1"
+          echo "then commit the updated models/*.txt + *_meta.json."
