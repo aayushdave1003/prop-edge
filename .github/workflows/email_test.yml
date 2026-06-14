@@ -1,0 +1,34 @@
+name: email-test
+
+# One-off: verify the SMTP secrets actually send an email (the cloud path the
+# morning slate uses). Manual trigger only. Fails if send_email returns False.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install minimal deps
+        run: pip install pydantic pydantic-settings requests structlog sqlalchemy
+      - name: Send test email
+        run: |
+          python -c "
+          from props.utils.notify import send_email
+          import sys
+          ok = send_email('prop-edge cloud email test ✅',
+                          'If you got this, your morning recommended slate will arrive here.')
+          print('sent:', ok)
+          sys.exit(0 if ok else 1)
+          "
