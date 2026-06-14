@@ -131,7 +131,9 @@ Data sources:  PrizePicks (via residential proxy) · MLB Stats API · ESPN · nb
 
 PrizePicks-style cards: player photo + team logo, line/direction/confidence, **per-pick "why"** (form + market edge + line movement), form dots, Kelly sizing, injury-status badge, line-movement signal, live in-game tracker, combo cards. Every pick is shown, with the **recommended** ones (clearing their category cutoff) **⭐ starred** and sorted first. A **🔄 Refresh picks** button re-reads the DB on demand so a slate logged after you opened the page (NBA/WNBA picks often land after MLB) shows up without waiting on the cache.
 
-Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value**, **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
+Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value** (incl. **sharp-market CLV** vs the DK/FD close), **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
+
+A **💰 Soft Lines** tab ranks tonight's PrizePicks props the sharp market prices as +EV — independent of the model. It recovers the sharp book's implied projection (Poisson mean from its no-vig prob) and re-prices it at the PrizePicks line; a side clearing the 57.7% breakeven is a soft line.
 
 ---
 
