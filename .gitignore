@@ -7,10 +7,7 @@ data/
 *.parquet
 .DS_Store
 *.egg-info/
-backfill.log
-cron.log
-nba_backfill.log
+# logs + scratch artifacts (*.log covers backfill.log/cron.log/etc.)
 *.log
-# backtest exports + scratch artifacts
-backtest_*.csv
 logs/
+backtest_*.csv
