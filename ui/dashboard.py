@@ -601,6 +601,21 @@ def load_daily_backtest():
 
 
 @st.cache_data(ttl=300)
+def load_soft_lines():
+    """Today's soft lines (PrizePicks vs sharp market) — see props.picks.soft_lines."""
+    try:
+        return pd.read_sql(text("""
+            SELECT sport_code, player_name, stat_type, best_side, pp_line,
+                   sharp_line, best_prob, edge
+            FROM soft_lines
+            WHERE run_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+            ORDER BY edge DESC
+        """), engine)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
 def load_all_settled_picks():
     """Full settled pick history for analytics."""
     sql = """
@@ -1168,8 +1183,9 @@ c5.metric("7-Day Win Rate", win_pct_7)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_picks, tab_game, tab_perf, tab_recent = st.tabs(
-    ["🃏 Today's Picks", "🏆 Game Predictions", "📊 Performance", "📋 Recent Picks"]
+tab_picks, tab_game, tab_perf, tab_soft, tab_recent = st.tabs(
+    ["🃏 Today's Picks", "🏆 Game Predictions", "📊 Performance",
+     "💰 Soft Lines", "📋 Recent Picks"]
 )
 
 
@@ -1827,7 +1843,40 @@ with tab_perf:
             st.info(f"Need 10+ settled picks for recommendations. Have {total_decided} so far.")
 
 
-# ══ TAB 4: Recent Picks ══════════════════════════════════════════════════════
+# ══ TAB 4: Soft Lines ════════════════════════════════════════════════════════
+with tab_soft:
+    st.subheader("💰 Soft lines vs the sharp market")
+    st.caption("PrizePicks lines the sharp books (DK/FD) price as **+EV, independent "
+               "of our model** — the line-shopping edge. We recover the sharp market's "
+               "implied projection and re-price it at the PrizePicks line; a side whose "
+               "market-implied win % clears the 57.7% 2-pick breakeven is a soft line.")
+    _soft = load_soft_lines()
+    if _soft.empty:
+        st.info("No soft lines computed yet today. The finder runs each morning "
+                "(needs live sharp odds); check back after the slate is priced.")
+    else:
+        _pos = _soft[_soft["edge"] >= 0.02].copy()
+        st.metric("Soft lines found (≥+2% edge)", len(_pos),
+                  f"of {len(_soft)} props with sharp coverage")
+        if _pos.empty:
+            st.info("Sharp market agrees with PrizePicks today — no soft lines clearing "
+                    "breakeven. (The market is efficient most nights; this is normal.)")
+        else:
+            disp = _pos.copy()
+            disp["Pick"] = (disp["best_side"].str.upper() + " " +
+                            disp["pp_line"].map(lambda x: f"{x:g}") + " " + disp["stat_type"])
+            disp["Market win %"] = (disp["best_prob"] * 100).map(lambda x: f"{x:.0f}%")
+            disp["Edge"] = (disp["edge"] * 100).map(lambda x: f"+{x:.1f}%")
+            disp["Sharp line"] = disp["sharp_line"].map(lambda x: f"{x:g}")
+            disp = disp.rename(columns={"player_name": "Player", "sport_code": "Sport"})
+            st.dataframe(
+                disp[["Sport", "Player", "Pick", "Sharp line", "Market win %", "Edge"]],
+                use_container_width=True, hide_index=True)
+            st.caption("Edge = market-implied win % − 57.7% breakeven. Independent of the "
+                       "model picks in the other tabs — paper-tracking only, not advice.")
+
+
+# ══ TAB 5: Recent Picks ══════════════════════════════════════════════════════
 with tab_recent:
     days = st.slider("Days back", 1, 30, 7)
     recent = load_recent_picks(days)
