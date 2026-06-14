@@ -4,18 +4,52 @@ Priorities: **P0** blocking/reliability · **P1** core value · **P2** quality/s
 Status: ☐ todo · ◧ in progress.
 
 **Open work only** — finished items auto-archive to [CHANGELOG.md](CHANGELOG.md) on commit
-(via `scripts/clean_roadmap.py` + the pre-commit hook). The autonomous build is done; what's
-left is new features and data-gated expansion.
+(via `scripts/clean_roadmap.py` + the pre-commit hook). The autonomous build is done; this is
+what's left to build, by category.
 
 ---
 
-## New data → real accuracy upside (MLB is the biggest slate)
-- ◧ **P1** **Weather for MLB** — ingest + validated, model-use pending. `mlb_weather.py` (Open-Meteo, free) stores per-game temp/wind + a park-orientation **wind-out** component in `game_weather`; surfaced on MLB cards; `mlb_weather_features.py` injects it into `derived` and the keys are in the hits/TB/HR `FEATURE_KEYS`. Validated: wind out (≥5mph) → 65% over-rate vs 43% calm/in. *Last step:* run the `weather-backfill` GHA workflow, then retrain `total_bases_v1`/`hits_v1`/`mlb_home_runs_v1` (A/B-validate with `ab_compare` before promoting) and commit the models.
-- ☐ **P2** **Confirmed lineups + batting order** — batting 1st vs 8th changes plate appearances → moves hits/TB/RBI props. Extend the starter scrape to order.
+## 1. New data → accuracy (more signal into the models)
+- ◧ **P1** **Weather for MLB** — ingested + validated (wind out ≥5mph → 65% over vs 43% calm); last step is the GHA backfill + retrain (A/B-validate with `ab_compare`, then commit the models).
+- ☐ **P2** **Confirmed lineups + batting order** — batting 1st vs 8th changes plate appearances → moves hits/TB/RBI. Lives in the MLB box-score feed (fast); pre-game lineups post ~3h out.
 - ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency, a real edge for strikeout props.
-- ☐ **P2** **Vegas game/team totals as a model feature** — live odds now flow; a high implied team total = more offense. Feed it into the MLB/NBA models.
+- ☐ **P2** **Vegas game/team totals as a model feature** — live odds flow now; high implied team total = more offense. Feed it into the MLB/NBA models.
+- ☐ **P2** **Statcast batted-ball quality** — exit velocity / barrel% / xwOBA capture true hitter form better than raw results (luck-adjusted).
+- ☐ **P3** **Pitcher velocity & pitch-mix trends** — declining velo flags fatigue/injury before results do; arsenal shifts move strikeout rates.
+- ☐ **P3** **Bullpen rest / availability** — a gassed pen changes late-game run environment (totals, RBI).
+- ☐ **P3** **NBA referee tendencies** — crews differ on foul rates → pace + FT-dependent props (points).
+- ☐ **P3** **Travel / rest / time-zone fatigue** — extend the NBA back-to-back signal across sports (road trips, altitude, get-away games).
+- ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
-## Data-gated (unlocks as games accrue; the feature-ideas digest flags when ready)
+## 2. Model / analytics
+- ☐ **P2** **Recency-weighted training** — weight recent games more (sample weights / decay) so models track current form, not a stale season average.
+- ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
+- ☐ **P2** **Per-stat calibration** — the global Platt is one curve; fit calibration per sport×stat where there's data (catches stat-specific over/under-confidence).
+- ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
+- ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
+- ☐ **P3** **Slate-level Kelly / portfolio sizing** — size the whole slate jointly (correlation-aware) instead of per-leg, to optimize bankroll growth vs variance.
+- ☐ **P3** **Playoff vs regular-season model split** — different distributions; a playoff-aware model (or feature) instead of suppressing playoff stats.
+- ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
+
+## 3. Product / UX
+- ☐ **P2** **Player detail page** — drill into one player: prop history, hit rates by line, form trends, matchup splits.
+- ☐ **P3** **Line-movement / steam alerts** — Discord/email ping when a sharp line moves toward (or away from) a logged pick.
+- ☐ **P3** **Discord slash-command bot** — query today's slate / a player / the record on demand (`/picks`, `/player`).
+- ☐ **P3** **Player watchlist** — follow specific players; surface their props + alerts.
+- ☐ **P3** **Stat-bucket leaderboard** — best/worst sport×stat×direction buckets over time (which edges are live, which faded).
+- ☐ **P3** **Installable PWA / mobile polish** — add-to-home-screen, denser mobile layout, faster first paint.
+
+## 4. Ops / automation
+- ☐ **P2** **Automated weekly retrain pipeline** — a GHA job that retrains the models, runs `ab_compare` as a gate, and auto-promotes only if MAE improves (else keeps prod). Closes the retrain loop.
+- ☐ **P2** **Offline feature-eval harness** — score a candidate feature's signal on settled data before wiring it in (the weather/lineup pattern, generalized).
+- ☐ **P2** **Cost / usage dashboard** — Odds API credits, Railway spend, scrape volume in one view (catch a blow-up early).
+- ☐ **P3** **DB backup / restore** — scheduled prod-DB snapshot + a tested restore path.
+- ☐ **P3** **Type checking in CI** — add `mypy` (or `ty`) to the CI gate alongside the flake8 NameError check.
+- ☐ **P3** **Dashboard perf/latency monitoring** — track render time + a synthetic uptime check beyond `/_stcore/health`.
+
+## 5. Expansion (data-gated — unlocks as games/coverage accrue)
 - ☐ **P1** Backfill depth for **NHL** (~11 games) and **WNBA** (~43) so prop models get signal and winner models become trainable.
-- ☐ **P3** Train **NHL/WNBA winner models** once data is sufficient (WNBA first, basketball-generic, revisit ~150+ games).
+- ☐ **P3** Train **NHL/WNBA winner models** once data is sufficient (WNBA first — basketball-generic, revisit ~150+ games).
 - ☐ **P3** Extend the **model/market blend + soft-line finder to NHL/WNBA** — auto-tunes in once those have sharp-market coverage.
+- ☐ **P3** **New prop markets** — more stat types per sport (e.g. NBA turnovers/blocks-steals depth, MLB stolen bases) as their settled history grows.
+- ☐ **P3** **New sports** — soccer / tennis / golf / UFC or CBB/CFB props (each needs its own ingest + models; biggest lift, biggest surface-area).
