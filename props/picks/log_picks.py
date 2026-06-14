@@ -180,6 +180,7 @@ def main():
     # Suppress picks for players currently ruled OUT (or doubtful/IL) — don't log
     # a pick on someone who won't take the floor, which would just void later.
     # player_injuries is name-keyed, so match by name within sport (latest report).
+    all_player_ids = edges["player_id"].unique().tolist()
     out_players: set[int] = set()
     if all_player_ids:
         with session_scope() as _si:
