@@ -92,7 +92,6 @@ def run(target_date: date | None = None):
 
 if __name__ == "__main__":
     import sys
-    from datetime import datetime
     if len(sys.argv) > 1:
         target = datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
         run(target)

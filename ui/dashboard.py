@@ -1476,7 +1476,6 @@ with tab_game:
             from props.picks.predict_today import (fetch_nba_schedule,
                                                     resolve_nba_external_to_internal_ids)
             from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
-            from props.utils.db import session_scope
             from sqlalchemy import text as sqlt
 
             nba_raw   = fetch_nba_schedule(_today)

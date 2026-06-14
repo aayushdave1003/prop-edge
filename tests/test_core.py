@@ -340,10 +340,11 @@ def test_no_undefined_names():
     import subprocess
     root = Path(__file__).resolve().parent.parent
     r = subprocess.run(
-        [sys.executable, "-m", "flake8", "--select=F821,F823", "props", "ui"],
+        [sys.executable, "-m", "flake8", "--select=F821,F823,F811", "props", "ui"],
         cwd=root, capture_output=True, text=True)
-    assert r.returncode == 0, ("undefined name / use-before-assignment found "
-                               "(would crash at runtime):\n" + r.stdout)
+    assert r.returncode == 0, ("undefined name / use-before-assignment / "
+                               "redefinition found (would crash or mask a bug "
+                               "at runtime):\n" + r.stdout)
 
 
 # ── player availability / projected minutes ───────────────────────────────────
