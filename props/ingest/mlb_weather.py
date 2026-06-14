@@ -104,19 +104,22 @@ def _fetch(lat: float, lon: float, game_date: date, hour_local: int = 19) -> dic
     return None
 
 
-def run(since_days: int = 0):
+def run(since_days: int = 0, recent_first: bool = False):
     configure_logging()
     today = date.today()
     since = today - timedelta(days=since_days)
+    # Recent-first for backfills: the most recent seasons matter most for the
+    # retrain (recency-weighted), so a partial run still covers the valuable games.
+    order = "DESC" if recent_first else "ASC"
     with session_scope() as s:
-        games = s.execute(text("""
+        games = s.execute(text(f"""
             SELECT g.game_id, t.external_id AS home_ext, g.game_date, g.game_datetime
             FROM games g
             JOIN teams t ON t.team_id = g.home_team_id
             WHERE g.sport_code = 'mlb'
               AND g.game_date BETWEEN :since AND :tomorrow
               AND NOT EXISTS (SELECT 1 FROM game_weather w WHERE w.game_id = g.game_id)
-            ORDER BY g.game_date
+            ORDER BY g.game_date {order}
         """), {"since": since, "tomorrow": today + timedelta(days=1)}).all()
 
         wrote = 0
@@ -154,8 +157,10 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--since-days", type=int, default=0,
                    help="also (back)fill games this many days back")
+    p.add_argument("--recent-first", action="store_true",
+                   help="process newest games first (for backfills)")
     args = p.parse_args()
-    run(since_days=args.since_days)
+    run(since_days=args.since_days, recent_first=args.recent_first)
 
 
 if __name__ == "__main__":

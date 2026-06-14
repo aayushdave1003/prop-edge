@@ -37,7 +37,7 @@ jobs:
       - name: Apply migrations
         run: python -m props.maintenance.migrate
       - name: Backfill ballpark weather (Open-Meteo, free)
-        run: python -m props.ingest.mlb_weather --since-days ${{ github.event.inputs.days }}
+        run: python -m props.ingest.mlb_weather --since-days ${{ github.event.inputs.days }} --recent-first
       - name: Inject weather into player_games.derived
         run: python -m props.features.mlb_weather_features --since-days ${{ github.event.inputs.days }}
       - name: Summary
