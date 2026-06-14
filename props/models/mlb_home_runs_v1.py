@@ -131,6 +131,9 @@ def main():
     log.info("test_metrics", auc=round(auc, 4), logloss=round(ll, 4),
              logloss_baseline=round(ll_base, 4),
              logloss_improvement_pct=round(100 * (ll_base - ll) / ll_base, 2))
+    from props.models.retrain_log import log_retrain_run
+    log_retrain_run("mlb_home_runs_v1", "mlb", df["game_date"].min().date(),
+                    len(test_df), 100 * (ll_base - ll) / ll_base if ll_base else None)
 
     model.save_model(str(MODEL_PATH))
     meta = {"model_path": str(MODEL_PATH), "target": TARGET, "feature_keys": FEATURE_KEYS,

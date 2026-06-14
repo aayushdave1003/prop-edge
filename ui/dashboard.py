@@ -1293,9 +1293,19 @@ st.markdown(
     '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">'
     '⚡ prop-edge</span></h1>',
     unsafe_allow_html=True)
-st.markdown('<p style="color:#5f6678;margin-top:2px;margin-bottom:1.6rem;font-size:0.82rem;'
+st.markdown('<p style="color:#5f6678;margin-top:2px;margin-bottom:0.8rem;font-size:0.82rem;'
             'text-transform:uppercase;letter-spacing:0.08em">'
             'Research dashboard · paper-tracking only</p>', unsafe_allow_html=True)
+
+# Compliance banner — research/paper-tracking framing, kept consistent + visible.
+st.markdown('<div style="background:rgba(255,207,92,0.08);border:1px solid rgba(255,207,92,0.25);'
+            'border-radius:10px;padding:9px 14px;margin-bottom:1.4rem;font-size:0.78rem;'
+            'color:#c9b270;line-height:1.5">'
+            '⚠️ <b>Research / paper-tracking only — not betting advice.</b> '
+            'This project places no bets and touches no accounts; it tracks model predictions '
+            'against publicly-visible PrizePicks lines. Intended for 21+ in jurisdictions where '
+            'sports wagering is legal. All results are hypothetical.</div>',
+            unsafe_allow_html=True)
 
 df = load_todays_picks()
 

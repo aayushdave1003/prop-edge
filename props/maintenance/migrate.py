@@ -104,6 +104,12 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  humidity     NUMERIC(6,1),"
      "  is_dome      BOOLEAN,"
      "  fetched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW())"),
+    # Let backtest_runs also record model RETRAINS (regression MAE improvement),
+    # so each retrain leaves a trail on the Performance tab's history chart.
+    ("0012_backtest_runs_mae",
+     "ALTER TABLE backtest_runs ADD COLUMN IF NOT EXISTS mae_improvement_pct DOUBLE PRECISION;"
+     "ALTER TABLE backtest_runs ALTER COLUMN win_rate DROP NOT NULL;"
+     "ALTER TABLE backtest_runs ALTER COLUMN sport DROP NOT NULL"),
 ]
 
 

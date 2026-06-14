@@ -191,7 +191,7 @@ def evaluate(model, test_df):
         ).round(3)
         print(f"\nLine {line}:")
         print(cal)
-    return pred
+    return pred, mae_m, mae_b
 
 
 def feature_importance(model):
@@ -213,8 +213,11 @@ def main():
     log.info("inner_split", fit=len(fit_df), val=len(val_df))
 
     model = train_model(fit_df, val_df)
-    evaluate(model, test_df)
+    _pred, _maem, _maeb = evaluate(model, test_df)
     feature_importance(model)
+    from props.models.retrain_log import log_retrain_run
+    log_retrain_run("hits_v1", "mlb", df["game_date"].min().date(),
+                    len(test_df), 100 * (_maeb - _maem) / _maeb if _maeb else None)
 
     model.save_model(str(MODEL_PATH))
     meta = {

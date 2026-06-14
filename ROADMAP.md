@@ -28,11 +28,11 @@ The autonomous build is **complete** — the pipeline scrapes, predicts, **blend
 - ✅ **P3** **Historical pick browser** — DONE: the Recent Picks tab gained sport/stat/direction/result filters (up to 60 days) with a live settled-record summary for the current filter.
 - ✅ **P3** **Dark/light toggle + historical-slate date picker** — DONE: a sidebar ☀️ Light-mode toggle (persisted in `?theme=`, overrides the design tokens) and a Date selector in the browser to jump to any specific past slate.
 
-### Ops / quality
-- ☐ **P2** **A/B model shadow-logging** — run a candidate model alongside prod and compare without risk.
-- ☐ **P2** Standardize structlog usage; add run/request IDs.
-- ☐ **P1** Ensure every retrain logs a `backtest_runs` row (Performance tab already charts it).
-- ☐ **P2** Compliance — keep "paper-tracking only, not betting advice" framing; add disclaimer/age-gate if this ever goes public.
+### Ops / quality — ✅ all done
+- ✅ **P2** **A/B model comparison** — DONE: `props/models/ab_compare.py` scores a candidate model against the live model on recent settled games (read-only, never touches picks) and reports per-model MAE — so a retrain (e.g. the weather one) is validated before promotion; `--log` records it to `backtest_runs` (trigger `ab:<stat>`). Self-tested on 12,887 player-games.
+- ✅ **P2** **structlog + run IDs** — DONE: `configure_logging` adds `merge_contextvars` and binds a per-run id (`bind_run_id`) onto every log line, so one run's output is correlatable.
+- ✅ **P1** **Retrain logs a `backtest_runs` row** — DONE: `props/models/retrain_log.log_retrain_run` writes a row (trigger `retrain:<model>`, MAE/log-loss improvement vs baseline; migration 0012 adds `mae_improvement_pct`) — wired into total_bases / hits / home_runs `main()`.
+- ✅ **P2** **Compliance** — DONE: a persistent research/paper-tracking disclaimer banner on the dashboard (no bets placed, 21+, hypothetical results), consistent with the footer + the public results page framing.
 
 ## Open — data-gated (unlocks as games accrue; the feature-ideas digest flags when ready)
 - ☐ **P1** Backfill depth for **NHL** (~11 games) and **WNBA** (~43) so prop models get signal and winner models become trainable.

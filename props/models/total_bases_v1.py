@@ -81,7 +81,7 @@ def evaluate(model, test_df):
     mae_m, mae_b = np.mean(np.abs(pred-y)), np.mean(np.abs(baseline-y))
     log.info("test_metrics", mae_model=round(mae_m,4), mae_baseline=round(mae_b,4),
              mae_improvement_pct=round(100*(mae_b-mae_m)/mae_b,2))
-    return pred
+    return pred, mae_m, mae_b
 
 def main():
     configure_logging()
@@ -91,7 +91,10 @@ def main():
     fit_df = train_df[train_df["game_date"] < val_cutoff]
     val_df = train_df[train_df["game_date"] >= val_cutoff]
     model = train_model(fit_df, val_df)
-    evaluate(model, test_df)
+    _pred, _maem, _maeb = evaluate(model, test_df)
+    from props.models.retrain_log import log_retrain_run
+    log_retrain_run("total_bases_v1", "mlb", df["game_date"].min().date(),
+                    len(test_df), 100 * (_maeb - _maem) / _maeb if _maeb else None)
     model.save_model(str(MODEL_PATH))
     meta = {"model_path":str(MODEL_PATH),"target":TARGET,"feature_keys":FEATURE_KEYS,
             "best_iteration":model.best_iteration,"train_n":len(fit_df),
