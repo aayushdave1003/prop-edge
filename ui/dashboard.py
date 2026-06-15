@@ -837,6 +837,40 @@ def load_player_detail(name: str):
     """), engine, params={"nm": name})
 
 
+@st.cache_data(ttl=600)
+def load_player_why(name: str):
+    """'Why this pick' for an MLB batter: the top model drivers (SHAP-lite) for
+    total_bases + hits, from their latest game's feature vector. None for
+    non-MLB / no data. Recomputed on demand — no schema or pick-path change."""
+    try:
+        from props.features.inference import build_full_feature_vector
+        from props.models.explain import explain
+    except Exception:
+        return None
+    row = pd.read_sql(text("""
+        SELECT pg.player_id, g.game_date, g.season,
+          (SELECT pi.player_id FROM player_games pi WHERE pi.game_id = pg.game_id
+             AND pi.team_id = pg.opponent_id AND (pi.stats->>'batters_faced')::int > 0
+             ORDER BY (pi.stats->>'batters_faced')::int DESC LIMIT 1) AS opp
+        FROM player_games pg JOIN players p USING (player_id) JOIN games g USING (game_id)
+        WHERE lower(p.full_name) = lower(:n) AND g.sport_code = 'mlb'
+          AND (pg.stats->>'plate_appearances')::int > 0
+        ORDER BY g.game_date DESC LIMIT 1
+    """), engine, params={"n": name})
+    if row.empty:
+        return None
+    r = row.iloc[0]
+    try:
+        feats = build_full_feature_vector(int(r["player_id"]), r["game_date"],
+                                          int(r["season"]),
+                                          int(r["opp"]) if pd.notna(r["opp"]) else None)
+        out = {stat: explain(model, feats)
+               for stat, model in (("total bases", "total_bases_v1"), ("hits", "hits_v1"))}
+        return {k: v for k, v in out.items() if v} or None
+    except Exception:
+        return None
+
+
 def _home_button(key: str):
     """Back to the main dashboard — clears the drill-down query params."""
     if st.button("🏠 Home", key=key):
@@ -859,6 +893,12 @@ def render_player_view(name: str):
     c1.metric("Record", f"{w}–{len(wl)-w}", f"{w/len(wl)*100:.0f}% win" if len(wl) else "—")
     c2.metric("Picks tracked", len(df))
     c3.metric("Sports", ", ".join(sorted(df["sport_code"].str.upper().unique())))
+    # Why the model rates them — per-prediction feature contributions (SHAP-lite)
+    _why = load_player_why(name)
+    if _why:
+        st.markdown("##### 🧠 Why — what drives the model's latest projection")
+        for stat, drivers in _why.items():
+            st.caption(f"**{stat}** — {drivers}")
     # by stat × direction
     g = (wl.groupby(["stat_type", "direction"])
            .agg(n=("leg_result", "size"),
