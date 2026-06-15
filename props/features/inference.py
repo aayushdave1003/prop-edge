@@ -29,9 +29,16 @@ THRESHOLDS = {
 }
 
 
+# Per-game faced-starter quality lives in derived (written by mlb_opposing_pitcher).
+# We roll these over prior games for the opponent-adjusted (SoS) features — the
+# rolling here MUST match props.features.mlb_batter_sos (mean of last 10 prior
+# games), since the A/B gate reads the stored value and can't catch a live skew.
+FACED_KEYS = ["pitcher_last_10_era", "pitcher_last_10_k_rate"]
+
+
 def _player_history(player_id, before_date, season):
     sql = """
-        SELECT pg.player_game_id, g.game_date, g.season, pg.stats
+        SELECT pg.player_game_id, g.game_date, g.season, pg.stats, pg.derived
         FROM player_games pg
         JOIN games g USING (game_id)
         WHERE pg.player_id = :pid
@@ -48,8 +55,12 @@ def _player_history(player_id, before_date, season):
             stats_df[col] = pd.to_numeric(stats_df[col], errors="coerce").fillna(0)
         else:
             stats_df[col] = 0
-    out = pd.concat([df.drop(columns=["stats"]).reset_index(drop=True),
-                     stats_df[ALL_STATS].reset_index(drop=True)], axis=1)
+    derived_df = pd.json_normalize(df["derived"].apply(lambda d: d or {}))
+    for col in FACED_KEYS:
+        stats_df[col] = (pd.to_numeric(derived_df[col], errors="coerce").fillna(0)
+                         if col in derived_df.columns else 0)
+    out = pd.concat([df.drop(columns=["stats", "derived"]).reset_index(drop=True),
+                     stats_df[ALL_STATS + FACED_KEYS].reset_index(drop=True)], axis=1)
     out["game_date"] = pd.to_datetime(out["game_date"])
     return out
 
@@ -67,6 +78,8 @@ def batter_features(player_id, game_date, season):
                     features[f"last_10_rate_over_{thr}_{stat}"] = 0
         features["days_rest"] = -1
         features["games_played_season"] = 0
+        features["last_10_avg_faced_era"] = 0
+        features["last_10_avg_faced_k_rate"] = 0
         return features
     last_game_date = hist["game_date"].iloc[-1].date()
     features["days_rest"] = (game_date - last_game_date).days
@@ -86,6 +99,12 @@ def batter_features(player_id, game_date, season):
             for thr in THRESHOLDS[stat]:
                 rate = (recent > thr).mean() if len(recent) > 0 else 0
                 features[f"last_10_rate_over_{thr}_{stat}"] = round(float(rate), 4)
+    # Opponent-adjusted (SoS): mean quality of the last-10 faced starters — matches
+    # the shift(1).rolling(10) in mlb_batter_sos (hist is strictly < game_date).
+    for src, dst in (("pitcher_last_10_era", "last_10_avg_faced_era"),
+                     ("pitcher_last_10_k_rate", "last_10_avg_faced_k_rate")):
+        window = hist[src].iloc[-10:] if src in hist.columns else []
+        features[dst] = round(float(window.mean()), 4) if len(window) > 0 else 0
     return features
 
 

@@ -129,6 +129,7 @@ python -m props.features.nhl_advanced_stats
 echo "--- MLB rolling features ---"
 python -m props.features.mlb_rolling
 python -m props.features.mlb_opposing_pitcher
+python -m props.features.mlb_batter_sos     # opponent-adjusted (needs opposing_pitcher first)
 python -m props.features.mlb_opposing_lineup
 python -m props.features.mlb_batter_vs_pitcher
 python -m props.features.mlb_advanced_stats
