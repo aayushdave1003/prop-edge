@@ -6,8 +6,8 @@ name: db-backup
 # scripts/restore_db.sh (documented + guarded). Daily at ~3 AM PT; manual dispatch
 # any time.
 #
-# pg_dump runs from the postgres:16 image so the client version matches the server
-# (a stale ubuntu client refuses a newer server). DATABASE_URL is the SQLAlchemy
+# pg_dump runs from the postgres:18 image so the client version matches the server
+# (Railway runs PG 18; a 16 client refuses a newer server). DATABASE_URL is the SQLAlchemy
 # form (postgresql+psycopg://…); we strip the +psycopg driver tag for libpq.
 on:
   schedule:
@@ -32,7 +32,7 @@ jobs:
           URL="${RAILWAY_DATABASE_URL/+psycopg/}"   # postgresql+psycopg:// → postgresql://
           STAMP="$(date -u +%Y-%m-%d)"
           OUT="prop-edge-${STAMP}.dump"
-          docker run --rm -e U="$URL" postgres:16 \
+          docker run --rm -e U="$URL" postgres:18 \
             sh -c 'pg_dump "$U" -Fc --no-owner --no-privileges' > "$OUT"
           SIZE=$(du -h "$OUT" | cut -f1)
           echo "wrote $OUT ($SIZE)"
