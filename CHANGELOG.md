@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P2** **Historical pick browser** — DONE: `?view=history` lists every settled pick with sport / stat / result / date-range filters, a live record summary, and CSV export. Read-only.
 - ✅ **P2** **Feature-importance drift monitor** — DONE: `props.ops.feature_drift` compares each MLB model feature's recent population rate to its baseline and warns when a HIGH-GAIN feature's coverage collapses (silent signal break); reports top drivers per model. In daily.sh + Ops view; Discord-alerts.
 - ✅ **P2** **"Why this pick" explainer** — DONE: `props.models.explain` uses LightGBM `pred_contrib` (exact tree SHAP) for per-prediction feature contributions, rendered as a human line ("↑ recent at-bats · ↓ games played · ↓ recent RBIs"). Surfaced on the player view (MLB) via an on-demand recompute — no schema or pick-path change.
 - ✅ **P2** **Per-stat / per-direction calibration** — DONE: `props.models.dir_calibration` fits a 2-param Platt per (sport,stat,direction) from settled history (Platt not isotonic — per-cell samples are ~40-110 and isotonic overfit the tails into 0/1 locks). Applied to the raw prob before the market blend in `log_picks` (model_prob_raw kept uncorrected for re-fit); identity fallback elsewhere. Fixes the direction-symmetric bias: e.g. MLB **total_bases UNDER 0.65→0.49** (was over-stated, won 45%), hits-under inflated (was under-confident at 84%). Composes with the per-direction cutoffs, which auto-recompute off the now-honest `model_prob`.

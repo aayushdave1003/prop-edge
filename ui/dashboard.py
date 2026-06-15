@@ -1005,6 +1005,58 @@ def load_results_summary():
     return {"overall": wl(df), "rec": wl(rec_df), "by_sport": by_sport}
 
 
+@st.cache_data(ttl=300)
+def load_pick_history():
+    """Every settled pick — for the filterable history browser."""
+    return pd.read_sql(text("""
+        SELECT (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
+               g.sport_code AS sport, p.full_name AS player, pk.stat_type AS stat,
+               pk.direction AS dir, pl.line_value AS line,
+               pk.model_prob::float AS model_prob, pk.actual_value::float AS actual,
+               pk.leg_result AS result
+        FROM picks pk
+        JOIN players p USING (player_id)
+        JOIN games g USING (game_id)
+        LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
+        WHERE pk.leg_result IN ('win','loss','push')
+        ORDER BY pk.picked_at DESC
+    """), engine)
+
+
+def render_history_view():
+    """Filterable settled-pick browser with CSV export (reached via ?view=history)."""
+    _home_button("home_history")
+    st.markdown("### 📜 Pick history")
+    df = load_pick_history()
+    if df.empty:
+        st.info("No settled picks yet.")
+        st.stop()
+    c1, c2, c3 = st.columns(3)
+    sports = c1.multiselect("Sport", sorted(df["sport"].unique()), key="h_sport")
+    stats = c2.multiselect("Stat", sorted(df["stat"].unique()), key="h_stat")
+    results = c3.multiselect("Result", ["win", "loss", "push"], key="h_result")
+    dmin, dmax = df["date"].min(), df["date"].max()
+    dr = st.date_input("Date range", value=(dmin, dmax),
+                       min_value=dmin, max_value=dmax, key="h_date")
+    f = df
+    if sports:
+        f = f[f["sport"].isin(sports)]
+    if stats:
+        f = f[f["stat"].isin(stats)]
+    if results:
+        f = f[f["result"].isin(results)]
+    if isinstance(dr, tuple) and len(dr) == 2:
+        f = f[(f["date"] >= dr[0]) & (f["date"] <= dr[1])]
+    wl = f[f["result"].isin(["win", "loss"])]
+    w = int((wl["result"] == "win").sum())
+    st.caption(f"{len(f)} picks · record {w}–{len(wl) - w}"
+               + (f" ({w / len(wl) * 100:.0f}%)" if len(wl) else ""))
+    st.dataframe(f, use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Download CSV", f.to_csv(index=False).encode(),
+                       "prop-edge-picks.csv", "text/csv", key="h_csv")
+    st.stop()
+
+
 def render_results_view():
     """Clean, shareable read-only record (reached via ?view=results)."""
     _home_button("home_results")
@@ -1608,6 +1660,7 @@ with st.sidebar:
     st.markdown("📣 **[Open your shareable results page →](?view=results)**")
     st.caption("Read-only record you can share — link copies the current URL + `?view=results`.")
     st.markdown("🛠️ **[Ops · cost & usage →](?view=ops)**")
+    st.markdown("📜 **[Pick history · browse + export →](?view=history)**")
 
 # Light palette: override the design tokens (cards/components use the variables).
 if _light:
@@ -1629,6 +1682,8 @@ if st.query_params.get("view") == "results":
     render_results_view()    # renders the record and st.stop()s
 if st.query_params.get("view") == "ops":
     render_ops_view()        # cost/usage + dashboard health, st.stop()s
+if st.query_params.get("view") == "history":
+    render_history_view()    # filterable settled-pick browser + CSV, st.stop()s
 _player_qp = st.query_params.get("player")
 if isinstance(_player_qp, str) and _player_qp:
     render_player_view(_player_qp)   # player detail + st.stop()
