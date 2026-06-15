@@ -31,8 +31,6 @@ what's left to build, by category.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
 ## 4. Ops / automation
-- ☐ **P2** **Automated weekly retrain pipeline** — a GHA job that retrains the models, runs `ab_compare` as a gate, and auto-promotes only if MAE improves (else keeps prod). Closes the retrain loop.
-- ☐ **P2** **Offline feature-eval harness** — score a candidate feature's signal on settled data before wiring it in (the weather/lineup pattern, generalized).
 - ☐ **P2** **Cost / usage dashboard** — Odds API credits, Railway spend, scrape volume in one view (catch a blow-up early).
 - ☐ **P3** **DB backup / restore** — scheduled prod-DB snapshot + a tested restore path.
 - ☐ **P3** **Type checking in CI** — add `mypy` (or `ty`) to the CI gate alongside the flake8 NameError check.

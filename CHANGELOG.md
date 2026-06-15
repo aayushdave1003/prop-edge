@@ -3,6 +3,8 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-14
+- ✅ **P2** **Automated weekly retrain pipeline** — DONE: `props.models.retrain_and_promote` retrains each MLB offense model, A/B-gates it vs prod on recent settled games, and promotes only winners (≥0.5% MAE) — then recalibrates; regressions stay prod. `weekly_retrain.yml` runs it Mondays (DST-gated) and commits promoted models so they deploy. Decisions log to `backtest_runs` + Discord.
+- ✅ **P2** **Offline feature-eval harness** — DONE: `props.models.feature_eval` scores a candidate feature on settled data via its association with model *residual* (the real "does it add signal the model misses" test), with coverage + tercile monotonicity and a retrain verdict. Generalizes the weather/lineup pattern; pairs with `ab_compare`.
 - ✅ **P1** **Weather for MLB** — DONE: Open-Meteo ingest + park wind-out component (`game_weather`, surfaced on cards), validated (wind out ≥5mph → 65% over vs 43% calm), injected into `derived` (978 games backfilled). Retrained with the A/B gate: **total_bases (+1.5% MAE) and hits (+2.6%) promoted**; home_runs **rejected** (−7.7% — weather hurt the sparse HR classifier, keys removed). Recalibrated both. *(Coverage is partial/recent-skewed — re-running the budgeted backfill over time will lift it and a future retrain can recheck.)*
 - ✅ **P2** **Player detail page** — DONE: `?player=<name>` (or the sidebar lookup) renders a player's full record (overall W/L, by stat×direction, recent picks); shareable + stops.
 - ✅ **P3** **Line-movement / steam alerts** — DONE: `capture_sharp_close` Discord-pings picks where the sharp prob moved ≥8pp toward (confirmation) or against (caution) our side since pick time, each intraday refresh.

@@ -1,0 +1,95 @@
+name: weekly-retrain
+
+# Closes the retrain loop: retrains the MLB offense models, A/B-gates each against
+# the live model on recent settled games (props.models.retrain_and_promote), and
+# promotes ONLY the ones that beat prod — then commits whatever model files
+# changed so the promotions deploy on Railway. Nothing promotes on a regression.
+#
+# DST-safe: GitHub cron is UTC and doesn't follow DST, so Monday morning has a PDT
+# and a PST cron and the gate lets exactly one through (same pattern as daily.yml).
+# Manual dispatch always runs and can target a subset / threshold.
+on:
+  schedule:
+    - cron: "0 16 * * 1"   # ~9 AM PDT Monday (summer, UTC-7)
+    - cron: "0 17 * * 1"   # ~9 AM PST Monday (winter, UTC-8)
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Subset of stats (space-separated: total_bases hits home_runs). Blank = all."
+        required: false
+        default: ""
+      min_improve:
+        description: "Min % MAE improvement to promote"
+        required: false
+        default: "0.5"
+
+concurrency:
+  group: weekly-retrain
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to commit promoted model files back to main
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      LOG_LEVEL: INFO
+    steps:
+      - name: Gate one run per week (DST-safe)
+        id: gate
+        env:
+          SCHED: ${{ github.event.schedule }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          OFFSET=$(TZ=America/Los_Angeles date +%z)
+          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
+          RUN=no
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            RUN=yes
+          elif [ "$SCHED" = "0 16 * * 1" ] && [ "$OFFSET" = "-0700" ]; then
+            RUN=yes
+          elif [ "$SCHED" = "0 17 * * 1" ] && [ "$OFFSET" = "-0800" ]; then
+            RUN=yes
+          fi
+          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'yes'
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'yes'
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: System deps (libgomp for LightGBM)
+        if: steps.gate.outputs.run == 'yes'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - name: Install deps
+        if: steps.gate.outputs.run == 'yes'
+        run: pip install -r requirements.txt
+
+      - name: Retrain + A/B-gate + promote
+        if: steps.gate.outputs.run == 'yes'
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.only }}" ]; then ARGS="--only ${{ github.event.inputs.only }}"; fi
+          if [ -n "${{ github.event.inputs.min_improve }}" ]; then ARGS="$ARGS --min-improve ${{ github.event.inputs.min_improve }}"; fi
+          python -m props.models.retrain_and_promote $ARGS
+
+      - name: Commit promoted models
+        if: steps.gate.outputs.run == 'yes'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/*.txt models/*_meta.json models/*.pkl
+          if git diff --cached --quiet; then
+            echo "No model changes — nothing promoted this week."
+          else
+            git commit -m "Auto-promote retrained models (A/B-gated) [skip ci]"
+            git push
+          fi
