@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Prediction-interval coverage check** — DONE: `props.ops.interval_coverage` measures empirical coverage of the Poisson 25-75%/10-90% intervals on settled predictions, per stat; in the daily digest, Discord-alerts on miscalibration. Prod: 56%/79% overall (good); surfaced that **points + total_bases intervals run too narrow (32%, overconfident)**, assists/hits too wide.
 - ✅ **P3** **Player comparison view** — DONE: `?view=compare` puts two players side by side (record + by stat×direction), picked from the settled-player list. Read-only.
 - ✅ **P3** **Bankroll / ROI tracker** — DONE: on the track-record page (`?view=results`), cumulative paper P&L curve + net units + ROI for the recommended tier (each leg as a flat 1u bet at 2-pick-equivalent odds, 57.7% breakeven). Prod: +39.6u, +16.4% ROI over 241 bets.
 - ✅ **P3** **Alert consolidation / daily digest** — DONE: `props.ops.digest` runs every monitor (ingest, data audit, feature drift, dashboard) and sends ONE grouped Discord digest instead of four separate pings; daily.sh uses it for the alert (monitors stay runnable standalone). Directly fights the alert-fatigue that let the outage alerts go unseen.

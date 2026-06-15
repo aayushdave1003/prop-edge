@@ -17,13 +17,15 @@ import argparse
 from props.maintenance.ingest_monitor import run_checks as _ingest
 from props.ops.data_audit import run_checks as _audit
 from props.ops.feature_drift import run_checks as _drift
+from props.ops.interval_coverage import run_checks as _intervals
 from props.ops.dashboard_monitor import run_checks as _dash
 from props.utils.config import settings
 from props.utils.db import db_banner
 from props.utils.logging import log, configure_logging
 
 SECTIONS = [("Ingest", _ingest), ("Data audit", _audit),
-            ("Feature drift", _drift), ("Dashboard", _dash)]
+            ("Feature drift", _drift), ("Interval coverage", _intervals),
+            ("Dashboard", _dash)]
 
 
 def gather() -> dict[str, list[dict]]:
