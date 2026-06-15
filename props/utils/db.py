@@ -7,8 +7,17 @@ from props.utils.config import settings
 # TCP keepalives stop the Railway proxy from silently dropping a connection
 # during long writes; pool_recycle retires connections before the proxy's idle
 # limit. pool_pre_ping catches any that died while checked back in.
+# Railway's Postgres DATABASE_URL comes as `postgresql://…` (which SQLAlchemy maps
+# to the psycopg2 dialect); we ship psycopg3, so normalize to the `+psycopg`
+# driver. This lets a service reference the Postgres URL directly (e.g. the bot's
+# ${{Postgres.DATABASE_URL}}, over fast internal networking) without crashing. A
+# URL that's already `postgresql+psycopg://` is left untouched.
+_db_url = settings.database_url
+if _db_url.startswith("postgresql://"):
+    _db_url = "postgresql+psycopg://" + _db_url[len("postgresql://"):]
+
 engine = create_engine(
-    settings.database_url,
+    _db_url,
     future=True,
     pool_pre_ping=True,
     pool_recycle=1800,
