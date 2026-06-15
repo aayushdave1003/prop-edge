@@ -248,6 +248,19 @@ fi
 echo "--- Ingest monitor ---"
 python -m props.maintenance.ingest_monitor || true
 
+# ── 8d. Dashboard perf / uptime monitor ──────────────────────────────────────
+# A synthetic check beyond /_stcore/health: times the health endpoint AND a real
+# render, pinging Discord if the app is down or render latency blows past the
+# threshold (a wedged container can stay "healthy" but unusable).
+echo "--- Dashboard monitor ---"
+python -m props.ops.dashboard_monitor || true
+
+# ── 8e. Cost / usage snapshot ────────────────────────────────────────────────
+# Odds API credits, scrape volume, pipeline freshness, DB growth — logged so a
+# blow-up (quota draining, DB ballooning) is visible in the run log.
+echo "--- Usage snapshot ---"
+python -m props.ops.usage || true
+
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
 

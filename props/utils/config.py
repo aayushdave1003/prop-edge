@@ -24,5 +24,7 @@ class Settings(BaseSettings):
     discord_public_key: str = ""
     discord_bot_token: str = ""
     discord_app_id: str = ""
+    # Public dashboard URL — used by the perf/uptime monitor (props.ops.dashboard_monitor).
+    dashboard_url: str = "https://prop-edge-production-1b02.up.railway.app"
 
 settings = Settings()

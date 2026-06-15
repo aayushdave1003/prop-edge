@@ -838,6 +838,56 @@ def render_player_view(name: str):
     st.stop()
 
 
+def render_ops_view():
+    """Read-only ops snapshot — cost/usage + a live dashboard health check
+    (reached via ?view=ops). Odds credits, scrape volume, pipeline freshness, and
+    DB growth in one place so a blow-up is visible before it bites."""
+    _home_button("home_ops")
+    st.markdown("### 🛠️ Ops — cost / usage")
+    try:
+        from props.ops.usage import gather
+        m = gather()
+    except Exception as e:
+        st.error(f"Couldn't load usage snapshot: {e}")
+        st.stop()
+
+    s, p = m["scrape"], m["picks"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Lines today", s["today_lines"], f"10d avg {s['avg_10d']:.0f}")
+    c2.metric("Picks today", p["today_n"], f"{p['settled_7d']} settled / 7d")
+    c3.metric("DB size", m["db"]["size"])
+    st.caption(f"🎰 Odds API — {m['odds']['detail']}")
+    _stale = (s["last_scrape_hours"] or 0) > 18 or (p["last_picked_hours"] or 0) > 36
+    _emoji = "🔴" if _stale else "🟢"
+    st.caption(f"{_emoji} last scrape {s['last_scrape_hours']}h ago · "
+               f"last slate {p['last_picked_hours']}h ago"
+               + ("  — pipeline looks stale" if _stale else ""))
+
+    if s["by_day"]:
+        sv = pd.DataFrame(s["by_day"][::-1], columns=["date", "lines"]).set_index("date")
+        st.markdown("##### Scrape volume — distinct lines / day")
+        st.bar_chart(sv, height=170)
+
+    st.markdown("##### Database — biggest tables")
+    st.dataframe(pd.DataFrame(m["db"]["tables"], columns=["Table", "Size"]),
+                 use_container_width=True, hide_index=True)
+    st.caption(f"💳 Railway $ isn't exposed by API — see the "
+               f"[Railway usage page]({m['railway_billing_url']}); DB size is the proxy.")
+
+    st.markdown("##### Dashboard health")
+    if st.button("Run live health check", key="ops_health"):
+        try:
+            from props.ops.dashboard_monitor import run_checks
+            for f in run_checks():
+                st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+                         + f"**{f['name']}** — {f['detail']}")
+        except Exception as e:
+            st.caption(f"health check unavailable: {e}")
+    else:
+        st.caption("Times /_stcore/health + a real render (the app pings itself).")
+    st.stop()
+
+
 @st.cache_data(ttl=300)
 def load_results_summary():
     """Headline record for the public results view — overall + recommended-tier
@@ -1459,6 +1509,7 @@ with st.sidebar:
     # ?view=results to the current URL.
     st.markdown("📣 **[Open your shareable results page →](?view=results)**")
     st.caption("Read-only record you can share — link copies the current URL + `?view=results`.")
+    st.markdown("🛠️ **[Ops · cost & usage →](?view=ops)**")
 
 # Light palette: override the design tokens (cards/components use the variables).
 if _light:
@@ -1478,6 +1529,8 @@ if _light:
 # ── Read-only drill-down views (shareable, st.stop) ──────────────────────────
 if st.query_params.get("view") == "results":
     render_results_view()    # renders the record and st.stop()s
+if st.query_params.get("view") == "ops":
+    render_ops_view()        # cost/usage + dashboard health, st.stop()s
 _player_qp = st.query_params.get("player")
 if isinstance(_player_qp, str) and _player_qp:
     render_player_view(_player_qp)   # player detail + st.stop()

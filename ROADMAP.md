@@ -31,10 +31,8 @@ what's left to build, by category.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
 ## 4. Ops / automation
-- ☐ **P2** **Cost / usage dashboard** — Odds API credits, Railway spend, scrape volume in one view (catch a blow-up early).
 - ☐ **P3** **DB backup / restore** — scheduled prod-DB snapshot + a tested restore path.
 - ☐ **P3** **Type checking in CI** — add `mypy` (or `ty`) to the CI gate alongside the flake8 NameError check.
-- ☐ **P3** **Dashboard perf/latency monitoring** — track render time + a synthetic uptime check beyond `/_stcore/health`.
 
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)
 - ☐ **P1** Backfill depth for **NHL** (~11 games) and **WNBA** (~43) so prop models get signal and winner models become trainable.
