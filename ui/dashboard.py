@@ -727,6 +727,62 @@ def load_recent_picks(days: int = 7):
 
 
 @st.cache_data(ttl=300)
+@st.cache_data(ttl=300)
+def load_player_options():
+    """Distinct players that have a settled pick — for the detail-page selector."""
+    return pd.read_sql(text("""
+        SELECT DISTINCT p.full_name AS name
+        FROM picks pk JOIN players p USING (player_id)
+        WHERE pk.leg_result IN ('win','loss','push')
+        ORDER BY 1
+    """), engine)["name"].tolist()
+
+
+@st.cache_data(ttl=300)
+def load_player_detail(name: str):
+    """All settled picks for one player — for the player detail page."""
+    return pd.read_sql(text("""
+        SELECT pk.picked_at::date AS date, g.sport_code, pk.stat_type,
+               pl.line_value AS line, pk.direction, pk.model_prob::float AS model_prob,
+               pk.leg_result, pk.actual_value::float AS actual
+        FROM picks pk
+        JOIN players p USING (player_id)
+        JOIN games g USING (game_id)
+        LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
+        WHERE lower(p.full_name) = lower(:nm) AND pk.leg_result IN ('win','loss','push')
+        ORDER BY pk.picked_at DESC
+    """), engine, params={"nm": name})
+
+
+def render_player_view(name: str):
+    """Read-only drill-down on one player (reached via ?player=…)."""
+    st.markdown(f"### 🔎 {name} — pick history")
+    df = load_player_detail(name)
+    if df.empty:
+        st.info(f"No settled picks for {name}.")
+        st.stop()
+    wl = df[df["leg_result"].isin(["win", "loss"])]
+    w = int((wl["leg_result"] == "win").sum())
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Record", f"{w}–{len(wl)-w}", f"{w/len(wl)*100:.0f}% win" if len(wl) else "—")
+    c2.metric("Picks tracked", len(df))
+    c3.metric("Sports", ", ".join(sorted(df["sport_code"].str.upper().unique())))
+    # by stat × direction
+    g = (wl.groupby(["stat_type", "direction"])
+           .agg(n=("leg_result", "size"),
+                w=("leg_result", lambda s: (s == "win").sum())).reset_index())
+    g["Win %"] = (g["w"] / g["n"] * 100).map(lambda x: f"{x:.0f}%")
+    g["Record"] = g.apply(lambda r: f"{int(r['w'])}–{int(r['n']-r['w'])}", axis=1)
+    st.markdown("##### By stat × direction")
+    st.dataframe(g[["stat_type", "direction", "Record", "Win %"]]
+                 .rename(columns={"stat_type": "Stat", "direction": "Dir"}),
+                 use_container_width=True, hide_index=True)
+    st.markdown("##### Recent picks")
+    st.dataframe(df.head(40), use_container_width=True, hide_index=True)
+    st.stop()
+
+
+@st.cache_data(ttl=300)
 def load_results_summary():
     """Headline record for the public results view — overall + recommended-tier
     W/L and per-sport, computed from all settled picks."""
@@ -1312,6 +1368,24 @@ with st.sidebar:
     _theme_qp = st.query_params.get("theme", "dark")
     _light = st.toggle("☀️ Light mode", value=(_theme_qp == "light"), key="theme")
     st.query_params["theme"] = "light" if _light else "dark"
+
+    st.markdown("---")
+    st.markdown("### 🔎 Player lookup")
+    _players = load_player_options()
+    _psel = st.selectbox("Drill into a player", ["—"] + _players, key="player_lookup")
+    if _psel != "—" and st.button("View player →", use_container_width=True):
+        st.query_params["player"] = _psel
+        st.rerun()
+
+    st.markdown("### ⭐ Watchlist")
+    _watch_qp = [w for w in (st.query_params.get("watch", "") or "").split(",") if w]
+    _watch = st.multiselect("Follow players", _players,
+                            default=[w for w in _watch_qp if w in _players], key="watch")
+    if _watch:
+        st.query_params["watch"] = ",".join(_watch)
+    else:
+        st.query_params.pop("watch", None)
+
     st.markdown("---")
     st.caption("📣 Share your record — read-only results page:")
     st.code("?view=results", language=None)
@@ -1331,9 +1405,12 @@ if _light:
     body, [class*="css"], [data-testid="stMarkdownContainer"] { color:var(--txt); }
     </style>""", unsafe_allow_html=True)
 
-# ── Public results view (shareable, read-only) ───────────────────────────────
+# ── Read-only drill-down views (shareable, st.stop) ──────────────────────────
 if st.query_params.get("view") == "results":
     render_results_view()    # renders the record and st.stop()s
+_player_qp = st.query_params.get("player")
+if isinstance(_player_qp, str) and _player_qp:
+    render_player_view(_player_qp)   # player detail + st.stop()
 
 # ── Header ────────────────────────────────────────────────────────────────────
 
@@ -1416,6 +1493,19 @@ with tab_picks:
         _now_pt = _now_dt.now(_ZI("America/Los_Angeles"))
         st.caption(f"Showing picks as of {_now_pt:%-I:%M %p %Z}. "
                    "New picks land each morning; refresh to pull the latest.")
+
+    # ── Watchlist: today's picks for followed players (set in the sidebar) ────
+    _wl_names = [w for w in (st.query_params.get("watch", "") or "").split(",") if w]
+    if _wl_names and not df.empty:
+        _wdf = df[df["player"].isin(_wl_names)]
+        if not _wdf.empty:
+            with st.expander(f"⭐ Watchlist — {len(_wdf)} pick(s) for "
+                             f"{_wdf['player'].nunique()} followed player(s) today", expanded=True):
+                for _, _r in _wdf.iterrows():
+                    st.markdown(f"⭐ **{_r['player']}** — {_r['direction'].upper()} "
+                                f"{float(_r['line']):g} {_r['stat_type']} "
+                                f"<span style='color:#5f6678'>({calibrate(float(_r['model_prob'])):.0%})</span>",
+                                unsafe_allow_html=True)
 
     if df.empty:
         st.info("No picks logged today yet. The daily cloud run posts them each "
@@ -2048,6 +2138,31 @@ with tab_perf:
         else:
             st.info("Need more settled picks for calibration analysis.")
 
+        st.divider()
+
+        # ── Edge leaderboard — best & worst buckets ──────────────────────────
+        st.subheader("🏆 Edge leaderboard")
+        if not hist.empty:
+            _lb = hist[hist["picks"] >= 8].copy()
+            if not _lb.empty:
+                _lb["Bucket"] = (_lb["sport_code"].str.upper() + " " + _lb["stat_type"]
+                                 + " " + _lb["direction"].str.upper())
+                _lb["Record"] = _lb.apply(
+                    lambda r: f"{int(r['wins'])}–{int(r['losses'])}", axis=1)
+                _lb["Win %"] = _lb["win_pct"].map(lambda x: f"{x:.0f}%")
+                _lb["vs 57.7%"] = _lb["win_pct"].map(lambda x: f"{x-57.7:+.0f}%")
+                _lb = _lb.sort_values("win_pct", ascending=False)
+                cols = ["Bucket", "Record", "Win %", "vs 57.7%"]
+                lc1, lc2 = st.columns(2)
+                with lc1:
+                    st.caption("🔥 Hottest (min 8 settled)")
+                    st.dataframe(_lb.head(6)[cols], use_container_width=True, hide_index=True)
+                with lc2:
+                    st.caption("🧊 Coldest")
+                    st.dataframe(_lb.tail(6).iloc[::-1][cols],
+                                 use_container_width=True, hide_index=True)
+            else:
+                st.caption("Not enough settled picks per bucket yet (need ≥8).")
         st.divider()
 
         # ── Breakdown by stat type ────────────────────────────────────────────
