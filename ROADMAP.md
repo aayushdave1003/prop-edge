@@ -27,7 +27,6 @@ what's left to build, by category.
 ## 2. Model / analytics
 - ☐ **P2** **Recency-weighted training** — weight recent games more (sample weights / decay) so models track current form, not a stale season average.
 - ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
-- ☐ **P2** **Automated hyperparameter search** — Optuna sweep inside the gated retrain (`retrain_and_promote`), promote only if the tuned model beats prod.
 - ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
 - ☐ **P3** **Prediction-interval coverage check** — verify the displayed 25–75% intervals actually contain ~50% of outcomes; recalibrate if not.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.

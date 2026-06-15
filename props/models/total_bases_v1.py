@@ -63,13 +63,17 @@ def split_train_test(df):
     return df[df["game_date"] < pd.Timestamp("2025-01-01")].copy(), df[df["game_date"] >= pd.Timestamp("2025-01-01")].copy()
 
 def train_model(train_df, val_df):
+    import os
     from props.models.train_weights import recency_weights
-    lgb_train = lgb.Dataset(train_df[FEATURE_KEYS], train_df["y"],
-                            weight=recency_weights(train_df["game_date"]))
-    lgb_val   = lgb.Dataset(val_df[FEATURE_KEYS], val_df["y"], reference=lgb_train)
+    w = recency_weights(train_df["game_date"])
     params = {"objective":"poisson","metric":["poisson","mae"],"learning_rate":0.04,
               "num_leaves":31,"min_data_in_leaf":100,"feature_fraction":0.9,
               "bagging_fraction":0.9,"bagging_freq":5,"verbose":-1,"seed":42}
+    if os.environ.get("HP_TUNE"):   # opt-in Optuna search (retrain_and_promote --tune)
+        from props.models.tune import tune_lgb
+        params.update(tune_lgb(train_df, val_df, FEATURE_KEYS, objective="poisson", weight=w))
+    lgb_train = lgb.Dataset(train_df[FEATURE_KEYS], train_df["y"], weight=w)
+    lgb_val   = lgb.Dataset(val_df[FEATURE_KEYS], val_df["y"], reference=lgb_train)
     model = lgb.train(params, lgb_train, num_boost_round=2000,
                       valid_sets=[lgb_train, lgb_val], valid_names=["train","val"],
                       callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])

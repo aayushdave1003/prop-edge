@@ -130,8 +130,10 @@ def train_model(train_df, val_df):
     X_val = val_df[FEATURE_KEYS]
     y_val = val_df["y"]
 
+    import os
     from props.models.train_weights import recency_weights
-    lgb_train = lgb.Dataset(X_train, y_train, weight=recency_weights(train_df["game_date"]))
+    w = recency_weights(train_df["game_date"])
+    lgb_train = lgb.Dataset(X_train, y_train, weight=w)
     lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
 
     params = {
@@ -146,6 +148,9 @@ def train_model(train_df, val_df):
         "verbose": -1,
         "seed": 42,
     }
+    if os.environ.get("HP_TUNE"):   # opt-in Optuna search (retrain_and_promote --tune)
+        from props.models.tune import tune_lgb
+        params.update(tune_lgb(train_df, val_df, FEATURE_KEYS, objective="poisson", weight=w))
 
     log.info("training_lgb")
     model = lgb.train(

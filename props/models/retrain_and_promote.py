@@ -76,9 +76,10 @@ def _log_decision(stat: str, n: int, improvement: float, promoted: bool):
         log.warning("autoretrain_log_failed", error=str(e)[:120])
 
 
-def retrain_one(stat: str, min_improve: float, days: int) -> dict:
+def retrain_one(stat: str, min_improve: float, days: int, tune: bool = False) -> dict:
     """Retrain one model, A/B-gate it, promote only if it wins. Returns a result
-    dict; leaves prod untouched on any failure or regression."""
+    dict; leaves prod untouched on any failure or regression. tune=True runs an
+    Optuna hyperparameter search for the candidate (HP_TUNE)."""
     name = STAT_MODEL[stat]
     prod_txt, prod_meta = MODEL_DIR / f"{name}.txt", MODEL_DIR / f"{name}_meta.json"
     bak_txt, bak_meta = Path(f"/tmp/{name}.bak.txt"), Path(f"/tmp/{name}.bak_meta.json")
@@ -91,8 +92,10 @@ def retrain_one(stat: str, min_improve: float, days: int) -> dict:
     shutil.copy(prod_txt, bak_txt)
     shutil.copy(prod_meta, bak_meta)
     try:
-        log.info("retrain_start", stat=stat, model=name)
-        subprocess.run([sys.executable, "-m", TRAIN_MODULE[stat]], check=True)
+        log.info("retrain_start", stat=stat, model=name, tune=tune)
+        import os
+        env = {**os.environ, "HP_TUNE": "1"} if tune else None
+        subprocess.run([sys.executable, "-m", TRAIN_MODULE[stat]], check=True, env=env)
         # training overwrote prod with the candidate — set it aside, restore prod
         shutil.copy(prod_txt, cand_txt)
         shutil.copy(prod_meta, cand_meta)
@@ -159,11 +162,14 @@ def main():
                    help="min %% MAE improvement to promote (default 0.5)")
     p.add_argument("--days", type=int, default=AB_DAYS)
     p.add_argument("--no-notify", action="store_true")
+    p.add_argument("--tune", action="store_true",
+                   help="Optuna hyperparameter search for each candidate (slower)")
     args = p.parse_args()
 
     stats = args.only or list(TRAIN_MODULE)
-    print(f"=== Auto-retrain ({', '.join(stats)}; gate ≥{args.min_improve}% MAE) ===")
-    results = [retrain_one(s, args.min_improve, args.days) for s in stats]
+    print(f"=== Auto-retrain ({', '.join(stats)}; gate ≥{args.min_improve}% MAE"
+          + (", tuned)" if args.tune else ")") + " ===")
+    results = [retrain_one(s, args.min_improve, args.days, tune=args.tune) for s in stats]
 
     print("\n=== Summary ===")
     for r in results:

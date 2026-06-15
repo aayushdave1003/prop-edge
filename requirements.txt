@@ -6,6 +6,7 @@ psycopg==3.3.4
 psycopg-binary==3.3.4
 lightgbm==4.6.0
 scikit-learn==1.8.0
+optuna==4.9.0
 scipy==1.17.1
 pydantic==2.13.4
 pydantic-settings==2.14.1
