@@ -58,6 +58,10 @@ echo "======================================================"
 echo "--- Team rosters (MLB + NHL) ---"
 python -m props.ingest.mlb_teams || echo "WARN: mlb_teams sync failed"
 python -m props.ingest.nhl_teams || echo "WARN: nhl_teams sync failed"
+# Player → current team from official rosters (fixes trades; MLB/NHL by id,
+# NBA/WNBA by name). Update-only, never clears — safe + idempotent.
+echo "--- Roster sync (current_team_id) ---"
+python -m props.ingest.rosters || echo "WARN: roster sync failed"
 
 # ── 1. Schedules (yesterday + today + tomorrow for early-morning runs) ──────
 echo "--- MLB schedule ---"

@@ -102,9 +102,9 @@ def run_checks() -> list[dict]:
             SELECT COUNT(*) FROM players p JOIN recent r USING (player_id)
             WHERE p.current_team_id IS DISTINCT FROM r.team_id
         """)).scalar() or 0
-        findings.append({"level": "ok", "name": "stale_team_mapping",
-                         "detail": f"{stale} players whose roster team ≠ recent-game team "
-                                   "(lookup uses recent-game, so display is unaffected)"})
+        findings.append({"level": "ok", "name": "team_mapping",
+                         "detail": f"{stale} players whose current_team_id ≠ recent-game team "
+                                   "(expected for recent trades; roster sync keeps current_team_id authoritative)"})
     return findings
 
 

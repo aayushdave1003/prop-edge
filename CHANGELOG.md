@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-06-15
+- ✅ **P2** **Roster sync** — DONE: `props.ingest.rosters` sets `current_team_id` from each league's official current roster (MLB/NHL by native id, NBA/WNBA by normalized name — basketball isn't keyed on ESPN ids). Update-only (never clears; the lookup's recency filter hides departed players), runs daily. Matched 1259/109/515/201 players across MLB/NHL/NBA/WNBA, corrected 68 who'd moved teams.
+
 ## Shipped — 2026-06-14
 - ✅ **P3** **DB backup / restore** — DONE: `db_backup.yml` nightly `pg_dump` (custom-format, version-matched via postgres:16) → 30-day retained artifact, with a size sanity-check + Discord alert on failure; `scripts/restore_db.sh` is the guarded, tested restore path (restore into a scratch DB to verify a snapshot).
 - ✅ **P3** **Type checking in CI** — DONE: scoped `mypy` gate (`props/utils` + `props/ops`, pydantic plugin) wired into `ci.yml` next to the flake8 NameError gate; `[tool.mypy]` grows by adding packages as they're cleaned.
