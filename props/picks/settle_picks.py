@@ -137,6 +137,18 @@ def run():
                 continue
 
             if game_status != "final":
+                # Postponed / suspended / cancelled games never produce a result
+                # (mlb_boxscores marks a confirmed-over game with no stats as
+                # 'postponed'). Void immediately — don't wait out the stale grace.
+                if game_status in ("postponed", "cancelled", "canceled", "suspended"):
+                    session.execute(text("""
+                        UPDATE picks SET leg_result='void', settled_at=NOW()
+                        WHERE pick_id=:pid
+                    """), {"pid": pick_id})
+                    log.info("voided_postponed", pick_id=pick_id, player=player_name,
+                             game_date=str(game_date), status=game_status)
+                    settled += 1
+                    continue
                 # A game still not final 3+ days after its date is abandoned (a
                 # postponed/dead placeholder, e.g. unresolved pp_ rows) and will
                 # never settle — void rather than wait forever. Today's/upcoming

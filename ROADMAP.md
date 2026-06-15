@@ -50,7 +50,6 @@ what's left to build, by category.
 
 ## 4. Ops / automation & data integrity
 - ☐ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-maps players (e.g. McCain→OKC); build a canonical external-id map + dedupe + an audit check.
-- ☐ **P2** **Unsettleable-pick sweeper** — detect + void picks tied to placeholder / never-final games (one is stuck now) so they don't sit open forever.
 - ☐ **P3** **Alert consolidation / daily digest** — fold ingest + data-audit + health + dashboard alerts into one digest to fight alert fatigue (the silent-outage lesson: alerts fired but went unseen).
 - ☐ **P3** **Prod DB-target guard** — warn when a "prod" command runs against a non-prod `DATABASE_URL` (the localhost-vs-Railway mix-up that faked a 10-day outage).
 - ☐ **P3** **Deploy the Discord slash-bot** — the signature-verified `/picks` `/record` `/player` service is built (`props/bot/`) but dormant; deploy it as its own Railway service.

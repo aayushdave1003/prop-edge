@@ -163,6 +163,7 @@ def run(limit=None, since_days=5):
     total_players = 0
     failed = 0
     flipped = 0
+    postponed = 0
     for i, g in enumerate(games):
         try:
             # For games not yet marked final, confirm with the API before
@@ -177,9 +178,20 @@ def run(limit=None, since_days=5):
                 away = process_side(session, box, "away", g["game_id"],
                                     g["away_team_id"], g["home_team_id"], False)
                 total_players += home + away
+                if (home + away) == 0:
+                    # The game is over (already final, or confirmed Final above)
+                    # yet nobody recorded a plate appearance / batter faced — that's
+                    # a postponed / suspended / cancelled game (MLB tags those
+                    # abstractGameState='Final'). Mark it 'postponed' so settle
+                    # voids the picks now instead of waiting out the stale grace.
+                    session.execute(text(
+                        "UPDATE games SET status='postponed' "
+                        "WHERE game_id=:gid AND status <> 'postponed'"),
+                        {"gid": g["game_id"]})
+                    postponed += 1
                 # Flip a stale preview/live row to final now that it's confirmed
                 # final and box-scored, so settle can pick it up.
-                if g["status"] != "final" and (home + away) > 0:
+                elif g["status"] != "final":
                     session.execute(text(
                         "UPDATE games SET status='final' WHERE game_id=:gid"),
                         {"gid": g["game_id"]})
@@ -199,7 +211,8 @@ def run(limit=None, since_days=5):
         """), {"n": total_players, "failed": failed,
                "emsg": f"{failed} games failed", "rid": run_id})
     log.info("boxscore_ingest_complete", games=len(games),
-             players=total_players, failed=failed, status_flipped=flipped)
+             players=total_players, failed=failed, status_flipped=flipped,
+             postponed=postponed)
 
 
 if __name__ == "__main__":
