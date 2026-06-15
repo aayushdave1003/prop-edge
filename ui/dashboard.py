@@ -1867,6 +1867,40 @@ with tab_picks:
                                 f"<span style='color:#5f6678'>({calibrate(float(_r['model_prob'])):.0%})</span>",
                                 unsafe_allow_html=True)
 
+    # ── Build your own parlay (interactive) ───────────────────────────────────
+    with st.expander("🎰 Build your own parlay"):
+        if df.empty:
+            st.caption("No picks today yet.")
+        else:
+            _b = df.copy()
+            _b["label"] = _b.apply(
+                lambda r: f"{r['player']} {r['direction'].upper()} {float(r['line']):g} "
+                          f"{r['stat_type']} ({calibrate(float(r['model_prob'])):.0%})", axis=1)
+            _legs = st.multiselect("Pick 2–6 legs", _b["label"].tolist(),
+                                   max_selections=6, key="parlay_build")
+            _sel = _b[_b["label"].isin(_legs)]
+            if len(_sel) < 2:
+                st.caption("Select at least 2 legs.")
+            else:
+                _n = len(_sel)
+                _joint = float(_sel["model_prob"].astype(float).map(calibrate).prod())
+                _payout = {2: 3.0, 3: 5.0, 4: 10.0, 5: 20.0, 6: 37.5}.get(_n)
+                _ngames = int(_sel["game_id"].nunique())
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Legs", _n)
+                m2.metric("Joint hit", f"{_joint:.1%}", help="if independent")
+                if _payout:
+                    m3.metric(f"Payout {_payout:g}×", f"EV {_joint * _payout - 1:+.0%}",
+                              delta_color="normal" if _joint * _payout >= 1 else "inverse")
+                if _n - _ngames > 0:
+                    st.caption(f"⚠️ {_n - _ngames} same-game leg(s) — positively correlated, "
+                               "so the true joint (and EV) is higher than this independent "
+                               "estimate, but the parlay is riskier (busts as a block).")
+                st.code("\n".join(f"{r['player']} {r['direction'].upper()} "
+                                  f"{float(r['line']):g} {r['stat_type']}"
+                                  for _, r in _sel.iterrows()))
+                st.caption("Paper-tracking only · not betting advice.")
+
     if df.empty:
         st.info("No picks logged today yet. The daily cloud run posts them each "
                 "morning — tap **🔄 Refresh picks** once it's done.")

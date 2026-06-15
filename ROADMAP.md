@@ -36,7 +36,6 @@ what's left to build, by category.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
 ## 3. Product / UX
-- ☐ **P3** **Parlay / bet-slip builder** — assemble today's legs with correlation-aware EV + a copyable slip.
 - ☐ **P3** **Mobile layout polish** — cards reflow, sticky filters, tap targets (the dashboard is phone-first in practice).
 
 ## 4. Ops / automation & data integrity
