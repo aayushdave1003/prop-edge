@@ -51,7 +51,8 @@ FEATURE_KEYS = [
     "park_factor",
     "days_rest",
     "games_played_season",
-    "wx_temp", "wx_wind_out",   # ballpark weather — wind out drives offense
+    # NB: weather features were A/B-tested here and HURT the sparse HR classifier
+    # (-7.7% MAE), so they're deliberately excluded — total_bases/hits keep them.
 ]
 
 

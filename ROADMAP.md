@@ -10,7 +10,6 @@ what's left to build, by category.
 ---
 
 ## 1. New data → accuracy (more signal into the models)
-- ◧ **P1** **Weather for MLB** — ingested + validated (wind out ≥5mph → 65% over vs 43% calm); last step is the GHA backfill + retrain (A/B-validate with `ab_compare`, then commit the models).
 - ☐ **P2** **Confirmed lineups + batting order** — batting 1st vs 8th changes plate appearances → moves hits/TB/RBI. Lives in the MLB box-score feed (fast); pre-game lineups post ~3h out.
 - ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency, a real edge for strikeout props.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds flow now; high implied team total = more offense. Feed it into the MLB/NBA models.

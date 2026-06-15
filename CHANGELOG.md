@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-14
+- ✅ **P1** **Weather for MLB** — DONE: Open-Meteo ingest + park wind-out component (`game_weather`, surfaced on cards), validated (wind out ≥5mph → 65% over vs 43% calm), injected into `derived` (978 games backfilled). Retrained with the A/B gate: **total_bases (+1.5% MAE) and hits (+2.6%) promoted**; home_runs **rejected** (−7.7% — weather hurt the sparse HR classifier, keys removed). Recalibrated both. *(Coverage is partial/recent-skewed — re-running the budgeted backfill over time will lift it and a future retrain can recheck.)*
 - ✅ **P2** **Player detail page** — DONE: `?player=<name>` (or the sidebar lookup) renders a player's full record (overall W/L, by stat×direction, recent picks); shareable + stops.
 - ✅ **P3** **Line-movement / steam alerts** — DONE: `capture_sharp_close` Discord-pings picks where the sharp prob moved ≥8pp toward (confirmation) or against (caution) our side since pick time, each intraday refresh.
 - ✅ **P3** **Discord slash-command bot** — DONE: `props/bot/discord_interactions.py` (FastAPI, signature-verified) serves `/picks` `/record` `/player` from the DB; `register_commands.py` + `requirements-bot.txt` + deploy notes — runs as a separate Railway service (read-only).

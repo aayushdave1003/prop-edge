@@ -50,11 +50,13 @@
     "season_avg_batter_hard_contact",
     "last_10_avg_pitcher_command",
     "last_10_avg_pitcher_bb9",
-    "park_factor"
+    "park_factor",
+    "wx_temp",
+    "wx_wind_out"
   ],
-  "best_iteration": 48,
-  "train_n": 84784,
-  "val_n": 740,
-  "test_n": 47919,
-  "trained_date": "2026-06-03"
+  "best_iteration": 25,
+  "train_n": 2798,
+  "val_n": 3319,
+  "test_n": 3460,
+  "trained_date": "2026-06-14"
 }
