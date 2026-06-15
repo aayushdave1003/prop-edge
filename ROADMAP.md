@@ -48,7 +48,6 @@ what's left to build, by category.
 - ☐ **P3** **Alert consolidation / daily digest** — fold ingest + data-audit + health + dashboard alerts into one digest to fight alert fatigue (the silent-outage lesson: alerts fired but went unseen).
 - ☐ **P3** **Deploy the Discord slash-bot** — the signature-verified `/picks` `/record` `/player` service is built (`props/bot/`) but dormant; deploy it as its own Railway service.
 - ☐ **P3** **Residential proxy for PrizePicks** — provision `PRIZEPICKS_PROXY` so the scrape runs fully on GitHub Actions and retire the Mac-cron dependency (it goes stale when the laptop sleeps).
-- ☐ **P3** **Expand the static gates** — grow the scoped `mypy` `files` list + add `ruff` to CI as the codebase is cleaned.
 - ☐ **P3** **Data retention / archival** — the prod DB is ~1.8 GB and growing (player_games dominates); an archival policy for old snapshot tables.
 
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)

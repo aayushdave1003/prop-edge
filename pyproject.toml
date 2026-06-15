@@ -50,3 +50,13 @@ disable_error_code = ["import-untyped"]   # …same for installed-but-unstubbed 
 check_untyped_defs = false      # don't force annotations on every legacy def yet
 warn_unused_ignores = false
 warn_return_any = false
+
+[tool.ruff.lint]
+# Pyflakes (F) across the whole tree — unused imports/names, redefinitions, etc.
+# (a superset of the flake8 F821/F823/F811 CI gate). calibrate_nba's intentional
+# dead pre-allocs are the only F841s left; ignored there until that script is
+# cleaned. Broaden the select set as the codebase is tidied.
+select = ["F"]
+
+[tool.ruff.lint.per-file-ignores]
+"props/models/calibrate_nba.py" = ["F841"]
