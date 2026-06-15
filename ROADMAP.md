@@ -49,7 +49,6 @@ what's left to build, by category.
 - ☐ **P3** **Per-sport landing tabs** — deep-linkable sport views (`?sport=mlb`) instead of one long scroll.
 
 ## 4. Ops / automation & data integrity
-- ☐ **P2** **PrizePicks → schedule matching** — unmatched props create `pp_*` placeholder games (home==away, 0 player_games) instead of linking to the real game, so those props are silently **dropped** (no picks) and pollute `games` (~225 MLB today, flagged by `data_audit`). Fix the matching (date/team/name) to recover usable props.
 - ☐ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-maps players (e.g. McCain→OKC); build a canonical external-id map + dedupe + an audit check.
 - ☐ **P2** **Unsettleable-pick sweeper** — detect + void picks tied to placeholder / never-final games (one is stuck now) so they don't sit open forever.
 - ☐ **P3** **Alert consolidation / daily digest** — fold ingest + data-audit + health + dashboard alerts into one digest to fight alert fatigue (the silent-outage lesson: alerts fired but went unseen).

@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P2** **PrizePicks → schedule matching** — DONE: `resolve_game_id` used a ±1-day window + "exactly one game" rule, but MLB teams play ~daily so the window caught 2-3 games → "ambiguous" → placeholder, dropping ~85% of MLB props. Now matches EXACT date first (true doubleheaders correctly stay placeholders). Validated on live data: MLB real-game matches **79 → 228**, WNBA unchanged (451→451). Recovers usable props + stops polluting `games`.
 - ✅ **P2** **Roster sync** — DONE: `props.ingest.rosters` sets `current_team_id` from each league's official current roster (MLB/NHL by native id, NBA/WNBA by normalized name — basketball isn't keyed on ESPN ids). Update-only (never clears; the lookup's recency filter hides departed players), runs daily. Matched 1259/109/515/201 players across MLB/NHL/NBA/WNBA, corrected 68 who'd moved teams.
 
 ## Shipped — 2026-06-14

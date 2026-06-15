@@ -326,10 +326,19 @@ def resolve_game_id(session, rec, m) -> int | None:
     if abbr and gd is not None:
         tids = m["team_abbr"].get((sc, abbr), [])
         if len(tids) == 1:
-            matches = {gid for gid, d in m["real_game"].get((sc, tids[0]), [])
-                       if abs((d - gd).days) <= 1}
-            if len(matches) == 1:
-                return next(iter(matches))
+            cand = m["real_game"].get((sc, tids[0]), [])
+            # Prefer an EXACT-date match. MLB teams play ~daily, so a ±1-day
+            # window almost always catches 2-3 of a team's games and looks
+            # "ambiguous" — which silently dropped ~85% of MLB props to
+            # placeholder games. Exact date is unambiguous except a true
+            # doubleheader (>1 exact → stay a placeholder, which is correct).
+            exact = {gid for gid, d in cand if d == gd}
+            if len(exact) == 1:
+                return next(iter(exact))
+            if not exact:
+                near = {gid for gid, d in cand if abs((d - gd).days) <= 1}
+                if len(near) == 1:
+                    return next(iter(near))
     # Fall back to a pp_ placeholder (cached; created in DB only when new).
     pp_ext = f"pp_{rec['game_external_id']}" if rec["game_external_id"] else None
     if pp_ext and (sc, pp_ext) in m["pp_game"]:
@@ -454,12 +463,18 @@ def find_real_game(session, sport_code, team_abbr, start_time) -> int | None:
         return None
     tid = teams[0][0]
     games = session.execute(text("""
-        SELECT game_id FROM games
+        SELECT game_id, game_date FROM games
         WHERE sport_code=:s AND external_id NOT LIKE 'pp_%'
           AND game_date BETWEEN :d - INTERVAL '1 day' AND :d + INTERVAL '1 day'
           AND (home_team_id=:t OR away_team_id=:t)
     """), {"s": sport_code, "d": game_date, "t": tid}).all()
-    return games[0][0] if len(games) == 1 else None
+    # Exact-date first (a ±1-day window catches a team's adjacent daily games).
+    exact = [g[0] for g in games if g[1] == game_date]
+    if len(exact) == 1:
+        return exact[0]
+    if not exact and len(games) == 1:
+        return games[0][0]
+    return None
 
 
 def ensure_pp_game(session, sport_code, pp_game_id, start_time) -> int | None:
