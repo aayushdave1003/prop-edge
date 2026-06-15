@@ -778,14 +778,23 @@ def load_team_index():
 
 @st.cache_data(ttl=300)
 def load_player_index():
-    """(sport, team, player) for every player we have game data for, mapped to
-    their MOST RECENT game's team — drives the Team → Player step of the lookup,
-    independent of whether we've picked them (so a team's full tracked roster
-    shows). Recent-game team avoids the stale players.current_team_id (which had
-    Fox on SAC after his trade to the Spurs). Placeholder team excluded."""
+    """(sport, team, player) for every CURRENTLY-ACTIVE player, mapped to their
+    most-recent game's team — drives the Team → Player step of the lookup.
+
+    "Active" = most-recent game within 150 days of that sport's latest game, which
+    keeps the list to current rosters and drops players who've moved on but whose
+    last game we have is stale (e.g. Cam Reddish / Armel Traoré last logged a
+    Lakers game in Oct 2024 — they'd otherwise still show as Lakers). Recent-game
+    team also avoids the stale players.current_team_id (Fox on SAC post-trade).
+    Placeholder team excluded."""
     return pd.read_sql(text("""
+        WITH sportmax AS (
+            SELECT sport_code, MAX(game_date) AS smax
+            FROM games WHERE status = 'final' GROUP BY 1
+        )
         SELECT sport, team, player FROM (
             SELECT g.sport_code AS sport, t.abbreviation AS team, p.full_name AS player,
+                   g.game_date AS gd,
                    ROW_NUMBER() OVER (PARTITION BY pg.player_id
                                       ORDER BY g.game_date DESC, pg.player_game_id DESC) AS rn
             FROM player_games pg
@@ -794,7 +803,8 @@ def load_player_index():
             JOIN teams t ON t.team_id = pg.team_id
             WHERE COALESCE(t.external_id,'') <> 'PP_PLACEHOLDER'
         ) x
-        WHERE rn = 1
+        JOIN sportmax s ON s.sport_code = x.sport
+        WHERE x.rn = 1 AND x.gd >= s.smax - 150
         ORDER BY sport, team, player
     """), engine)
 
