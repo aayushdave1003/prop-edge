@@ -396,7 +396,19 @@ hr { border-color:var(--line) !important; }
     [data-testid="stColumn"] { flex:1 1 100% !important; min-width:100% !important; }
     [data-testid="stMetricValue"] { font-size:1.3rem !important; }
     .pick-card { min-height:0; }
-    .stTabs [data-baseweb="tab"] { padding:8px 12px; font-size:0.82rem; }
+    /* Sticky, horizontally-scrollable tab bar so you keep your place on scroll
+       instead of losing the tabs at the top of one long page. */
+    .stTabs [data-baseweb="tab-list"] {
+        position:sticky; top:0; z-index:20; background:var(--bg);
+        overflow-x:auto; flex-wrap:nowrap !important; -webkit-overflow-scrolling:touch;
+    }
+    .stTabs [data-baseweb="tab"] { padding:8px 12px; font-size:0.82rem; white-space:nowrap; }
+    /* Tap targets >=44px (Apple HIG) for buttons + select dropdowns. */
+    .stButton button, .stDownloadButton button,
+    [data-baseweb="select"] > div { min-height:44px !important; }
+    /* Readable data tables + copyable slips on a narrow screen. */
+    [data-testid="stDataFrame"] { font-size:0.8rem; }
+    pre, code { font-size:0.78rem !important; white-space:pre-wrap !important; }
 }
 </style>
 """, unsafe_allow_html=True)

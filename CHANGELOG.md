@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Mobile layout polish** — DONE: on top of the existing column-stacking/card-reflow breakpoints, added a sticky horizontally-scrollable tab bar (keep your place on scroll), ≥44px tap targets on buttons + selects, and readable data-tables/copyable-slips at ≤640px.
 - ✅ **P3** **Parlay / bet-slip builder** — DONE: a "Build your own parlay" expander on the Picks tab — multiselect 2–6 of today's legs → joint hit %, power-play payout + EV, and a copyable slip. Correlation-aware: flags same-game legs (true joint/EV higher than the independent estimate). Complements the existing auto-slate + correlated-stacks recommenders.
 - ✅ **P3** **Per-sport landing tabs** — DONE (already shipped): the Today's Picks tab has a sport filter persisted to the URL (`?sport=mlb`), so a sport view is deep-linkable + shareable; refresh resets it so newly-landed sports aren't hidden.
 - ✅ **P3** **Data retention / archival** — DONE: `prune.py` (daily) bounds the growing snapshot tables — market_odds + prop_lines (pick-referenced rows kept), now also player_injuries + ingestion_runs, all past a 45-day window. player_games (the 1.5 GB bulk) is core training data, intentionally not pruned.
