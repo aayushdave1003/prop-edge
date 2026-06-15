@@ -3,6 +3,8 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Player comparison view** — DONE: `?view=compare` puts two players side by side (record + by stat×direction), picked from the settled-player list. Read-only.
+- ✅ **P3** **Bankroll / ROI tracker** — DONE: on the track-record page (`?view=results`), cumulative paper P&L curve + net units + ROI for the recommended tier (each leg as a flat 1u bet at 2-pick-equivalent odds, 57.7% breakeven). Prod: +39.6u, +16.4% ROI over 241 bets.
 - ✅ **P3** **Alert consolidation / daily digest** — DONE: `props.ops.digest` runs every monitor (ingest, data audit, feature drift, dashboard) and sends ONE grouped Discord digest instead of four separate pings; daily.sh uses it for the alert (monitors stay runnable standalone). Directly fights the alert-fatigue that let the outage alerts go unseen.
 - ✅ **P3** **Expand the static gates** — DONE: `ruff` (pyflakes `F`) added to CI alongside flake8 + mypy — catches unused imports/names tree-wide; only `calibrate_nba` dead-locals are per-file-ignored until cleaned. The mypy `files` list still grows incrementally as packages are typed.
 - ✅ **P3** **Prod DB-target guard** — DONE: `db.db_banner()` prints which DB a command is hitting; the ops tools (usage, data_audit, feature_drift, ingest_monitor) show "🛢️ DB: …(PROD)" or "⚠️ …(LOCAL/non-prod)" up front — exactly the signal that would have caught the localhost-vs-Railway mix-up that faked a 10-day outage.

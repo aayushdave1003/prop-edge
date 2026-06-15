@@ -37,9 +37,7 @@ what's left to build, by category.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
 ## 3. Product / UX
-- ☐ **P3** **Player comparison view** — two players side by side (form, splits, pick record).
 - ☐ **P3** **Parlay / bet-slip builder** — assemble today's legs with correlation-aware EV + a copyable slip.
-- ☐ **P3** **Bankroll / ROI tracker** — paper-stake sizing + cumulative ROI curve over time.
 - ☐ **P3** **Mobile layout polish** — cards reflow, sticky filters, tap targets (the dashboard is phone-first in practice).
 - ☐ **P3** **Per-sport landing tabs** — deep-linkable sport views (`?sport=mlb`) instead of one long scroll.
 

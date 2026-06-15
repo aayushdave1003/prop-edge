@@ -1057,6 +1057,34 @@ def render_history_view():
     st.stop()
 
 
+@st.cache_data(ttl=300)
+def load_bankroll():
+    """Cumulative paper P&L for the recommended tier — each rec leg as a flat 1u
+    bet at 2-pick-equivalent odds (a 2-pick 3x parlay breaks even at p=0.577 per
+    leg → decimal 1.732, so win=+0.732u, loss=−1u, push=0)."""
+    df = pd.read_sql(text("""
+        SELECT (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date AS date,
+               g.sport_code AS sport, pk.stat_type AS stat, pk.direction AS dir,
+               pk.model_prob::float AS model_prob, pk.leg_result AS result
+        FROM picks pk JOIN games g USING (game_id)
+        WHERE pk.leg_result IN ('win','loss','push') AND pk.model_prob IS NOT NULL
+        ORDER BY pk.picked_at
+    """), engine)
+    if df.empty:
+        return None
+    rec = df[df.apply(lambda r: r["model_prob"] >= rec_cutoff(
+        r["sport"], r["stat"], direction=r["dir"]), axis=1)].copy()
+    if rec.empty:
+        return None
+    rec["pnl"] = rec["result"].map({"win": 0.732, "loss": -1.0, "push": 0.0})
+    rec["cum"] = rec["pnl"].cumsum()
+    curve = rec.groupby("date")["cum"].last()
+    n = int((rec["result"] != "push").sum())
+    total = float(rec["pnl"].sum())
+    return {"curve": curve, "total_units": total, "n": n,
+            "roi": (total / n * 100 if n else 0.0)}
+
+
 def render_results_view():
     """Clean, shareable read-only record (reached via ?view=results)."""
     _home_button("home_results")
@@ -1090,6 +1118,59 @@ def render_results_view():
     if rows:
         st.markdown("##### Recommended tier by sport")
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    bk = load_bankroll()
+    if bk:
+        st.markdown("##### 💰 Bankroll (paper) — recommended tier")
+        b1, b2, b3 = st.columns(3)
+        b1.metric("Net units", f"{bk['total_units']:+.1f}u",
+                  delta_color="normal" if bk["total_units"] >= 0 else "inverse")
+        b2.metric("ROI", f"{bk['roi']:+.1f}%",
+                  delta_color="normal" if bk["roi"] >= 0 else "inverse")
+        b3.metric("Bets", bk["n"])
+        st.line_chart(bk["curve"], height=200)
+        st.caption("Each recommended leg as a flat 1u bet at 2-pick-equivalent odds "
+                   "(1.73 / −137; 57.7% breakeven). Paper-tracking, not betting advice.")
+    st.stop()
+
+
+def _player_panel(name: str):
+    """One side of the comparison: record + by-stat×direction table."""
+    d = load_player_detail(name)
+    if d.empty:
+        st.info("No settled picks.")
+        return
+    wl = d[d["leg_result"].isin(["win", "loss"])]
+    w = int((wl["leg_result"] == "win").sum())
+    st.metric("Record", f"{w}–{len(wl) - w}",
+              f"{w / len(wl) * 100:.0f}% win" if len(wl) else "—")
+    g = (wl.groupby(["stat_type", "direction"])
+           .agg(n=("leg_result", "size"),
+                w=("leg_result", lambda s: (s == "win").sum())).reset_index())
+    g["Win %"] = (g["w"] / g["n"] * 100).map(lambda x: f"{x:.0f}%")
+    g["Rec"] = g.apply(lambda r: f"{int(r['w'])}–{int(r['n'] - r['w'])}", axis=1)
+    st.dataframe(g[["stat_type", "direction", "Rec", "Win %"]]
+                 .rename(columns={"stat_type": "Stat", "direction": "Dir"}),
+                 use_container_width=True, hide_index=True)
+
+
+def render_compare_view():
+    """Two players side by side (reached via ?view=compare)."""
+    _home_button("home_compare")
+    st.markdown("### ⚖️ Compare players")
+    players = load_picked_players()
+    c1, c2 = st.columns(2)
+    a = c1.selectbox("Player A", ["—"] + players, key="cmp_a")
+    b = c2.selectbox("Player B", ["—"] + players, key="cmp_b")
+    if a == "—" or b == "—":
+        st.caption("Pick two players to compare their settled records.")
+        st.stop()
+    pa, pb = st.columns(2)
+    with pa:
+        st.markdown(f"#### {a}")
+        _player_panel(a)
+    with pb:
+        st.markdown(f"#### {b}")
+        _player_panel(b)
     st.stop()
 
 
@@ -1661,6 +1742,7 @@ with st.sidebar:
     st.caption("Read-only record you can share — link copies the current URL + `?view=results`.")
     st.markdown("🛠️ **[Ops · cost & usage →](?view=ops)**")
     st.markdown("📜 **[Pick history · browse + export →](?view=history)**")
+    st.markdown("⚖️ **[Compare players →](?view=compare)**")
 
 # Light palette: override the design tokens (cards/components use the variables).
 if _light:
@@ -1684,6 +1766,8 @@ if st.query_params.get("view") == "ops":
     render_ops_view()        # cost/usage + dashboard health, st.stop()s
 if st.query_params.get("view") == "history":
     render_history_view()    # filterable settled-pick browser + CSV, st.stop()s
+if st.query_params.get("view") == "compare":
+    render_compare_view()    # two players side by side, st.stop()s
 _player_qp = st.query_params.get("player")
 if isinstance(_player_qp, str) and _player_qp:
     render_player_view(_player_qp)   # player detail + st.stop()
