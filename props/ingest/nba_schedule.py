@@ -6,6 +6,7 @@ Run daily as part of the ritual.
 from datetime import date, datetime
 from nba_api.stats.endpoints import scoreboardv3
 from sqlalchemy import text
+from tenacity import retry, stop_after_attempt, wait_exponential
 from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
@@ -58,8 +59,12 @@ def _season_type_from_game_id(game_id: str) -> str:
     }.get(prefix, "unknown")
 
 
+# stats.nba.com frequently read-times-out from cloud IPs (the recurring NBA
+# schedule failure in the daily logs). Retry with backoff + a longer timeout so a
+# transient stall doesn't drop the whole NBA slate for the day.
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=20), reraise=True)
 def fetch_nba_games(target_date: date) -> list[dict]:
-    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"))
+    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"), timeout=45)
     data = sb.get_dict()
     raw_games = data.get("scoreboard", {}).get("games", [])
     log.info("fetched_nba_games", date=target_date.isoformat(), count=len(raw_games))
