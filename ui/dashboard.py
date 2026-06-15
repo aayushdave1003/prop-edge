@@ -763,14 +763,25 @@ def load_player_options():
 @st.cache_data(ttl=300)
 def load_player_index():
     """(sport, team, player) for every player with a settled pick — drives the
-    cascading League → Team → Player lookup."""
+    cascading League → Team → Player lookup. Team comes from the player's MOST
+    RECENT game (player_games.team_id), not players.current_team_id, which is a
+    stale roster field (e.g. it had Fox on SAC after his trade to the Spurs)."""
     return pd.read_sql(text("""
-        SELECT DISTINCT g.sport_code AS sport,
-               COALESCE(t.abbreviation, '—') AS team, p.full_name AS player
-        FROM picks pk JOIN players p USING (player_id) JOIN games g USING (game_id)
-        LEFT JOIN teams t ON t.team_id = p.current_team_id
-        WHERE pk.leg_result IN ('win','loss','push')
-        ORDER BY 1, 2, 3
+        SELECT sport, team, player FROM (
+            SELECT g.sport_code AS sport, t.abbreviation AS team, p.full_name AS player,
+                   ROW_NUMBER() OVER (PARTITION BY pk.player_id
+                                      ORDER BY COUNT(*) DESC) AS rn
+            FROM picks pk
+            JOIN players p USING (player_id)
+            JOIN player_games pg
+                 ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
+            JOIN games g ON g.game_id = pk.game_id
+            JOIN teams t ON t.team_id = pg.team_id
+            WHERE pk.leg_result IN ('win','loss','push')
+            GROUP BY pk.player_id, g.sport_code, t.abbreviation, p.full_name
+        ) x
+        WHERE rn = 1
+        ORDER BY sport, team, player
     """), engine)
 
 
