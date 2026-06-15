@@ -11,6 +11,7 @@ from props.utils.logging import log, configure_logging
 from props.picks.predict_today import main as predict_main
 from props.models.registry import MODELS
 from props.models.prob_calibration import calibrate
+from props.models.dir_calibration import calibrate_dir
 from props.models.blend_weights import blend
 from props.utils.config import settings
 from props.maintenance.migrate import run_migrations
@@ -294,9 +295,15 @@ def main():
             # calibration, and display all use it; the raw output is kept in
             # model_prob_raw so the blend weight stays tunable.
             raw_prob     = float(row["model_prob"])
+            # Per-(sport,stat,direction) calibration: the global isotonic is fit on
+            # P(over) and symmetric, so a side-biased stat (e.g. MLB total_bases
+            # UNDER) stays over-stated. Correct the prob on its own side before the
+            # blend. model_prob_raw stays UNCORRECTED so the fit re-trains cleanly.
+            dir_prob     = calibrate_dir(sport_code, row["stat_type"],
+                                         row["direction"], raw_prob)
             _mi = row.get("market_implied") if hasattr(row, "get") else None
             market_prob  = (float(_mi) if _mi is not None and pd.notna(_mi) else None)
-            model_prob     = round(blend(sport_code, raw_prob, market_prob), 4)
+            model_prob     = round(blend(sport_code, dir_prob, market_prob), 4)
             model_prob_raw = round(raw_prob, 4)
             market_prob_v  = round(market_prob, 4) if market_prob is not None else None
             edge_val     = round(float(row["edge"]), 4)

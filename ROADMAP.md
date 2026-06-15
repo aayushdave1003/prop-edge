@@ -27,7 +27,6 @@ what's left to build, by category.
 ## 2. Model / analytics
 - ☐ **P2** **Recency-weighted training** — weight recent games more (sample weights / decay) so models track current form, not a stale season average.
 - ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
-- ☐ **P2** **Per-stat calibration** — the global Platt is one curve; fit calibration per sport×stat where there's data (catches stat-specific over/under-confidence).
 - ☐ **P2** **Automated hyperparameter search** — Optuna sweep inside the gated retrain (`retrain_and_promote`), promote only if the tuned model beats prod.
 - ☐ **P2** **Feature-importance drift monitor** — alert when a top feature's gain collapses or a feature stops populating (a silent signal break).
 - ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
