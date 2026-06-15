@@ -17,7 +17,7 @@ import json
 
 from sqlalchemy import text
 
-from props.utils.db import engine
+from props.utils.db import engine, db_banner
 from props.utils.logging import log, configure_logging
 
 RAILWAY_BILLING_URL = "https://railway.app/account/usage"
@@ -121,6 +121,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+    if not args.json:
+        print(db_banner())
     m = gather()
     if args.json:
         print(json.dumps(m, indent=2, default=str))

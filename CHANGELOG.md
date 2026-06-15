@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Prod DB-target guard** — DONE: `db.db_banner()` prints which DB a command is hitting; the ops tools (usage, data_audit, feature_drift, ingest_monitor) show "🛢️ DB: …(PROD)" or "⚠️ …(LOCAL/non-prod)" up front — exactly the signal that would have caught the localhost-vs-Railway mix-up that faked a 10-day outage.
 - ✅ **P2** **Automated hyperparameter search** — DONE: `props.models.tune` runs an Optuna TPE search (val MAE) over the LGB params; `total_bases_v1`/`hits_v1` use it when `HP_TUNE=1`, turned on by `retrain_and_promote --tune` for the candidate. The A/B gate still decides whether the tuned model beats prod, so a worse tune never ships. Default (untuned) path unchanged.
 - ✅ **P2** **Historical pick browser** — DONE: `?view=history` lists every settled pick with sport / stat / result / date-range filters, a live record summary, and CSV export. Read-only.
 - ✅ **P2** **Feature-importance drift monitor** — DONE: `props.ops.feature_drift` compares each MLB model feature's recent population rate to its baseline and warns when a HIGH-GAIN feature's coverage collapses (silent signal break); reports top drivers per model. In daily.sh + Ops view; Discord-alerts.

@@ -19,7 +19,7 @@ import argparse
 
 from sqlalchemy import text
 
-from props.utils.db import engine
+from props.utils.db import engine, db_banner
 from props.utils.config import settings
 from props.utils.logging import log, configure_logging
 
@@ -165,6 +165,7 @@ def main():
     ap.add_argument("--quiet", action="store_true", help="print only, no Discord alert")
     args = ap.parse_args()
 
+    print(db_banner())
     findings = run_checks()
     for f in findings:
         mark = "⚠️ " if f["level"] == "warn" else "✓ "
