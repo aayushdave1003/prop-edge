@@ -50,6 +50,15 @@ echo "  prop-edge daily ritual: $TODAY"
 echo "  Log: $LOGFILE"
 echo "======================================================"
 
+# ── 0. Canonical team rosters ────────────────────────────────────────────────
+# Seed/refresh each league's FULL team list with correct abbreviations, so the
+# UI shows all teams (MLB 30 / NHL 32) and not just the ones with recent games.
+# The schedule ingest otherwise only creates a team the first time it plays, and
+# mangles MLB abbreviations (name[:3] → LOS/SAN collisions). Cheap + idempotent.
+echo "--- Team rosters (MLB + NHL) ---"
+python -m props.ingest.mlb_teams || echo "WARN: mlb_teams sync failed"
+python -m props.ingest.nhl_teams || echo "WARN: nhl_teams sync failed"
+
 # ── 1. Schedules (yesterday + today + tomorrow for early-morning runs) ──────
 echo "--- MLB schedule ---"
 python -m props.ingest.mlb_schedule "$YESTERDAY"
@@ -260,6 +269,13 @@ python -m props.ops.dashboard_monitor || true
 # blow-up (quota draining, DB ballooning) is visible in the run log.
 echo "--- Usage snapshot ---"
 python -m props.ops.usage || true
+
+# ── 8f. Data-accuracy audit ──────────────────────────────────────────────────
+# Verifies reference data is truthful: full team rosters per league, no colliding
+# abbreviations, no junk/placeholder games leaking into views. Discord-alerts on
+# anomalies so "accurate" is checked continuously, not by eye.
+echo "--- Data audit ---"
+python -m props.ops.data_audit || true
 
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true

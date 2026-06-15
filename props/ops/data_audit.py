@@ -1,0 +1,144 @@
+"""Data-accuracy audit — catches the kind of quietly-wrong reference data that
+makes the UI lie (a league showing 6 teams when it has 30, colliding
+abbreviations, placeholder/junk rows leaking into views).
+
+It checks integrity against what each league SHOULD look like and pings Discord on
+anomalies, so "truthful and accurate" is verified continuously instead of noticed
+by eye. Runs in the daily pipeline and on-demand from the dashboard Ops view.
+
+Checks:
+  - team completeness   — real teams per league vs the known roster size
+  - duplicate abbrevs   — two teams sharing an abbreviation (a collision bug)
+  - junk games          — home==away, or a PrizePicks-placeholder team in a game
+  - placeholder leakage — settled picks pointing at a placeholder team
+  - stale team mapping   — players.current_team_id ≠ their most-recent game's team
+
+Run:  python -m props.ops.data_audit          (alerts on problems)
+      python -m props.ops.data_audit --quiet  (print only, no Discord)
+"""
+from __future__ import annotations
+
+import argparse
+
+from sqlalchemy import text
+
+from props.utils.db import engine
+from props.utils.config import settings
+from props.utils.logging import log, configure_logging
+
+# Known current roster sizes — a league dropping below this means missing teams.
+EXPECTED_TEAMS = {"mlb": 30, "nba": 30, "nhl": 32, "wnba": 13}
+REAL_TEAM = ("COALESCE(external_id,'') <> 'PP_PLACEHOLDER' "
+             "AND COALESCE(name,'') NOT ILIKE '%All-Star%'")
+
+
+def run_checks() -> list[dict]:
+    findings: list[dict] = []
+    with engine.connect() as c:
+        # ── team completeness ────────────────────────────────────────────────
+        counts = {r[0]: int(r[1]) for r in c.execute(text(
+            f"SELECT sport_code, COUNT(*) FROM teams WHERE {REAL_TEAM} GROUP BY 1")).all()}
+        short = []
+        for sport, want in EXPECTED_TEAMS.items():
+            have = counts.get(sport, 0)
+            if have < want:
+                short.append(f"{sport}:{have}/{want}")
+        if short:
+            findings.append({"level": "warn", "name": "teams_incomplete",
+                             "detail": "missing teams — " + ", ".join(short)
+                                       + " (run props.ingest.{mlb,nhl}_teams)"})
+        else:
+            findings.append({"level": "ok", "name": "team_completeness",
+                             "detail": ", ".join(f"{s}:{int(counts.get(s,0))}"
+                                                  for s in EXPECTED_TEAMS)})
+
+        # ── duplicate abbreviations within a league (collision bug) ──────────
+        dups = c.execute(text(f"""
+            SELECT sport_code, abbreviation, COUNT(*) n
+            FROM teams WHERE {REAL_TEAM}
+            GROUP BY 1, 2 HAVING COUNT(*) > 1 ORDER BY 1, 2
+        """)).all()
+        if dups:
+            findings.append({"level": "warn", "name": "duplicate_abbrev",
+                             "detail": "colliding abbreviations — "
+                                       + ", ".join(f"{r[0]}/{r[1]}×{r[2]}" for r in dups)})
+        else:
+            findings.append({"level": "ok", "name": "abbrev_unique",
+                             "detail": "no abbreviation collisions"})
+
+        # ── junk games (home==away, or a placeholder team in the game) ───────
+        junk = c.execute(text("""
+            SELECT COUNT(*) FROM games g
+            WHERE g.game_date >= CURRENT_DATE - 14
+              AND (g.home_team_id = g.away_team_id
+                   OR EXISTS (SELECT 1 FROM teams t WHERE t.team_id IN (g.home_team_id, g.away_team_id)
+                              AND t.external_id = 'PP_PLACEHOLDER'))
+        """)).scalar() or 0
+        if junk:
+            findings.append({"level": "warn", "name": "junk_games",
+                             "detail": f"{junk} junk game(s) in last 14d (placeholder team or home==away)"})
+        else:
+            findings.append({"level": "ok", "name": "games_clean",
+                             "detail": "no junk games recently"})
+
+        # ── placeholder leakage into settled picks ───────────────────────────
+        leak = c.execute(text("""
+            SELECT COUNT(*) FROM picks pk
+            JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
+            JOIN teams t ON t.team_id = pg.team_id
+            WHERE t.external_id = 'PP_PLACEHOLDER' AND pk.leg_result IN ('win','loss','push')
+        """)).scalar() or 0
+        if leak:
+            findings.append({"level": "warn", "name": "placeholder_picks",
+                             "detail": f"{leak} settled pick(s) tied to a placeholder team"})
+
+        # ── stale current_team_id vs most-recent game (informational) ────────
+        stale = c.execute(text("""
+            WITH recent AS (
+                SELECT DISTINCT ON (pg.player_id) pg.player_id, pg.team_id
+                FROM player_games pg JOIN games g USING (game_id)
+                ORDER BY pg.player_id, g.game_date DESC, pg.player_game_id DESC
+            )
+            SELECT COUNT(*) FROM players p JOIN recent r USING (player_id)
+            WHERE p.current_team_id IS DISTINCT FROM r.team_id
+        """)).scalar() or 0
+        findings.append({"level": "ok", "name": "stale_team_mapping",
+                         "detail": f"{stale} players whose roster team ≠ recent-game team "
+                                   "(lookup uses recent-game, so display is unaffected)"})
+    return findings
+
+
+def _alert(findings: list[dict]):
+    warns = [f for f in findings if f["level"] == "warn"]
+    if not warns or not settings.discord_webhook_url:
+        return
+    import requests
+    lines = "\n".join(f"• **{f['name']}** — {f['detail']}" for f in warns)
+    payload = {"embeds": [{
+        "title": "⚠️ prop-edge data audit",
+        "description": f"{len(warns)} data-accuracy issue(s):\n{lines}",
+        "color": 0xE8A317, "footer": {"text": "data_audit"},
+    }]}
+    try:
+        requests.post(settings.discord_webhook_url, json=payload, timeout=10)
+    except Exception as e:
+        log.warning("data_audit_alert_failed", error=str(e)[:120])
+
+
+def main():
+    configure_logging()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--quiet", action="store_true", help="print only, no Discord")
+    args = ap.parse_args()
+    findings = run_checks()
+    for f in findings:
+        print(f"  {'⚠️ ' if f['level'] == 'warn' else '✓ '}{f['name']}: {f['detail']}")
+    warns = [f for f in findings if f["level"] == "warn"]
+    log.info("data_audit", checks=len(findings), warnings=len(warns))
+    if not args.quiet:
+        _alert(findings)
+    return warns
+
+
+if __name__ == "__main__":
+    main()

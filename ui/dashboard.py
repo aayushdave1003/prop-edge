@@ -760,29 +760,55 @@ def load_player_options():
     """), engine)["name"].tolist()
 
 
+@st.cache_data(ttl=600)
+def load_team_index():
+    """Every league's FULL canonical roster (MLB 30, NBA 30, NHL 32, WNBA 15),
+    straight from the teams table — so the lookup shows all teams, not just the
+    handful we happen to have picks for. Excludes the PrizePicks placeholder and
+    the MLB All-Star 'teams'. Kept fresh by props.ingest.{mlb,nhl}_teams."""
+    return pd.read_sql(text("""
+        SELECT sport_code AS sport, abbreviation AS team, name
+        FROM teams
+        WHERE COALESCE(external_id,'') <> 'PP_PLACEHOLDER'
+          AND COALESCE(name,'') NOT ILIKE '%All-Star%'
+          AND COALESCE(abbreviation,'') <> ''
+        ORDER BY sport_code, abbreviation
+    """), engine)
+
+
 @st.cache_data(ttl=300)
 def load_player_index():
-    """(sport, team, player) for every player with a settled pick — drives the
-    cascading League → Team → Player lookup. Team comes from the player's MOST
-    RECENT game (player_games.team_id), not players.current_team_id, which is a
-    stale roster field (e.g. it had Fox on SAC after his trade to the Spurs)."""
+    """(sport, team, player) for every player we have game data for, mapped to
+    their MOST RECENT game's team — drives the Team → Player step of the lookup,
+    independent of whether we've picked them (so a team's full tracked roster
+    shows). Recent-game team avoids the stale players.current_team_id (which had
+    Fox on SAC after his trade to the Spurs). Placeholder team excluded."""
     return pd.read_sql(text("""
         SELECT sport, team, player FROM (
             SELECT g.sport_code AS sport, t.abbreviation AS team, p.full_name AS player,
-                   ROW_NUMBER() OVER (PARTITION BY pk.player_id
-                                      ORDER BY COUNT(*) DESC) AS rn
-            FROM picks pk
+                   ROW_NUMBER() OVER (PARTITION BY pg.player_id
+                                      ORDER BY g.game_date DESC, pg.player_game_id DESC) AS rn
+            FROM player_games pg
             JOIN players p USING (player_id)
-            JOIN player_games pg
-                 ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
-            JOIN games g ON g.game_id = pk.game_id
+            JOIN games g ON g.game_id = pg.game_id
             JOIN teams t ON t.team_id = pg.team_id
-            WHERE pk.leg_result IN ('win','loss','push')
-            GROUP BY pk.player_id, g.sport_code, t.abbreviation, p.full_name
+            WHERE COALESCE(t.external_id,'') <> 'PP_PLACEHOLDER'
         ) x
         WHERE rn = 1
         ORDER BY sport, team, player
     """), engine)
+
+
+@st.cache_data(ttl=300)
+def load_picked_players():
+    """Names with at least one settled pick — the meaningful set to follow on a
+    watchlist (vs every rostered player)."""
+    return pd.read_sql(text("""
+        SELECT DISTINCT p.full_name AS player
+        FROM picks pk JOIN players p USING (player_id)
+        WHERE pk.leg_result IN ('win','loss','push')
+        ORDER BY 1
+    """), engine)["player"].tolist()
 
 
 @st.cache_data(ttl=300)
@@ -873,6 +899,15 @@ def render_ops_view():
                  use_container_width=True, hide_index=True)
     st.caption(f"💳 Railway $ isn't exposed by API — see the "
                f"[Railway usage page]({m['railway_billing_url']}); DB size is the proxy.")
+
+    st.markdown("##### Data accuracy")
+    try:
+        from props.ops.data_audit import run_checks as _audit
+        for f in _audit():
+            st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+                     + f"**{f['name']}** — {f['detail']}")
+    except Exception as e:
+        st.caption(f"data audit unavailable: {e}")
 
     st.markdown("##### Dashboard health")
     if st.button("Run live health check", key="ops_health"):
@@ -1478,24 +1513,29 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 🔎 Player lookup")
-    _idx = load_player_index()
-    # Cascade: pick the League, then the Team, then the Player.
-    _leagues = sorted(_idx["sport"].unique())
+    _tidx = load_team_index()      # full league rosters (all teams)
+    _idx = load_player_index()     # players we have game data for, by recent team
+    # Cascade: pick the League, then the Team (every team in the league), then a
+    # Player we track on that team.
+    _leagues = sorted(_tidx["sport"].unique())
     _lg = st.selectbox("League", ["—"] + [l.upper() for l in _leagues], key="lk_league")
     if _lg != "—":
         _lgc = _lg.lower()
-        _teams = sorted(_idx[_idx["sport"] == _lgc]["team"].unique())
+        _teams = sorted(_tidx[_tidx["sport"] == _lgc]["team"].unique())
         _tm = st.selectbox("Team", ["—"] + _teams, key="lk_team")
         if _tm != "—":
             _players = sorted(_idx[(_idx["sport"] == _lgc)
                                    & (_idx["team"] == _tm)]["player"].unique())
-            _pl = st.selectbox("Player", ["—"] + list(_players), key="lk_player")
-            if _pl != "—" and st.button("View player →", use_container_width=True):
-                st.query_params["player"] = _pl
-                st.rerun()
+            if _players:
+                _pl = st.selectbox("Player", ["—"] + list(_players), key="lk_player")
+                if _pl != "—" and st.button("View player →", use_container_width=True):
+                    st.query_params["player"] = _pl
+                    st.rerun()
+            else:
+                st.caption("No tracked players for this team yet.")
 
     st.markdown("### ⭐ Watchlist")
-    _all_players = sorted(_idx["player"].unique())
+    _all_players = load_picked_players()
     _watch_qp = [w for w in (st.query_params.get("watch", "") or "").split(",") if w]
     _watch = st.multiselect("Follow players", _all_players,
                             default=[w for w in _watch_qp if w in _all_players], key="watch")
