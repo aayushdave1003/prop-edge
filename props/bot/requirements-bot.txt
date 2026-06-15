@@ -1,0 +1,13 @@
+# prop-edge Discord slash-bot — deployed as a SEPARATE Railway service via the
+# root Dockerfile.bot. Deliberately lean: the bot only READS the DB and does
+# Wilson math via stdlib, so it needs none of the heavy ML deps (lightgbm,
+# pandas, numpy, scipy) the main app pulls in.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pynacl>=1.5                 # Ed25519 signature verification of Discord requests
+sqlalchemy>=2.0
+psycopg[binary]>=3.2
+pydantic>=2.7
+pydantic-settings>=2.3
+structlog>=24.1
+requests>=2.32             # register_commands.py

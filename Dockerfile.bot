@@ -1,0 +1,21 @@
+# prop-edge Discord slash-bot — a SEPARATE Railway service off this same repo.
+#
+# In Railway: New Service → deploy from this repo → set Build "Dockerfile Path"
+# to `Dockerfile.bot`, then set the service env (DATABASE_URL, DISCORD_PUBLIC_KEY,
+# and DISCORD_BOT_TOKEN/DISCORD_APP_ID if you'll register commands from the
+# service). Railway injects $PORT. See BOT_DEPLOY.md for the full walkthrough.
+#
+# Lean image — installs only the bot deps (no lightgbm/pandas); copies just the
+# props/ package (config, db, category_cutoffs + its JSON, the bot itself).
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY props/bot/requirements-bot.txt ./requirements-bot.txt
+RUN pip install --no-cache-dir -r requirements-bot.txt
+
+COPY props ./props
+ENV PYTHONPATH=/app
+
+# Read-only service: verifies Discord signatures and answers /picks /record /player.
+CMD ["sh", "-c", "uvicorn props.bot.discord_interactions:app --host 0.0.0.0 --port ${PORT:-8000}"]
