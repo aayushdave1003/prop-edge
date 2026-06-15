@@ -3,6 +3,8 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-14
+- ✅ **P3** **DB backup / restore** — DONE: `db_backup.yml` nightly `pg_dump` (custom-format, version-matched via postgres:16) → 30-day retained artifact, with a size sanity-check + Discord alert on failure; `scripts/restore_db.sh` is the guarded, tested restore path (restore into a scratch DB to verify a snapshot).
+- ✅ **P3** **Type checking in CI** — DONE: scoped `mypy` gate (`props/utils` + `props/ops`, pydantic plugin) wired into `ci.yml` next to the flake8 NameError gate; `[tool.mypy]` grows by adding packages as they're cleaned.
 - ✅ **P2** **Cost / usage dashboard** — DONE: `props.ops.usage` snapshots Odds API credits, scrape volume, pipeline freshness, and DB size/biggest-tables in one view — CLI + an Ops view on the dashboard (`?view=ops`) + logged in the daily run. Railway $ isn't API-metered, so DB size is the proxy + a link out. *(Immediately caught the June 4–14 pick outage.)*
 - ✅ **P3** **Dashboard perf/latency monitoring** — DONE: `props.ops.dashboard_monitor` times `/_stcore/health` AND a real render, pinging Discord when the app is down or render latency blows past the threshold; runs in the daily pipeline and on-demand from the Ops view.
 - ✅ **P2** **Automated weekly retrain pipeline** — DONE: `props.models.retrain_and_promote` retrains each MLB offense model, A/B-gates it vs prod on recent settled games, and promotes only winners (≥0.5% MAE) — then recalibrates; regressions stay prod. `weekly_retrain.yml` runs it Mondays (DST-gated) and commits promoted models so they deploy. Decisions log to `backtest_runs` + Discord.

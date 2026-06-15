@@ -51,8 +51,8 @@ def gather() -> dict:
         last_scrape_h = c.execute(text(
             "SELECT EXTRACT(EPOCH FROM (NOW()-MAX(snapshot_at)))/3600 FROM prop_lines"
         )).scalar()
-        today_pt = c.execute(text(
-            "SELECT (NOW() AT TIME ZONE 'America/Los_Angeles')::date::text")).scalar()
+        today_pt = str(c.execute(text(
+            "SELECT (NOW() AT TIME ZONE 'America/Los_Angeles')::date::text")).scalar() or "")
         out["scrape"] = {
             "by_day": by_day,
             "last_scrape_hours": round(float(last_scrape_h), 1) if last_scrape_h else None,

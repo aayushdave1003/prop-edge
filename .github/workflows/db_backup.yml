@@ -1,0 +1,59 @@
+name: db-backup
+
+# Scheduled prod-DB snapshot. pg_dump (custom format, compressed) of the Railway
+# Postgres, uploaded as a retained workflow artifact — so a bad migration, an
+# accidental DELETE, or a Railway incident is recoverable. Restore path is
+# scripts/restore_db.sh (documented + guarded). Daily at ~3 AM PT; manual dispatch
+# any time.
+#
+# pg_dump runs from the postgres:16 image so the client version matches the server
+# (a stale ubuntu client refuses a newer server). DATABASE_URL is the SQLAlchemy
+# form (postgresql+psycopg://…); we strip the +psycopg driver tag for libpq.
+on:
+  schedule:
+    - cron: "0 10 * * *"   # ~3 AM PT (10:00 UTC; a single daily snapshot, DST-agnostic)
+  workflow_dispatch: {}
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - name: pg_dump → custom-format archive
+        run: |
+          set -euo pipefail
+          URL="${RAILWAY_DATABASE_URL/+psycopg/}"   # postgresql+psycopg:// → postgresql://
+          STAMP="$(date -u +%Y-%m-%d)"
+          OUT="prop-edge-${STAMP}.dump"
+          docker run --rm -e U="$URL" postgres:16 \
+            sh -c 'pg_dump "$U" -Fc --no-owner --no-privileges' > "$OUT"
+          SIZE=$(du -h "$OUT" | cut -f1)
+          echo "wrote $OUT ($SIZE)"
+          # Sanity: a real dump is not trivially small (custom-format header alone is tiny).
+          BYTES=$(stat -c%s "$OUT")
+          if [ "$BYTES" -lt 100000 ]; then
+            echo "::error::dump suspiciously small ($BYTES bytes) — failing"; exit 1
+          fi
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "SIZE=$SIZE" >> "$GITHUB_ENV"
+
+      - name: Upload snapshot artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.OUT }}
+          path: ${{ env.OUT }}
+          retention-days: 30
+
+      - name: Alert on failure
+        if: failure() && env.DISCORD_WEBHOOK_URL != ''
+        run: |
+          curl -s -H "Content-Type: application/json" \
+            -d '{"content":"⚠️ **db-backup failed** — prop-edge nightly pg_dump did not complete. Check the Actions run."}' \
+            "$DISCORD_WEBHOOK_URL" || true
