@@ -9,12 +9,8 @@ For each NBA player-game, attaches the opposing team's prior-10-game averages:
 Lookahead-safe: uses opposing team's prior games only.
 Writes to player_games.derived JSONB (merges with existing keys).
 """
-import json
-from datetime import datetime
 import pandas as pd
-import numpy as np
-from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import engine
 from props.utils.logging import log, configure_logging
 from props.features.derived_writer import write_derived
 

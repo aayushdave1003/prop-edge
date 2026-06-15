@@ -3,7 +3,6 @@
 For each (player, game), looks at prior games only and computes rolling-window
 stats. Strictly no lookahead — at row N, only rows 1..N-1 are used.
 """
-import json
 from datetime import datetime
 import pandas as pd
 import numpy as np

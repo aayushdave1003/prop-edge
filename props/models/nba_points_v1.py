@@ -14,7 +14,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-from sqlalchemy import text
 from scipy import stats as scipy_stats
 
 from props.utils.db import engine

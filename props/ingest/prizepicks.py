@@ -1,5 +1,4 @@
 """Scrape current PrizePicks projections and land them in prop_lines."""
-import json
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone

@@ -5,11 +5,8 @@ At training time, features live in player_games.derived. At inference time
 player's most recent history.
 """
 import pandas as pd
-import numpy as np
-from datetime import date, datetime
 from sqlalchemy import text
 from props.utils.db import engine
-from props.utils.logging import log
 
 
 WINDOWS = [5, 10, 20]

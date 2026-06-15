@@ -9,8 +9,7 @@ For each model in the registry:
 """
 import json
 import pickle
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date
 import requests
 import pandas as pd
 import numpy as np
@@ -21,7 +20,7 @@ from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.features.inference import batter_features, pitcher_quality_features
-from props.models.registry import MODELS, ModelEntry
+from props.models.registry import MODELS
 from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
 from props.picks.predict_game import predict_games, print_game_predictions
 from props.picks.predict_mlb_game import predict_mlb_games, print_mlb_game_predictions

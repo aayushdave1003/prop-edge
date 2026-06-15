@@ -1,7 +1,6 @@
 """Record each model retrain as a backtest_runs row (the Performance tab charts
 the history). For regression models the metric is MAE improvement over the
 season-average baseline — positive = the model beats just-predict-the-average."""
-from datetime import date
 
 from sqlalchemy import text
 

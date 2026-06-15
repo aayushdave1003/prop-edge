@@ -10,7 +10,7 @@ Also handles games that have already started: if the game is live/final
 and the logged pitcher never appeared in the box score, void it.
 """
 import requests
-from datetime import date, timedelta
+from datetime import date
 from sqlalchemy import text
 
 from props.utils.db import engine, session_scope

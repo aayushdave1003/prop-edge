@@ -4,10 +4,9 @@
 Runs daily as part of the morning ritual. Stores latest status per player in
 a player_injuries table.
 """
-from datetime import datetime
 from curl_cffi import requests
 from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 from props.maintenance.migrate import run_migrations
 

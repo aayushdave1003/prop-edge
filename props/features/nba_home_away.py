@@ -7,11 +7,8 @@ For each player-game, computes their last-10 average stats split by venue:
 Lookahead-safe: uses shift(1) before rolling.
 Writes to player_games.derived JSONB (merges).
 """
-import json
 import pandas as pd
-import numpy as np
-from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import engine
 from props.utils.logging import log, configure_logging
 from props.features.derived_writer import write_derived, feat_dict
 
@@ -51,7 +48,6 @@ def compute_splits(df):
             # Home version: only home prior games count
             home_mask = g["is_home"]
             home_vals = g[stat].where(home_mask).shift(1)
-            home_avg = home_vals.expanding().mean().fillna(0)
             # Restrict to last 10 home games
             home_recent = home_vals.rolling(WINDOW * 3, min_periods=1).apply(
                 lambda x: pd.Series(x).dropna().tail(WINDOW).mean() if pd.Series(x).dropna().any() else 0,

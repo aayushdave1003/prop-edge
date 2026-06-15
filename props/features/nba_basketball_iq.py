@@ -13,7 +13,6 @@ Computes features that capture basketball concepts box scores alone miss:
 
 All features use shift(1) lookahead protection — current game never leaks.
 """
-import json
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -270,8 +269,6 @@ def compute_opp_pts_by_position(df: pd.DataFrame) -> pd.DataFrame:
                      .reset_index())
 
     # Roll: for each team, how many pts/reb/ast do they allow to each position
-    opp_allowed_sorted = opp_allowed.sort_values("game_id")
-
     results = []
     for pid, grp in df.groupby("player_id", group_keys=False):
         g = grp.sort_values(["game_date", "player_game_id"]).reset_index(drop=True)

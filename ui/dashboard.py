@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import engine
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
 from props.models.prob_calibration import calibrate
@@ -1281,7 +1281,6 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
 
     # Form dots
     player_id  = int(row["player_id"])
-    stat_type  = row["stat_type"]
     player_form = form_df[form_df["player_id"] == player_id].head(10)
 
     # player_form is most-recent-first; build over/None (push) per game.
@@ -1948,7 +1947,6 @@ with tab_game:
             from props.picks.predict_today import (fetch_nba_schedule,
                                                     resolve_nba_external_to_internal_ids)
             from props.ingest.game_odds import fetch_nba_game_context, map_context_to_game_ids
-            from sqlalchemy import text as sqlt
 
             nba_raw   = fetch_nba_schedule(_today)
             nba_games = resolve_nba_external_to_internal_ids(nba_raw)

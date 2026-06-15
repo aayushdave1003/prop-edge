@@ -18,7 +18,6 @@ import json
 from sqlalchemy import text
 
 from props.utils.db import engine
-from props.utils.config import settings
 from props.utils.logging import log, configure_logging
 
 RAILWAY_BILLING_URL = "https://railway.app/account/usage"

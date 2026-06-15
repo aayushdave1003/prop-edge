@@ -15,7 +15,7 @@ Run:  python -m props.ingest.mlb_weather              (today's games)
 """
 import argparse
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import requests
 from sqlalchemy import text

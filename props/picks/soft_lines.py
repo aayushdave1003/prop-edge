@@ -17,14 +17,14 @@ strongest. Read-only against the model — this is pure market vs PrizePicks.
 Run:  python -m props.picks.soft_lines
 """
 import argparse
-from datetime import date, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
 from scipy.stats import poisson
 from sqlalchemy import text
 
-from props.utils.db import session_scope, engine
+from props.utils.db import session_scope
 from props.utils.config import settings
 from props.utils.logging import log, configure_logging
 from props.ingest.market_odds import build_market_probs

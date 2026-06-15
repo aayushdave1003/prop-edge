@@ -17,7 +17,7 @@ Usage:
 """
 import argparse
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from collections import defaultdict
 
 import pandas as pd

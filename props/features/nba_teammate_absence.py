@@ -13,9 +13,7 @@ Features added to player_games.derived:
 A teammate is "absent" if they averaged >= 15 min in their last 10 games but
 played < 5 min (or not at all) in this specific game.
 """
-import json
 from datetime import datetime
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope

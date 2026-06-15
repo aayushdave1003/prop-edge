@@ -18,7 +18,6 @@ Usage:
 import argparse
 from datetime import date, timedelta
 
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 

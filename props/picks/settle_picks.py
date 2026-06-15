@@ -6,7 +6,7 @@ For each pick where leg_result IS NULL:
   - Compare to line, factor in direction (over/under), classify win/loss/push
   - Update the pick with actual_value, leg_result, settled_at
 """
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 from sqlalchemy import text
 from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging

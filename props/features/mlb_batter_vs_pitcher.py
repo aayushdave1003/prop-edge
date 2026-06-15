@@ -15,10 +15,8 @@ history.
 
 Writes to player_games.derived JSONB (merges).
 """
-import json
 import pandas as pd
-from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import engine
 from props.utils.logging import log, configure_logging
 from props.features.derived_writer import write_derived
 

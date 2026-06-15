@@ -23,14 +23,14 @@ Run:  python -m props.picks.daily_backtest            (window = 45d)
       python -m props.picks.daily_backtest --window 30
 """
 import argparse
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import json
 import requests
 from sqlalchemy import text
 
-from props.utils.db import session_scope, engine
+from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 from props.utils.config import settings
 from props.models.category_cutoffs import load_cutoffs, rec_cutoff, wilson_lower_bound

@@ -241,7 +241,6 @@ def print_game_predictions(predictions: list[dict], team_names: dict):
         # Market comparison
         ms = pred.get("market_spread")
         mt = pred.get("market_total")
-        mhwp = pred.get("market_home_wp")
         me   = pred.get("market_edge")
 
         if ms is not None:
@@ -268,6 +267,6 @@ def print_game_predictions(predictions: list[dict], team_names: dict):
                     strength = "STRONG" if abs(me) >= 0.10 else "LEAN"
                     print(f"\n  ► {strength}: {bet_team} {bet_line}  (model edge {edge_sign}{me:.0%})")
                 else:
-                    print(f"\n  ► PASS — model and market agree, no meaningful edge")
+                    print("\n  ► PASS — model and market agree, no meaningful edge")
         else:
-            print(f"  Market:  lines not yet available")
+            print("  Market:  lines not yet available")

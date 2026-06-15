@@ -16,12 +16,10 @@ These tell the model:
   - High PnR BH = ball handler racks up AST + PTS
   - High spot-up player = off-ball scorer, depends on creation from others
 """
-import json
 import time
 import pandas as pd
-from sqlalchemy import text
 from nba_api.stats.endpoints import synergyplaytypes
-from props.utils.db import engine, session_scope
+from props.utils.db import engine
 from props.utils.logging import log, configure_logging
 from props.features.derived_writer import write_derived
 

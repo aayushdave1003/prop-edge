@@ -6,15 +6,12 @@ player_games.derived. Uses LightGBM with Poisson objective.
 Time-based train/test split: train on games before 2025, test on 2025+.
 """
 import json
-import os
 from datetime import date
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-from sqlalchemy import text
 from scipy import stats as scipy_stats
-import joblib
 
 from props.utils.db import engine
 from props.utils.logging import log, configure_logging
@@ -227,8 +224,8 @@ def main():
     log.info("inner_split", fit=len(fit_df), val=len(val_df))
 
     model = train_model(fit_df, val_df)
-    pred = evaluate(model, test_df)
-    imp = feature_importance(model)
+    evaluate(model, test_df)
+    feature_importance(model)
 
     model.save_model(str(MODEL_PATH))
     meta = {

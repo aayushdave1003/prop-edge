@@ -6,10 +6,8 @@ For each pitcher-game, computes features about the lineup they faced:
 - Team's rolling avg total bases per game
 This is the equivalent of opposing-pitcher features for batters, flipped.
 """
-import json
 from datetime import datetime
 import pandas as pd
-import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
@@ -47,7 +45,6 @@ def compute_team_rolling(team_df: pd.DataFrame) -> pd.DataFrame:
         g = g.sort_values(["game_date", "game_id"]).reset_index(drop=True)
         prior_k = g["team_k"].shift(1)
         prior_pa = g["team_pa"].shift(1)
-        prior_hits = g["team_hits"].shift(1)
         prior_tb = g["team_tb"].shift(1)
         prior_runs = g["team_runs"].shift(1)
         prior_walks = g["team_walks"].shift(1)
@@ -56,7 +53,6 @@ def compute_team_rolling(team_df: pd.DataFrame) -> pd.DataFrame:
         for w in [10, 20]:
             sum_k = prior_k.rolling(w, min_periods=1).sum()
             sum_pa = prior_pa.rolling(w, min_periods=1).sum()
-            sum_hits = prior_hits.rolling(w, min_periods=1).sum()
             sum_tb = prior_tb.rolling(w, min_periods=1).sum()
             sum_runs = prior_runs.rolling(w, min_periods=1).sum()
             sum_walks = prior_walks.rolling(w, min_periods=1).sum()

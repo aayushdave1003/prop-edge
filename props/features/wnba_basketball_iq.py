@@ -4,9 +4,7 @@ Usage rate, floor spacing, foul drawing, paint scoring, AST/PTS ratio,
 opponent spacing, teammate spacing, game script, career vs opponent,
 opponent pts by position. All computed from WNBA box scores.
 """
-import json
 from datetime import datetime
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from props.utils.db import engine, session_scope

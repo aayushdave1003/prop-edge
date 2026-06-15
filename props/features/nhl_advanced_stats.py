@@ -14,7 +14,6 @@ Goalie features:
   gaa_rolling      — goals against average
   saves_per_start  — workload measure
 """
-import json
 from datetime import datetime
 import numpy as np
 import pandas as pd

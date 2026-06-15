@@ -25,7 +25,6 @@ Platoon advantage:
                       -1 if same hand (pitcher advantage), 0 if unknown
   (requires handedness backfill — gracefully handled)
 """
-import json
 from datetime import datetime
 import numpy as np
 import pandas as pd

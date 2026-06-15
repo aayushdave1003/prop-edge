@@ -3,10 +3,8 @@
 Skaters: goals, assists, points, shots, hits, blocked_shots
 Goalies: saves, goals_against, save_pct (identified by position='G')
 """
-import json
 from datetime import datetime
 import pandas as pd
-import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging

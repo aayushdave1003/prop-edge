@@ -6,7 +6,7 @@ Run daily as part of the ritual.
 from datetime import date, datetime
 from nba_api.stats.endpoints import scoreboardv3
 from sqlalchemy import text
-from props.utils.db import engine, session_scope
+from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
 

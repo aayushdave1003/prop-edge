@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from sklearn.metrics import roc_auc_score, log_loss
-from sqlalchemy import text
 
 from props.utils.db import engine
 from props.utils.logging import log, configure_logging

@@ -25,7 +25,6 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from props.utils.logging import log
 
 _JSON_PATH = Path(__file__).with_name("blend_weights.json")
 MIN_N_BLEND = 40          # per sport: below this, stay pure-model (w=1.0)

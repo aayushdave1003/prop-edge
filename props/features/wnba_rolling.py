@@ -2,10 +2,8 @@
 
 Identical logic to nba_rolling — just filters on sport_code='wnba'.
 """
-import json
 from datetime import datetime
 import pandas as pd
-import numpy as np
 from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging

@@ -2,8 +2,6 @@
 import json
 import time
 import requests
-from datetime import date
-import numpy as np
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -21,8 +19,7 @@ from props.maintenance.migrate import run_migrations
 # All pick-suppression policy lives in props.picks.suppression (one documented
 # place). Imported here; `_is_out_status` kept as a back-compat alias.
 from props.picks.suppression import (
-    MIN_EDGE_TO_LOG, MAX_CONFIDENCE, MIN_MINUTES_HARD, MIN_MINUTES_HIGHVAR,
-    MIN_LINE_BY_STAT, MAX_LINE_BY_STAT, is_out_status, is_stale_game,
+    MIN_EDGE_TO_LOG, MAX_CONFIDENCE, is_out_status, is_stale_game,
     line_in_range,
 )
 from props.picks.availability import should_suppress, teammate_bump_from_injury

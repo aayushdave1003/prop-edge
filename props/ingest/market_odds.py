@@ -8,7 +8,7 @@ sharply-priced prop markets).
 Requires ODDS_API_KEY in .env. Falls back to an empty dict (gracefully disabling
 market comparison) when the key is absent or the API is unavailable.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 import requests
 from props.utils.config import settings
 from props.utils.logging import log

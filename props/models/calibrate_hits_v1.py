@@ -14,7 +14,6 @@ import pandas as pd
 import lightgbm as lgb
 from sklearn.isotonic import IsotonicRegression
 from scipy import stats as scipy_stats
-from sqlalchemy import text
 
 from props.utils.db import engine
 from props.utils.logging import log, configure_logging
