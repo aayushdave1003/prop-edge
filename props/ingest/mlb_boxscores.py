@@ -104,6 +104,12 @@ def process_side(session, boxscore, side, game_id, team_id, opponent_id, is_home
         stats = pdata.get("stats", {})
         batting = extract_batting_stats(stats)
         pitching = extract_pitching_stats(stats)
+        # Batting-order spot 1..9 (0 = didn't bat). MLB gives battingOrder as a
+        # string "100".."900" (substitutes get "101","201",…) — the hundreds digit
+        # is the lineup slot. Drives plate appearances → hits/TB/RBI.
+        bo_raw = pdata.get("battingOrder")
+        batting["bat_order_spot"] = (
+            int(bo_raw) // 100 if bo_raw and str(bo_raw).isdigit() else 0)
         if batting["plate_appearances"] == 0 and pitching["batters_faced"] == 0:
             continue
         player_id = upsert_player(session, external_id, full_name, position, team_id)

@@ -16,7 +16,7 @@ from props.features.derived_writer import write_derived
 # zeros for batter stats and vice versa, which is fine.
 BATTING_STATS = [
     "hits", "total_bases", "rbis", "runs", "home_runs",
-    "strikeouts", "walks", "at_bats",
+    "strikeouts", "walks", "at_bats", "bat_order_spot",
 ]
 PITCHING_STATS = [
     "strikeouts_pitcher", "outs_recorded", "earned_runs",

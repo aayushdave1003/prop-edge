@@ -12,7 +12,7 @@ from props.utils.db import engine
 WINDOWS = [5, 10, 20]
 BATTING_STATS = [
     "hits", "total_bases", "rbis", "runs", "home_runs",
-    "strikeouts", "walks", "at_bats",
+    "strikeouts", "walks", "at_bats", "bat_order_spot",
 ]
 PITCHING_STATS = [
     "strikeouts_pitcher", "outs_recorded", "earned_runs",
