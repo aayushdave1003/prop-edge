@@ -105,6 +105,28 @@ def run_checks() -> list[dict]:
         findings.append({"level": "ok", "name": "team_mapping",
                          "detail": f"{stale} players whose current_team_id ≠ recent-game team "
                                    "(expected for recent trades; roster sync keeps current_team_id authoritative)"})
+
+        # ── player identity: basketball box scores resolve players by FUZZY NAME,
+        # which mis-attributes games to the wrong player (e.g. Jared McCain picked
+        # up 45 phantom OKC games he never played). Surface candidates — a real
+        # un-merge needs re-keying by authoritative ESPN athlete ids and touches
+        # FK-referenced picks, so this is informational (no daily alert) until that
+        # migration lands, rather than auto-merging blind.
+        mismap = c.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT pg.player_id FROM player_games pg JOIN games g USING (game_id)
+                WHERE g.sport_code IN ('nba', 'wnba')
+                GROUP BY pg.player_id HAVING COUNT(DISTINCT pg.team_id) > 2
+            ) x
+        """)).scalar() or 0
+        combo = c.execute(text("""
+            SELECT COUNT(*) FROM players
+            WHERE sport_code IN ('nba', 'wnba') AND full_name LIKE '%% + %%'
+        """)).scalar() or 0
+        findings.append({"level": "ok", "name": "player_identity",
+                         "detail": f"{mismap} NBA/WNBA players span >2 teams (fuzzy-match "
+                                   f"mis-attribution candidates), {combo} combo-name junk rows "
+                                   "— needs authoritative-ID re-keying (see roadmap)"})
     return findings
 
 
