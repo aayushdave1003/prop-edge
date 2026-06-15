@@ -761,6 +761,20 @@ def load_player_options():
 
 
 @st.cache_data(ttl=300)
+def load_player_index():
+    """(sport, team, player) for every player with a settled pick — drives the
+    cascading League → Team → Player lookup."""
+    return pd.read_sql(text("""
+        SELECT DISTINCT g.sport_code AS sport,
+               COALESCE(t.abbreviation, '—') AS team, p.full_name AS player
+        FROM picks pk JOIN players p USING (player_id) JOIN games g USING (game_id)
+        LEFT JOIN teams t ON t.team_id = p.current_team_id
+        WHERE pk.leg_result IN ('win','loss','push')
+        ORDER BY 1, 2, 3
+    """), engine)
+
+
+@st.cache_data(ttl=300)
 def load_player_detail(name: str):
     """All settled picks for one player — for the player detail page."""
     return pd.read_sql(text("""
@@ -776,8 +790,17 @@ def load_player_detail(name: str):
     """), engine, params={"nm": name})
 
 
+def _home_button(key: str):
+    """Back to the main dashboard — clears the drill-down query params."""
+    if st.button("🏠 Home", key=key):
+        for k in ("player", "view"):
+            st.query_params.pop(k, None)
+        st.rerun()
+
+
 def render_player_view(name: str):
     """Read-only drill-down on one player (reached via ?player=…)."""
+    _home_button("home_player")
     st.markdown(f"### 🔎 {name} — pick history")
     df = load_player_detail(name)
     if df.empty:
@@ -829,6 +852,7 @@ def load_results_summary():
 
 def render_results_view():
     """Clean, shareable read-only record (reached via ?view=results)."""
+    _home_button("home_results")
     s = load_results_summary()
     st.markdown(
         '<h1 style="font-size:2.2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0">'
@@ -1393,24 +1417,37 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 🔎 Player lookup")
-    _players = load_player_options()
-    _psel = st.selectbox("Drill into a player", ["—"] + _players, key="player_lookup")
-    if _psel != "—" and st.button("View player →", use_container_width=True):
-        st.query_params["player"] = _psel
-        st.rerun()
+    _idx = load_player_index()
+    # Cascade: pick the League, then the Team, then the Player.
+    _leagues = sorted(_idx["sport"].unique())
+    _lg = st.selectbox("League", ["—"] + [l.upper() for l in _leagues], key="lk_league")
+    if _lg != "—":
+        _lgc = _lg.lower()
+        _teams = sorted(_idx[_idx["sport"] == _lgc]["team"].unique())
+        _tm = st.selectbox("Team", ["—"] + _teams, key="lk_team")
+        if _tm != "—":
+            _players = sorted(_idx[(_idx["sport"] == _lgc)
+                                   & (_idx["team"] == _tm)]["player"].unique())
+            _pl = st.selectbox("Player", ["—"] + list(_players), key="lk_player")
+            if _pl != "—" and st.button("View player →", use_container_width=True):
+                st.query_params["player"] = _pl
+                st.rerun()
 
     st.markdown("### ⭐ Watchlist")
+    _all_players = sorted(_idx["player"].unique())
     _watch_qp = [w for w in (st.query_params.get("watch", "") or "").split(",") if w]
-    _watch = st.multiselect("Follow players", _players,
-                            default=[w for w in _watch_qp if w in _players], key="watch")
+    _watch = st.multiselect("Follow players", _all_players,
+                            default=[w for w in _watch_qp if w in _all_players], key="watch")
     if _watch:
         st.query_params["watch"] = ",".join(_watch)
     else:
         st.query_params.pop("watch", None)
 
     st.markdown("---")
-    st.caption("📣 Share your record — read-only results page:")
-    st.code("?view=results", language=None)
+    # A real (clickable, relative) link to the shareable results page — appends
+    # ?view=results to the current URL.
+    st.markdown("📣 **[Open your shareable results page →](?view=results)**")
+    st.caption("Read-only record you can share — link copies the current URL + `?view=results`.")
 
 # Light palette: override the design tokens (cards/components use the variables).
 if _light:
