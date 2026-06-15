@@ -282,6 +282,12 @@ python -m props.ops.usage || true
 echo "--- Data audit ---"
 python -m props.ops.data_audit || true
 
+# ── 8g. Feature-drift monitor ─────────────────────────────────────────────────
+# Flags a model feature whose upstream populating broke (high-gain feature gone
+# sparse) — the silent-signal-break failure mode.
+echo "--- Feature drift ---"
+python -m props.ops.feature_drift || true
+
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
 

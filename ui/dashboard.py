@@ -919,6 +919,15 @@ def render_ops_view():
     except Exception as e:
         st.caption(f"data audit unavailable: {e}")
 
+    st.markdown("##### Feature drift")
+    try:
+        from props.ops.feature_drift import run_checks as _drift
+        for f in _drift():
+            st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+                     + f"**{f['name']}** — {f['detail']}")
+    except Exception as e:
+        st.caption(f"feature drift unavailable: {e}")
+
     st.markdown("##### Dashboard health")
     if st.button("Run live health check", key="ops_health"):
         try:
