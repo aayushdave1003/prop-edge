@@ -255,38 +255,19 @@ if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && { [ "${PICKS_TODAY:-0}" -le 0 ] || [ "$F
          -d "{\"content\": \"$MSG\"}" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 || true
 fi
 
-# ── 8c. Ingest health monitor ────────────────────────────────────────────────
-# Checks the upstream ingest tables (lines fresh + slate not thin, recent final
-# games have box scores, injuries not cold) and pings Discord on anomalies —
-# catches a silently broken scrape/ingest before it zeroes out future picks.
-echo "--- Ingest monitor ---"
-python -m props.maintenance.ingest_monitor || true
-
-# ── 8d. Dashboard perf / uptime monitor ──────────────────────────────────────
-# A synthetic check beyond /_stcore/health: times the health endpoint AND a real
-# render, pinging Discord if the app is down or render latency blows past the
-# threshold (a wedged container can stay "healthy" but unusable).
-echo "--- Dashboard monitor ---"
-python -m props.ops.dashboard_monitor || true
-
-# ── 8e. Cost / usage snapshot ────────────────────────────────────────────────
+# ── 8c. Cost / usage snapshot ────────────────────────────────────────────────
 # Odds API credits, scrape volume, pipeline freshness, DB growth — logged so a
 # blow-up (quota draining, DB ballooning) is visible in the run log.
 echo "--- Usage snapshot ---"
 python -m props.ops.usage || true
 
-# ── 8f. Data-accuracy audit ──────────────────────────────────────────────────
-# Verifies reference data is truthful: full team rosters per league, no colliding
-# abbreviations, no junk/placeholder games leaking into views. Discord-alerts on
-# anomalies so "accurate" is checked continuously, not by eye.
-echo "--- Data audit ---"
-python -m props.ops.data_audit || true
-
-# ── 8g. Feature-drift monitor ─────────────────────────────────────────────────
-# Flags a model feature whose upstream populating broke (high-gain feature gone
-# sparse) — the silent-signal-break failure mode.
-echo "--- Feature drift ---"
-python -m props.ops.feature_drift || true
+# ── 8d. Consolidated health digest ───────────────────────────────────────────
+# Runs ALL the monitors (ingest health, data-accuracy audit, feature drift,
+# dashboard perf/uptime) and sends ONE grouped Discord digest instead of four
+# separate pings — the alert-fatigue lesson (the outage alerts fired but went
+# unseen amid the noise). Each monitor stays runnable standalone on demand.
+echo "--- Daily digest (ingest + data + features + dashboard) ---"
+python -m props.ops.digest || true
 
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true

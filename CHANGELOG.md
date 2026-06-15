@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Alert consolidation / daily digest** — DONE: `props.ops.digest` runs every monitor (ingest, data audit, feature drift, dashboard) and sends ONE grouped Discord digest instead of four separate pings; daily.sh uses it for the alert (monitors stay runnable standalone). Directly fights the alert-fatigue that let the outage alerts go unseen.
 - ✅ **P3** **Expand the static gates** — DONE: `ruff` (pyflakes `F`) added to CI alongside flake8 + mypy — catches unused imports/names tree-wide; only `calibrate_nba` dead-locals are per-file-ignored until cleaned. The mypy `files` list still grows incrementally as packages are typed.
 - ✅ **P3** **Prod DB-target guard** — DONE: `db.db_banner()` prints which DB a command is hitting; the ops tools (usage, data_audit, feature_drift, ingest_monitor) show "🛢️ DB: …(PROD)" or "⚠️ …(LOCAL/non-prod)" up front — exactly the signal that would have caught the localhost-vs-Railway mix-up that faked a 10-day outage.
 - ✅ **P2** **Automated hyperparameter search** — DONE: `props.models.tune` runs an Optuna TPE search (val MAE) over the LGB params; `total_bases_v1`/`hits_v1` use it when `HP_TUNE=1`, turned on by `retrain_and_promote --tune` for the candidate. The A/B gate still decides whether the tuned model beats prod, so a worse tune never ships. Default (untuned) path unchanged.

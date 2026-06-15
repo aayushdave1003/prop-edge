@@ -45,7 +45,6 @@ what's left to build, by category.
 
 ## 4. Ops / automation & data integrity
 - ◧ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-attributes games (Jared McCain picked up **45 phantom OKC games** he never played). ✅ Audit shipped: `data_audit` flags NBA/WNBA players spanning >2 teams (**23 candidates**) + **234 combo-name junk rows**. REMAINING (deferred — risky): re-key NBA/WNBA players by authoritative ESPN athlete ids + un-merge the mis-attributed games. Touches FK-referenced picks across thousands of rows, so it needs a reviewed migration, not a blind auto-merge.
-- ☐ **P3** **Alert consolidation / daily digest** — fold ingest + data-audit + health + dashboard alerts into one digest to fight alert fatigue (the silent-outage lesson: alerts fired but went unseen).
 - ☐ **P3** **Deploy the Discord slash-bot** — the signature-verified `/picks` `/record` `/player` service is built (`props/bot/`) but dormant; deploy it as its own Railway service.
 - ☐ **P3** **Residential proxy for PrizePicks** — provision `PRIZEPICKS_PROXY` so the scrape runs fully on GitHub Actions and retire the Mac-cron dependency (it goes stale when the laptop sleeps).
 - ☐ **P3** **Data retention / archival** — the prod DB is ~1.8 GB and growing (player_games dominates); an archival policy for old snapshot tables.
