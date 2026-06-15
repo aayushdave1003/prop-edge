@@ -38,13 +38,11 @@ what's left to build, by category.
 ## 3. Product / UX
 - ☐ **P3** **Parlay / bet-slip builder** — assemble today's legs with correlation-aware EV + a copyable slip.
 - ☐ **P3** **Mobile layout polish** — cards reflow, sticky filters, tap targets (the dashboard is phone-first in practice).
-- ☐ **P3** **Per-sport landing tabs** — deep-linkable sport views (`?sport=mlb`) instead of one long scroll.
 
 ## 4. Ops / automation & data integrity
 - ◧ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-attributes games (Jared McCain picked up **45 phantom OKC games** he never played). ✅ Audit shipped: `data_audit` flags NBA/WNBA players spanning >2 teams (**23 candidates**) + **234 combo-name junk rows**. REMAINING (deferred — risky): re-key NBA/WNBA players by authoritative ESPN athlete ids + un-merge the mis-attributed games. Touches FK-referenced picks across thousands of rows, so it needs a reviewed migration, not a blind auto-merge.
 - ☐ **P3** **Deploy the Discord slash-bot** — the signature-verified `/picks` `/record` `/player` service is built (`props/bot/`) but dormant; deploy it as its own Railway service.
 - ☐ **P3** **Residential proxy for PrizePicks** — provision `PRIZEPICKS_PROXY` so the scrape runs fully on GitHub Actions and retire the Mac-cron dependency (it goes stale when the laptop sleeps).
-- ☐ **P3** **Data retention / archival** — the prod DB is ~1.8 GB and growing (player_games dominates); an archival policy for old snapshot tables.
 
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)
 - ☐ **P1** Deepen **NHL** (~23 games) and **WNBA** (~116) history so prop models get signal and winner models become trainable.

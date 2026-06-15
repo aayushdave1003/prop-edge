@@ -3,6 +3,8 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P3** **Per-sport landing tabs** — DONE (already shipped): the Today's Picks tab has a sport filter persisted to the URL (`?sport=mlb`), so a sport view is deep-linkable + shareable; refresh resets it so newly-landed sports aren't hidden.
+- ✅ **P3** **Data retention / archival** — DONE: `prune.py` (daily) bounds the growing snapshot tables — market_odds + prop_lines (pick-referenced rows kept), now also player_injuries + ingestion_runs, all past a 45-day window. player_games (the 1.5 GB bulk) is core training data, intentionally not pruned.
 - ✅ **P3** **Prediction-interval coverage check** — DONE: `props.ops.interval_coverage` measures empirical coverage of the Poisson 25-75%/10-90% intervals on settled predictions, per stat; in the daily digest, Discord-alerts on miscalibration. Prod: 56%/79% overall (good); surfaced that **points + total_bases intervals run too narrow (32%, overconfident)**, assists/hits too wide.
 - ✅ **P3** **Player comparison view** — DONE: `?view=compare` puts two players side by side (record + by stat×direction), picked from the settled-player list. Read-only.
 - ✅ **P3** **Bankroll / ROI tracker** — DONE: on the track-record page (`?view=results`), cumulative paper P&L curve + net units + ROI for the recommended tier (each leg as a flat 1u bet at 2-pick-equivalent odds, 57.7% breakeven). Prod: +39.6u, +16.4% ROI over 241 bets.

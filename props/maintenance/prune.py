@@ -31,6 +31,16 @@ def prune(days: int = DEFAULT_RETENTION_DAYS, dry_run: bool = False) -> dict:
             f"DELETE FROM prop_lines WHERE snapshot_at < {cutoff} "
             "AND line_id NOT IN (SELECT line_id FROM picks WHERE line_id IS NOT NULL)",
         ),
+        # Injury snapshots + ingest-run logs grow unbounded and nothing references
+        # an old row — settle/display only use recent injuries.
+        "player_injuries": (
+            f"SELECT COUNT(*) FROM player_injuries WHERE fetched_at < {cutoff}",
+            f"DELETE FROM player_injuries WHERE fetched_at < {cutoff}",
+        ),
+        "ingestion_runs": (
+            f"SELECT COUNT(*) FROM ingestion_runs WHERE started_at < {cutoff}",
+            f"DELETE FROM ingestion_runs WHERE started_at < {cutoff}",
+        ),
     }
     result = {}
     with session_scope() as s:
