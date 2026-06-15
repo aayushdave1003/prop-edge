@@ -31,14 +31,6 @@ what's left to build, by category.
 - ☐ **P3** **Playoff vs regular-season model split** — different distributions; a playoff-aware model (or feature) instead of suppressing playoff stats.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
-## 3. Product / UX
-- ☐ **P2** **Player detail page** — drill into one player: prop history, hit rates by line, form trends, matchup splits.
-- ☐ **P3** **Line-movement / steam alerts** — Discord/email ping when a sharp line moves toward (or away from) a logged pick.
-- ☐ **P3** **Discord slash-command bot** — query today's slate / a player / the record on demand (`/picks`, `/player`).
-- ☐ **P3** **Player watchlist** — follow specific players; surface their props + alerts.
-- ☐ **P3** **Stat-bucket leaderboard** — best/worst sport×stat×direction buckets over time (which edges are live, which faded).
-- ☐ **P3** **Installable PWA / mobile polish** — add-to-home-screen, denser mobile layout, faster first paint.
-
 ## 4. Ops / automation
 - ☐ **P2** **Automated weekly retrain pipeline** — a GHA job that retrains the models, runs `ab_compare` as a gate, and auto-promotes only if MAE improves (else keeps prod). Closes the retrain loop.
 - ☐ **P2** **Offline feature-eval harness** — score a candidate feature's signal on settled data before wiring it in (the weather/lineup pattern, generalized).

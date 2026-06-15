@@ -1,0 +1,6 @@
+# Extra deps for the optional Discord slash-command bot (props/bot/).
+# Deploy as a separate Railway service: pip install -r requirements.txt -r requirements-bot.txt
+# then  uvicorn props.bot.discord_interactions:app --host 0.0.0.0 --port $PORT
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pynacl>=1.5

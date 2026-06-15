@@ -3,6 +3,12 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-14
+- ✅ **P2** **Player detail page** — DONE: `?player=<name>` (or the sidebar lookup) renders a player's full record (overall W/L, by stat×direction, recent picks); shareable + stops.
+- ✅ **P3** **Line-movement / steam alerts** — DONE: `capture_sharp_close` Discord-pings picks where the sharp prob moved ≥8pp toward (confirmation) or against (caution) our side since pick time, each intraday refresh.
+- ✅ **P3** **Discord slash-command bot** — DONE: `props/bot/discord_interactions.py` (FastAPI, signature-verified) serves `/picks` `/record` `/player` from the DB; `register_commands.py` + `requirements-bot.txt` + deploy notes — runs as a separate Railway service (read-only).
+- ✅ **P3** **Player watchlist** — DONE: a sidebar multiselect (persisted in `?watch=`) follows players; their picks surface in a pinned "Watchlist" panel on Today's Picks.
+- ✅ **P3** **Stat-bucket leaderboard** — DONE: the Performance tab shows the hottest + coldest sport×stat×direction buckets (min 8 settled) — which edges are live, which faded.
+- ✅ **P3** **PWA-lite / mobile polish** — DONE: home-screen meta injected into the parent `<head>` (add-to-home-screen capable) on top of the responsive card grid. (Full offline PWA would need a served manifest + service worker.)
 - ✅ **P2** **Per-direction cutoffs** — DONE: `category_cutoffs` tunes a third level `sport|stat|direction` above `sport|stat` (a stat can perform very differently over vs under). `rec_cutoff` checks dir → stat → sport → default; all callers pass direction. On prod: MLB hits UNDER gets its own 0.55 cutoff (84%, n=94, captures all) while total_bases-under / nba-points-over suppress per-direction; falls back to the stat level where a direction lacks the sample.
 - ✅ **P3** **Same-game correlated parlays** — DONE: a "🔗 Correlated stacks" section pairs a pitcher's strikeouts OVER with an opposing-team batter UNDER in the same game (positively correlated — a dominant pitcher suppresses the opposing offense, so the legs hit/miss together), ranked by correlation-bumped joint probability.
 - ✅ **P3** **Prediction intervals** — DONE: each card shows a confidence band, not just a point prob — the model's `predicted_mean` (Poisson rate) → a 25–75% "likely" range (e.g. "Projection 6.2 · likely 4–8").

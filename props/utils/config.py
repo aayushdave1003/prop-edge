@@ -19,5 +19,10 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     email_to: str = ""          # recipient; defaults to smtp_user when empty
+    # Discord slash-command bot (optional, separate service — props/bot/). From
+    # the Discord developer portal: app Public Key, Bot Token, Application ID.
+    discord_public_key: str = ""
+    discord_bot_token: str = ""
+    discord_app_id: str = ""
 
 settings = Settings()

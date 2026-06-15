@@ -326,6 +326,14 @@ def test_compute_suppresses_confidently_losing_stat():
     assert cc.rec_cutoff("nba", "points", table=table) == cc.SUPPRESS_CUTOFF
 
 
+# ── Discord bot dispatch ──────────────────────────────────────────────────────
+def test_discord_bot_dispatch():
+    from props.bot.discord_interactions import _handle, _msg
+    m = _msg("hi")
+    assert m["type"] == 4 and m["data"]["content"] == "hi"
+    assert _handle({"name": "nope"}) == "Unknown command."   # no DB hit
+
+
 # ── MLB weather (wind-out component) ──────────────────────────────────────────
 from props.ingest.mlb_weather import wind_out_mph
 
