@@ -15,23 +15,53 @@ what's left to build, by category.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds flow now; high implied team total = more offense. Feed it into the MLB/NBA models.
 - ☐ **P2** **Statcast batted-ball quality** — exit velocity / barrel% / xwOBA capture true hitter form better than raw results (luck-adjusted).
 - ☐ **P3** **Pitcher velocity & pitch-mix trends** — declining velo flags fatigue/injury before results do; arsenal shifts move strikeout rates.
+- ☐ **P3** **Times-through-order penalty** — a pitcher's 3rd time through the lineup spikes hits/runs allowed; a strong K/ER signal.
 - ☐ **P3** **Bullpen rest / availability** — a gassed pen changes late-game run environment (totals, RBI).
+- ☐ **P3** **Team defense (OAA / DRS)** — a strong defense suppresses BABIP → fewer hits allowed than the arm alone implies.
 - ☐ **P3** **NBA referee tendencies** — crews differ on foul rates → pace + FT-dependent props (points).
+- ☐ **P3** **NBA usage redistribution when a star sits** — extend teammate-absence beyond minutes to who absorbs the shots/assists.
 - ☐ **P3** **Travel / rest / time-zone fatigue** — extend the NBA back-to-back signal across sports (road trips, altitude, get-away games).
+- ☐ **P3** **Late scratches / beat-writer news** — catch lineup changes the injury feed misses (cross-check vs confirmed lineups).
 - ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
 ## 2. Model / analytics
 - ☐ **P2** **Recency-weighted training** — weight recent games more (sample weights / decay) so models track current form, not a stale season average.
 - ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
 - ☐ **P2** **Per-stat calibration** — the global Platt is one curve; fit calibration per sport×stat where there's data (catches stat-specific over/under-confidence).
+- ☐ **P2** **Automated hyperparameter search** — Optuna sweep inside the gated retrain (`retrain_and_promote`), promote only if the tuned model beats prod.
+- ☐ **P2** **Feature-importance drift monitor** — alert when a top feature's gain collapses or a feature stops populating (a silent signal break).
 - ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
+- ☐ **P3** **Prediction-interval coverage check** — verify the displayed 25–75% intervals actually contain ~50% of outcomes; recalibrate if not.
+- ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
+- ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
 - ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
 - ☐ **P3** **Slate-level Kelly / portfolio sizing** — size the whole slate jointly (correlation-aware) instead of per-leg, to optimize bankroll growth vs variance.
 - ☐ **P3** **Playoff vs regular-season model split** — different distributions; a playoff-aware model (or feature) instead of suppressing playoff stats.
 - ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
+## 3. Product / UX
+- ☐ **P2** **"Why this pick" explainer** — per-pick feature contributions (SHAP-lite) so each pick is interpretable, not a black box.
+- ☐ **P2** **Historical pick browser** — filter settled picks by sport / stat / date / result, with CSV export.
+- ☐ **P3** **Player comparison view** — two players side by side (form, splits, pick record).
+- ☐ **P3** **Parlay / bet-slip builder** — assemble today's legs with correlation-aware EV + a copyable slip.
+- ☐ **P3** **Bankroll / ROI tracker** — paper-stake sizing + cumulative ROI curve over time.
+- ☐ **P3** **Mobile layout polish** — cards reflow, sticky filters, tap targets (the dashboard is phone-first in practice).
+- ☐ **P3** **Per-sport landing tabs** — deep-linkable sport views (`?sport=mlb`) instead of one long scroll.
+
+## 4. Ops / automation & data integrity
+- ☐ **P2** **PrizePicks → schedule matching** — unmatched props create `pp_*` placeholder games (home==away, 0 player_games) instead of linking to the real game, so those props are silently **dropped** (no picks) and pollute `games` (~225 MLB today, flagged by `data_audit`). Fix the matching (date/team/name) to recover usable props.
+- ☐ **P2** **Roster sync** — `players.current_team_id` is stale for ~787 players (the audit flags it); add a daily per-league roster ingest (extend the `mlb_teams`/`nhl_teams` pattern) so team data is correct even before a player's next game.
+- ☐ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-maps players (e.g. McCain→OKC); build a canonical external-id map + dedupe + an audit check.
+- ☐ **P2** **Unsettleable-pick sweeper** — detect + void picks tied to placeholder / never-final games (one is stuck now) so they don't sit open forever.
+- ☐ **P3** **Alert consolidation / daily digest** — fold ingest + data-audit + health + dashboard alerts into one digest to fight alert fatigue (the silent-outage lesson: alerts fired but went unseen).
+- ☐ **P3** **Prod DB-target guard** — warn when a "prod" command runs against a non-prod `DATABASE_URL` (the localhost-vs-Railway mix-up that faked a 10-day outage).
+- ☐ **P3** **Deploy the Discord slash-bot** — the signature-verified `/picks` `/record` `/player` service is built (`props/bot/`) but dormant; deploy it as its own Railway service.
+- ☐ **P3** **Residential proxy for PrizePicks** — provision `PRIZEPICKS_PROXY` so the scrape runs fully on GitHub Actions and retire the Mac-cron dependency (it goes stale when the laptop sleeps).
+- ☐ **P3** **Expand the static gates** — grow the scoped `mypy` `files` list + add `ruff` to CI as the codebase is cleaned.
+- ☐ **P3** **Data retention / archival** — the prod DB is ~1.8 GB and growing (player_games dominates); an archival policy for old snapshot tables.
+
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)
-- ☐ **P1** Backfill depth for **NHL** (~11 games) and **WNBA** (~43) so prop models get signal and winner models become trainable.
+- ☐ **P1** Deepen **NHL** (~23 games) and **WNBA** (~116) history so prop models get signal and winner models become trainable.
 - ☐ **P3** Train **NHL/WNBA winner models** once data is sufficient (WNBA first — basketball-generic, revisit ~150+ games).
 - ☐ **P3** Extend the **model/market blend + soft-line finder to NHL/WNBA** — auto-tunes in once those have sharp-market coverage.
 - ☐ **P3** **New prop markets** — more stat types per sport (e.g. NBA turnovers/blocks-steals depth, MLB stolen bases) as their settled history grows.
