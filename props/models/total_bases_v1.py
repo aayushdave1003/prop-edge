@@ -63,7 +63,9 @@ def split_train_test(df):
     return df[df["game_date"] < pd.Timestamp("2025-01-01")].copy(), df[df["game_date"] >= pd.Timestamp("2025-01-01")].copy()
 
 def train_model(train_df, val_df):
-    lgb_train = lgb.Dataset(train_df[FEATURE_KEYS], train_df["y"])
+    from props.models.train_weights import recency_weights
+    lgb_train = lgb.Dataset(train_df[FEATURE_KEYS], train_df["y"],
+                            weight=recency_weights(train_df["game_date"]))
     lgb_val   = lgb.Dataset(val_df[FEATURE_KEYS], val_df["y"], reference=lgb_train)
     params = {"objective":"poisson","metric":["poisson","mae"],"learning_rate":0.04,
               "num_leaves":31,"min_data_in_leaf":100,"feature_fraction":0.9,

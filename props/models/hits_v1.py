@@ -130,7 +130,8 @@ def train_model(train_df, val_df):
     X_val = val_df[FEATURE_KEYS]
     y_val = val_df["y"]
 
-    lgb_train = lgb.Dataset(X_train, y_train)
+    from props.models.train_weights import recency_weights
+    lgb_train = lgb.Dataset(X_train, y_train, weight=recency_weights(train_df["game_date"]))
     lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
 
     params = {
