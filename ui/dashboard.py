@@ -103,6 +103,28 @@ st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
                    page_icon="⚡")
 
+# ── Mobile / "add to home screen" (PWA-lite) ─────────────────────────────────
+# Inject iOS/Android home-screen meta into the parent <head> so the dashboard
+# can be saved as a standalone app icon. (Full offline PWA needs a served
+# manifest + service worker; this is the achievable subset in Streamlit.)
+try:
+    import streamlit.components.v1 as _components
+    _components.html("""<script>
+      const head = window.parent.document.head;
+      const add = (name, content) => {
+        if (window.parent.document.querySelector(`meta[name="${name}"]`)) return;
+        const m = window.parent.document.createElement('meta');
+        m.setAttribute('name', name); m.setAttribute('content', content); head.appendChild(m);
+      };
+      add('apple-mobile-web-app-capable', 'yes');
+      add('mobile-web-app-capable', 'yes');
+      add('apple-mobile-web-app-status-bar-style', 'black-translucent');
+      add('apple-mobile-web-app-title', 'prop-edge');
+      add('theme-color', '#0a0b10');
+    </script>""", height=0)
+except Exception:
+    pass
+
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
