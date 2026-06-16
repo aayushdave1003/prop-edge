@@ -1592,10 +1592,16 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     if _pm is not None and pd.notna(_pm) and float(_pm) > 0:
         pm = float(_pm)
         try:
-            from scipy.stats import poisson
-            lo, hi = int(poisson.ppf(0.25, pm)), int(poisson.ppf(0.75, pm))
+            # Prefer the EMPIRICAL 25-75% range (actual outcomes binned by
+            # projection) where it's calibrated; else the Poisson quantiles. Honest
+            # "likely" band backed by data rather than a distribution assumption.
+            from props.models.interval_calibration import empirical_interval
+            _band = empirical_interval(row.get("stat_type"), pm)
+            if _band is None:
+                from scipy.stats import poisson
+                _band = (int(poisson.ppf(0.25, pm)), int(poisson.ppf(0.75, pm)))
             proj_html = (f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b>'
-                         f' · likely <b>{lo}–{hi}</b></div>')
+                         f' · likely <b>{_band[0]}–{_band[1]}</b></div>')
         except Exception:
             proj_html = f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b></div>'
 
