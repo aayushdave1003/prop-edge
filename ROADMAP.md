@@ -25,7 +25,7 @@ what's left to build, by category.
 
 ## 2. Model / analytics
 - ◧ **P2** **Opponent-adjusted features** — BUILT, A/B deferred: `mlb_batter_sos` rolls faced-pitcher quality over a batter's prior games (`last_10_avg_faced_era/k_rate`) with a skew-verified inference mirror — all committed. Wiring it into the models needs the full prod derived backfill (the disk-risk op), which isn't justified now (can't confirm Railway volume headroom, and the sibling batting-order feature came back redundant). Revisit with headroom + appetite.
-- ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
+- ◧ **P3** **Quantile / distributional models** — BUILT + evaluated (`props.models.quantile_intervals`): trains LightGBM quantile models (q10/25/75/90) and compares interval coverage vs the Poisson interval on held-out data. Result is STAT-DEPENDENT: quantile **fixes `hits`** (Poisson runs way too wide — 25-75% .79→.38, 10-90% .95→.79≈perfect) but **hurts `total_bases`** (.45→.37 — Poisson's discrete handling is better for low counts). So no blanket switch; the win is a per-stat interval source for `hits` (a scoped display integration follow-up).
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
 - ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
 - ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
