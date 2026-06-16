@@ -23,6 +23,7 @@ what's left to build, by category.
 - ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
 ## 2. Model / analytics
+- ☐ **P1** **Batter models train on a stale 2024-only split — roll it forward.** `hits_v1`/`total_bases_v1`/`mlb_home_runs_v1` hardcode a `2025-01-01` train/test boundary. With the actual data (2024: 6,536 rows, only Aug 15–Sep 28; **no 2025**; 2026: 7,951 rows and growing), that trains the production models on **only ~6 weeks of 2024** and puts the **entire current 2026 season in the never-trained test set**. The models are frozen on a tiny stale sample (and it's why retrains barely move). Fix: a rolling split — test = last ~N days (held-out for honest A/B/calibration), train = everything before, incl. the current season. Re-validate the A/B gate (just fixed) + calibration against the new split. Likely a larger MAE win than any single feature; roughly doubles training data.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
 - ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
 - ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
