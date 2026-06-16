@@ -10,7 +10,6 @@ what's left to build, by category.
 ---
 
 ## 1. New data → accuracy (more signal into the models)
-- ☐ **P2** **Confirmed lineups + batting order** — batting 1st vs 8th changes plate appearances → moves hits/TB/RBI. Lives in the MLB box-score feed (fast); pre-game lineups post ~3h out.
 - ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency, a real edge for strikeout props.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds flow now; high implied team total = more offense. Feed it into the MLB/NBA models.
 - ☐ **P2** **Statcast batted-ball quality** — exit velocity / barrel% / xwOBA capture true hitter form better than raw results (luck-adjusted).
@@ -25,7 +24,7 @@ what's left to build, by category.
 - ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
 ## 2. Model / analytics
-- ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
+- ◧ **P2** **Opponent-adjusted features** — BUILT, A/B deferred: `mlb_batter_sos` rolls faced-pitcher quality over a batter's prior games (`last_10_avg_faced_era/k_rate`) with a skew-verified inference mirror — all committed. Wiring it into the models needs the full prod derived backfill (the disk-risk op), which isn't justified now (can't confirm Railway volume headroom, and the sibling batting-order feature came back redundant). Revisit with headroom + appetite.
 - ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
 - ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
