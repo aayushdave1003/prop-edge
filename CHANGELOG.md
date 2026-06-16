@@ -3,6 +3,7 @@
 Auto-archived from ROADMAP.md as items ship.
 
 ## Shipped — 2026-06-15
+- ✅ **P2** **Recency-weighted training** — DONE (and A/B says NO): built time-decay sample weights (`train_weights`) + an A/B-gated retrain. Result: it makes the MLB models WORSE (total_bases −2.4%, hits −0.5% MAE) — down-weighting old games costs more effective data than recency buys (MLB skill is stable year-over-year). Gate correctly rejected both; made it **opt-in (`RECENCY_WEIGHT=1`), default off** so it never handicaps a feature retrain. The value was learning it doesn't help here.
 - ✅ **P3** **Deploy the Discord slash-bot** — DONE: live as a second Railway service (`prop-edge-bot`, Dockerfile.bot, internal Postgres networking via `${{Postgres.DATABASE_URL}}` + the postgresql→+psycopg normalization). `/picks` `/record` `/player` all responding in Discord with live prod data (record 196–114 / 63.2% ✅). Signature-verified, read-only.
 - ✅ **P3** **Mobile layout polish** — DONE: on top of the existing column-stacking/card-reflow breakpoints, added a sticky horizontally-scrollable tab bar (keep your place on scroll), ≥44px tap targets on buttons + selects, and readable data-tables/copyable-slips at ≤640px.
 - ✅ **P3** **Parlay / bet-slip builder** — DONE: a "Build your own parlay" expander on the Picks tab — multiselect 2–6 of today's legs → joint hit %, power-play payout + EV, and a copyable slip. Correlation-aware: flags same-game legs (true joint/EV higher than the independent estimate). Complements the existing auto-slate + correlated-stacks recommenders.

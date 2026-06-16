@@ -131,8 +131,12 @@ def train_model(train_df, val_df):
     y_val = val_df["y"]
 
     import os
-    from props.models.train_weights import recency_weights
-    w = recency_weights(train_df["game_date"])
+    # Opt-in (RECENCY_WEIGHT=1): A/B showed recency-weighting worsens the MLB
+    # models, so default off (see total_bases_v1.train_model).
+    w = None
+    if os.environ.get("RECENCY_WEIGHT"):
+        from props.models.train_weights import recency_weights
+        w = recency_weights(train_df["game_date"])
     lgb_train = lgb.Dataset(X_train, y_train, weight=w)
     lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
 

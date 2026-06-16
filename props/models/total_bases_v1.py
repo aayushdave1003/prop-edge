@@ -64,8 +64,14 @@ def split_train_test(df):
 
 def train_model(train_df, val_df):
     import os
-    from props.models.train_weights import recency_weights
-    w = recency_weights(train_df["game_date"])
+    # Recency-weighting is OPT-IN (RECENCY_WEIGHT=1): the A/B gate showed it makes
+    # the MLB models worse (total_bases -2.4%, hits -0.5% MAE) — down-weighting old
+    # games costs more effective data than recency buys, since MLB skill is stable
+    # year-over-year. Default off so it never handicaps a feature retrain.
+    w = None
+    if os.environ.get("RECENCY_WEIGHT"):
+        from props.models.train_weights import recency_weights
+        w = recency_weights(train_df["game_date"])
     params = {"objective":"poisson","metric":["poisson","mae"],"learning_rate":0.04,
               "num_leaves":31,"min_data_in_leaf":100,"feature_fraction":0.9,
               "bagging_fraction":0.9,"bagging_freq":5,"verbose":-1,"seed":42}

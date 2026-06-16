@@ -25,7 +25,6 @@ what's left to build, by category.
 - ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
 ## 2. Model / analytics
-- ☐ **P2** **Recency-weighted training** — weight recent games more (sample weights / decay) so models track current form, not a stale season average.
 - ☐ **P2** **Opponent-adjusted features** — strength-of-schedule adjust the rolling form features (a 6-hit streak vs aces ≠ vs bullpen games).
 - ☐ **P3** **Quantile / distributional models** — predict the outcome distribution directly (LightGBM quantile) instead of a Poisson mean → sharper prediction intervals.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
