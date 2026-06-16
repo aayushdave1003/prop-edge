@@ -25,10 +25,18 @@ from props.features.derived_writer import write_derived
 
 PLAY_TYPES = ["Isolation", "PRBallHandler", "SpotUp", "PostUp", "Cut"]
 SEASONS    = ["2024-25", "2025-26"]
+NBA_TIMEOUT = 20        # per-call cap (nba_api defaults to 30s — too long when stats.nba.com is down)
+MAX_CONSEC_FAILS = 3    # stats.nba.com unresponsive → stop grinding through ~20s timeouts on every combo
+
+TEAM_COLS = {"Isolation": "team_isolation_rate", "PRBallHandler": "team_pnr_bh_rate",
+             "SpotUp": "team_spotup_rate"}
+PLAYER_COLS = {"Isolation": "player_isolation_pct", "PRBallHandler": "player_pnr_bh_pct",
+               "SpotUp": "player_spotup_pct"}
 
 
 def fetch_play_type(play_type: str, player_or_team: str,
-                    season: str, season_type: str) -> pd.DataFrame:
+                    season: str, season_type: str):
+    """DataFrame on success (may be empty if no data), or None on fetch failure."""
     try:
         ep = synergyplaytypes.SynergyPlayTypes(
             league_id="00",
@@ -38,6 +46,7 @@ def fetch_play_type(play_type: str, player_or_team: str,
             season_type_all_star=season_type,
             play_type_nullable=play_type,
             type_grouping_nullable="offensive",
+            timeout=NBA_TIMEOUT,
         )
         df = ep.get_data_frames()[0]
         df["play_type"]   = play_type
@@ -48,53 +57,44 @@ def fetch_play_type(play_type: str, player_or_team: str,
     except Exception as e:
         log.warning("play_type_fetch_failed", play_type=play_type,
                     season=season, err=str(e))
-        return pd.DataFrame()
+        return None
+
+
+def _build_play_type_map(player_or_team: str, id_col: str, col_map: dict) -> dict:
+    """Shared team/player builder. Circuit breaker: after MAX_CONSEC_FAILS fetches
+    fail in a row, stats.nba.com is down — bail out with whatever we have instead of
+    burning a ~20s timeout on every remaining combo (a flaky NBA-API day otherwise
+    dragged the daily run out by ~15 min). Partial/empty is fine; the next healthy
+    run backfills these supplementary features."""
+    records: dict = {}
+    consec_fail = 0
+    for season in SEASONS:
+        for stype in ["Regular Season", "Playoffs"]:
+            for pt in ["Isolation", "PRBallHandler", "SpotUp"]:
+                df = fetch_play_type(pt, player_or_team, season, stype)
+                if df is None:
+                    consec_fail += 1
+                    if consec_fail >= MAX_CONSEC_FAILS:
+                        log.warning("play_type_circuit_open",
+                                    detail="stats.nba.com unresponsive; skipping remaining play-type fetches",
+                                    collected=len(records))
+                        return records
+                    continue
+                consec_fail = 0
+                for _, row in df.iterrows():
+                    key = (str(row.get(id_col, "")), season, stype)
+                    records.setdefault(key, {})[col_map[pt]] = round(float(row.get("POSS_PCT", 0)), 4)
+    return records
 
 
 def build_team_play_type_map() -> dict:
-    """Returns {team_id_ext: {iso_rate, pnr_bh_rate, spotup_rate}} per season."""
-    records = {}
-    for season in SEASONS:
-        for stype in ["Regular Season", "Playoffs"]:
-            for pt in ["Isolation", "PRBallHandler", "SpotUp"]:
-                df = fetch_play_type(pt, "T", season, stype)
-                if df.empty:
-                    continue
-                for _, row in df.iterrows():
-                    tid = str(row.get("TEAM_ID", ""))
-                    key = (tid, season, stype)
-                    if key not in records:
-                        records[key] = {}
-                    col = {
-                        "Isolation":   "team_isolation_rate",
-                        "PRBallHandler": "team_pnr_bh_rate",
-                        "SpotUp":      "team_spotup_rate",
-                    }[pt]
-                    records[key][col] = round(float(row.get("POSS_PCT", 0)), 4)
-    return records
+    """Returns {(team_id_ext, season, stype): {iso_rate, pnr_bh_rate, spotup_rate}}."""
+    return _build_play_type_map("T", "TEAM_ID", TEAM_COLS)
 
 
 def build_player_play_type_map() -> dict:
-    """Returns {player_id_ext: {iso_pct, pnr_bh_pct, spotup_pct}} per season."""
-    records = {}
-    for season in SEASONS:
-        for stype in ["Regular Season", "Playoffs"]:
-            for pt in ["Isolation", "PRBallHandler", "SpotUp"]:
-                df = fetch_play_type(pt, "P", season, stype)
-                if df.empty:
-                    continue
-                for _, row in df.iterrows():
-                    pid = str(row.get("PLAYER_ID", ""))
-                    key = (pid, season, stype)
-                    if key not in records:
-                        records[key] = {}
-                    col = {
-                        "Isolation":   "player_isolation_pct",
-                        "PRBallHandler": "player_pnr_bh_pct",
-                        "SpotUp":      "player_spotup_pct",
-                    }[pt]
-                    records[key][col] = round(float(row.get("POSS_PCT", 0)), 4)
-    return records
+    """Returns {(player_id_ext, season, stype): {iso_pct, pnr_bh_pct, spotup_pct}}."""
+    return _build_play_type_map("P", "PLAYER_ID", PLAYER_COLS)
 
 
 def apply_to_derived(team_map: dict, player_map: dict):
