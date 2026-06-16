@@ -30,8 +30,23 @@ STAT_MODEL = {
 }
 
 
+# Each model trains ONLY on batters with rolling history and a real appearance
+# (see each model's load_training_data). Scoring the A/B on rows OUTSIDE that
+# domain — cold-start batters with no last-10 history, which the model never
+# trains on and only extrapolates to — measures extrapolation noise, not model
+# quality. It mis-rejected the SoS hits model at -1.34% on the full population
+# when the in-domain truth was +0.83%. So the gate must score the SAME population
+# the model serves: last_10_avg_at_bats>0 plus the model's appearance threshold.
+_APPEARANCE = {
+    "hits":        "(pg.stats->>'plate_appearances')::int >= 3",
+    "total_bases": "(pg.stats->>'plate_appearances')::int >= 3",
+    "home_runs":   "(pg.stats->>'at_bats')::numeric > 0",
+}
+
+
 def _load_recent(stat: str, days: int) -> pd.DataFrame:
-    return pd.read_sql(text("""
+    appearance = _APPEARANCE.get(stat, "(pg.stats->>'plate_appearances')::int >= 1")
+    return pd.read_sql(text(f"""
         SELECT pg.derived, (pg.stats->>:stat)::float AS y
         FROM player_games pg
         JOIN games g ON g.game_id = pg.game_id
@@ -39,6 +54,8 @@ def _load_recent(stat: str, days: int) -> pd.DataFrame:
           AND g.game_date >= (CURRENT_DATE - make_interval(days => :d))
           AND (pg.stats->>:stat) IS NOT NULL
           AND pg.derived IS NOT NULL
+          AND (pg.derived->>'last_10_avg_at_bats')::float > 0
+          AND {appearance}
     """), engine, params={"stat": stat, "d": days})
 
 

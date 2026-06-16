@@ -23,7 +23,6 @@ what's left to build, by category.
 - ☐ **P3** **Multi-book consensus** — average no-vig across more sharp books than DK/FD for a tighter "true" line.
 
 ## 2. Model / analytics
-- ☐ **P3** **A/B promote gate evaluates an out-of-domain population.** `ab_compare`/`retrain_and_promote.compare` scores candidates on ALL final games in the last 60d (incl. cold-start batters with no rolling history the model never trains on) — it mis-rejected the SoS hits model at −1.34% while the clean in-domain held-out showed +0.83%. Filter `_load_recent` to the model's training domain (`last_10_avg_at_bats>0`, PA≥3) so the autonomous gate stops blocking genuine improvements. Also: an incumbent trained through ~now is in-sample on the 60d window — prefer a held-out-by-construction eval.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
 - ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
 - ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
