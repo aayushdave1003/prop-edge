@@ -33,6 +33,16 @@ GRID = [round(0.55 + 0.025 * i, 3) for i in range(13)]  # 0.55 .. 0.85
 MIN_N_SPORT = 30
 MIN_N_STAT = 40
 
+# Suppression uses a LOWER sample floor than promotion, on purpose. Promoting a
+# cutoff on a thin sample is dangerous (a lucky sliver becomes a recommendation),
+# so that needs MIN_N_STAT. But *suppressing* a bucket is the safe action — being
+# wrong just skips some picks, and it auto-reverts once results recover — and the
+# Wilson UPPER bound already inflates for small n, so it is itself the small-sample
+# guard. A bucket whose UB is below breakeven is confidently sub-breakeven even
+# being generous about the sample, so we stop recommending it at n>=MIN_N_SUPPRESS
+# instead of waiting for 40 (which let e.g. mlb|rbis bleed at 42% on 19 picks).
+MIN_N_SUPPRESS = 15
+
 # Wilson z. 1.0 (~68% one-sided) penalises small samples without being so
 # strict that no real edge ever qualifies.
 WILSON_Z = 1.0
@@ -181,12 +191,13 @@ def compute_cutoffs(rows) -> dict:
                 "wilson_lb": round(lb, 4), "status": "tuned",
             }
             continue
-        # No qualifying cutoff. If there's enough data AND the stat is
+        # No qualifying cutoff. If there's a meaningful sample AND the stat is
         # CONFIDENTLY below breakeven (Wilson upper bound < breakeven), suppress
         # it explicitly — otherwise it would silently inherit the more permissive
         # SPORT cutoff and keep getting recommended (e.g. NBA points: 57% at the
-        # sport's 0.725, sub-breakeven). Without enough data, defer to the sport.
-        if n_all >= MIN_N_STAT and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
+        # sport's 0.725, sub-breakeven). MIN_N_SUPPRESS (not MIN_N_STAT) because
+        # suppression is the safe direction. Without enough data, defer to the sport.
+        if n_all >= MIN_N_SUPPRESS and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
             stats[f"{sport}|{stat}"] = {
                 "cutoff": SUPPRESS_CUTOFF, "n": n_all,
                 "win_rate": round(k_all / n_all, 4),
@@ -209,7 +220,7 @@ def compute_cutoffs(rows) -> dict:
             t, n, wr, lb = res
             dir_stats[key] = {"cutoff": t, "n": n, "win_rate": round(wr, 4),
                               "wilson_lb": round(lb, 4), "status": "tuned"}
-        elif n_all >= MIN_N_STAT and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
+        elif n_all >= MIN_N_SUPPRESS and wilson_upper_bound(k_all, n_all) < BREAKEVEN:
             dir_stats[key] = {"cutoff": SUPPRESS_CUTOFF, "n": n_all,
                               "win_rate": round(k_all / n_all, 4),
                               "wilson_ub": round(wilson_upper_bound(k_all, n_all), 4),
