@@ -10,7 +10,6 @@ what's left to build, by category.
 ---
 
 ## 1. New data → accuracy (more signal into the models)
-- ☐ **P2** **Umpire assignments** — home-plate ump K-zone tendency, a real edge for strikeout props.
 - ☐ **P2** **Vegas game/team totals as a model feature** — live odds flow now; high implied team total = more offense. Feed it into the MLB/NBA models.
 - ☐ **P2** **Statcast batted-ball quality** — exit velocity / barrel% / xwOBA capture true hitter form better than raw results (luck-adjusted).
 - ☐ **P3** **Pitcher velocity & pitch-mix trends** — declining velo flags fatigue/injury before results do; arsenal shifts move strikeout rates.
