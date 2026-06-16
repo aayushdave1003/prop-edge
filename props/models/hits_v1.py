@@ -79,6 +79,11 @@ FEATURE_KEYS = [
     "last_10_avg_pitcher_bb9",
     "park_factor",
     "wx_temp", "wx_wind_out",   # ballpark weather — wind out drives offense
+    # Opponent-adjusted (SoS): quality of pitchers the batter actually faced over
+    # his prior 10 games — discounts hot streaks built against weak arms. A/B'd
+    # (props.features.sos_eval): +~0.4-0.5% MAE on hits, never negative. Backfilled
+    # via mlb_batter_sos; inference mirror in inference.batter_features.
+    "last_10_avg_faced_era", "last_10_avg_faced_k_rate",
 ]
 
 
