@@ -11,7 +11,6 @@ what's left to build, by category.
 
 ## 1. New data → accuracy (more signal into the models)
 - ☐ **P3** **Vegas game/team totals as a model feature — BLOCKED on data, not buildable now.** Assessed: **0 games store any historical implied-team-total / game total** (`games.context` holds only model outputs). MLB fetches no game-total source (only player-prop odds → `market_odds`); NBA fetches ESPN totals *live* for the winner model but never persists them, and the NBA season just ended. No historical column to train on. To enable: (1) persist `market_total`/`implied_team_total` per game going forward (MLB needs a new game-odds fetch), (2) accrue a season, (3) assess vs prop residuals + build. Months out; low priority (MLB models are data-saturated).
-- ☐ **P2** **Statcast batted-ball quality** — exit velocity / barrel% / xwOBA capture true hitter form better than raw results (luck-adjusted).
 - ☐ **P3** **Pitcher velocity & pitch-mix trends** — declining velo flags fatigue/injury before results do; arsenal shifts move strikeout rates.
 - ☐ **P3** **Times-through-order penalty** — a pitcher's 3rd time through the lineup spikes hits/runs allowed; a strong K/ER signal.
 - ☐ **P3** **Bullpen rest / availability** — a gassed pen changes late-game run environment (totals, RBI).

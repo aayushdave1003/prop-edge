@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-06-17
+- ✅ **Statcast batted-ball quality — ASSESSED (read-only), not built: redundant/marginal.** Tested prior-season xwOBA/xSLG (luck-adjusted skill prior, no lookahead) from Baseball Savant's expected-stats leaderboard, joined by MLBAM id (63% coverage), on a random-20%-of-2026 holdout × 3 seeds: **hits −0.03% (neutral), total_bases +0.20% (3/3 positive but below the 0.5% promote bar)**. The model's existing rolling proxies (`hard_contact`/`iso`/`slg`/`babip`) already capture batted-ball quality, so the residual Statcast signal is tiny — not worth the heavy per-game Savant ingest + backfill + train/inference parity. Consistent with MLB data-saturation. (A light season-prior ingest could capture the +0.2% TB if ever wanted, but it's sub-bar.)
+
 ## Shipped — 2026-06-16
 - ✅ **P1** Deepen **NHL/WNBA** history — DONE. Data was genuinely missing (only ~1mo deep), not underived. Backfilled full 2025-26 NHL season + 2025 WNBA season from the free history APIs: **NHL 15→1,451 final / 600→58,154 player_games**, **WNBA 71→398 / 1,744→9,326**, all derived. Retrained all 6 prop models on real data (quantile rolling split; held-out MAE vs season-avg): **nhl_saves +34.6%**, **wnba_points +14.5%** (strong); wnba_assists +0.5% (marginal); nhl_goals −1.5% / nhl_assists −1.7% / wnba_rebounds −8% (low-count, noise-dominated — rec-tier cutoffs gate them, like MLB rbis). Calibrators refit. Disk fine (DB 925 MB / 5 GB).
 
