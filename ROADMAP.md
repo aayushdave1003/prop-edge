@@ -37,7 +37,6 @@ what's left to build, by category.
 - ☐ **P2** **PrizePicks props not resolving → placeholder games.** ~274k prop_lines in the last 14d land on `pp_` placeholder games (home==away) instead of real games — current WNBA/NHL props (+ some MLB combo lines) that `resolve_game_id` can't match, so they generate no picks (lost opportunities + the recurring `junk_games` digest warning). Likely partly a symptom of the thin NHL/WNBA coverage being backfilled above — recheck placeholder rate after a cycle, then audit `resolve_game_id` for the residual. Do NOT blindly purge: these are live props, not dead clutter (and only 1 pick ever landed on a placeholder).
 
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)
-- ◧ **P1** Deepen **NHL/WNBA** history — IN PROGRESS. The data was genuinely missing (only ~1mo deep, since 2026-05-18), not underived. Backfilled schedules from the free history APIs: **NHL 15→1,451 final** (full 2025-26 season), **WNBA 71→267 final** (2025 season added). Boxscores + derive running autonomously (~1–2h). Unlocks training the existing `nhl_goals/assists/saves` + `wnba_points/assists/rebounds` models ↓.
 - ☐ **P3** Train **NHL/WNBA winner models** once data is sufficient (WNBA first — basketball-generic, revisit ~150+ games).
 - ☐ **P3** Extend the **model/market blend + soft-line finder to NHL/WNBA** — auto-tunes in once those have sharp-market coverage.
 - ☐ **P3** **New prop markets** — more stat types per sport (e.g. NBA turnovers/blocks-steals depth, MLB stolen bases) as their settled history grows.
