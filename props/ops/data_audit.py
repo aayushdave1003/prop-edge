@@ -66,20 +66,31 @@ def run_checks() -> list[dict]:
             findings.append({"level": "ok", "name": "abbrev_unique",
                              "detail": "no abbreviation collisions"})
 
-        # ── junk games (home==away, or a placeholder team in the game) ───────
+        # ── junk games ───────────────────────────────────────────────────────
+        # `pp_` placeholder games (home==away, created when a PrizePicks prop can't
+        # resolve to a real game — mostly non-league/exhibition props + doubleheaders)
+        # are EXPECTED, not data bugs: ~95% are for untracked players and only 1 pick
+        # has ever landed on one (the dangerous case is caught by placeholder_picks
+        # below). So they're reported as an info count, NOT a daily warning. A
+        # genuine bug is home==away on a REAL (non-`pp_`) game.
         junk = c.execute(text("""
             SELECT COUNT(*) FROM games g
             WHERE g.game_date >= CURRENT_DATE - 14
-              AND (g.home_team_id = g.away_team_id
-                   OR EXISTS (SELECT 1 FROM teams t WHERE t.team_id IN (g.home_team_id, g.away_team_id)
-                              AND t.external_id = 'PP_PLACEHOLDER'))
+              AND g.home_team_id = g.away_team_id
+              AND COALESCE(g.external_id, '') NOT LIKE 'pp_%'
+        """)).scalar() or 0
+        pp_ph = c.execute(text("""
+            SELECT COUNT(*) FROM games g
+            WHERE g.game_date >= CURRENT_DATE - 14
+              AND g.home_team_id = g.away_team_id
+              AND g.external_id LIKE 'pp_%'
         """)).scalar() or 0
         if junk:
             findings.append({"level": "warn", "name": "junk_games",
-                             "detail": f"{junk} junk game(s) in last 14d (placeholder team or home==away)"})
+                             "detail": f"{junk} real junk game(s) in last 14d (home==away on a non-placeholder game)"})
         else:
             findings.append({"level": "ok", "name": "games_clean",
-                             "detail": "no junk games recently"})
+                             "detail": f"no real junk games; {pp_ph} expected pp_ placeholder(s) in last 14d (benign)"})
 
         # ── placeholder leakage into settled picks ───────────────────────────
         leak = c.execute(text("""
