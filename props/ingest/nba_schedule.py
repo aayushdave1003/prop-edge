@@ -60,11 +60,13 @@ def _season_type_from_game_id(game_id: str) -> str:
 
 
 # stats.nba.com frequently read-times-out from cloud IPs (the recurring NBA
-# schedule failure in the daily logs). Retry with backoff + a longer timeout so a
-# transient stall doesn't drop the whole NBA slate for the day.
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=20), reraise=True)
+# schedule failure in the daily logs). Retry with backoff so a transient stall
+# doesn't drop the NBA slate — but bound it: a 20s timeout still clears a healthy
+# call (those return in <5s) while a truly-DOWN API now fails in ~60s instead of
+# ~140s, which kept the daily run from ballooning on a flaky-NBA-API day.
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=6), reraise=True)
 def fetch_nba_games(target_date: date) -> list[dict]:
-    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"), timeout=45)
+    sb = scoreboardv3.ScoreboardV3(game_date=target_date.strftime("%Y-%m-%d"), timeout=20)
     data = sb.get_dict()
     raw_games = data.get("scoreboard", {}).get("games", [])
     log.info("fetched_nba_games", date=target_date.isoformat(), count=len(raw_games))
