@@ -25,9 +25,9 @@
     "team_close_game_rate",
     "career_avg_assists_vs_opp"
   ],
-  "best_iteration": 6,
-  "train_n": 422,
-  "val_n": 76,
-  "test_n": 148,
-  "trained_date": "2026-06-04"
+  "best_iteration": 144,
+  "train_n": 4669,
+  "val_n": 830,
+  "test_n": 1376,
+  "trained_date": "2026-06-16"
 }

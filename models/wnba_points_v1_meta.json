@@ -34,9 +34,9 @@
     "team_close_game_rate",
     "career_avg_points_vs_opp"
   ],
-  "best_iteration": 105,
-  "train_n": 422,
-  "val_n": 76,
-  "test_n": 148,
-  "trained_date": "2026-06-04"
+  "best_iteration": 225,
+  "train_n": 4669,
+  "val_n": 830,
+  "test_n": 1376,
+  "trained_date": "2026-06-16"
 }

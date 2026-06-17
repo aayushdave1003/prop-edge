@@ -21,9 +21,9 @@
     "days_rest",
     "games_played_season"
   ],
-  "best_iteration": 1,
-  "train_n": 10,
-  "val_n": 2,
-  "test_n": 4,
-  "trained_date": "2026-06-04"
+  "best_iteration": 20,
+  "train_n": 1979,
+  "val_n": 365,
+  "test_n": 590,
+  "trained_date": "2026-06-16"
 }
