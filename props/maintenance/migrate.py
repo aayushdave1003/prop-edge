@@ -110,6 +110,30 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE backtest_runs ADD COLUMN IF NOT EXISTS mae_improvement_pct DOUBLE PRECISION;"
      "ALTER TABLE backtest_runs ALTER COLUMN win_rate DROP NOT NULL;"
      "ALTER TABLE backtest_runs ALTER COLUMN sport DROP NOT NULL"),
+    # Full scored prop universe (props.picks.score_universe). One row per
+    # (game, player, stat, line) for EVERY player with a fresh PrizePicks
+    # standard line on a modeled stat — not just the high-edge picks that get
+    # logged. Powers the dashboard's "Build your own parlay" so it can offer any
+    # player a model EV. model_prob is the SAME blended/dir-calibrated value
+    # picks.model_prob stores, so the dashboard's calibrate() display stays
+    # consistent across logged picks and unlogged props. Upserted daily.
+    ("0013_scored_props",
+     "CREATE TABLE IF NOT EXISTS scored_props ("
+     "  id           BIGSERIAL PRIMARY KEY,"
+     "  score_date   DATE NOT NULL,"
+     "  sport_code   TEXT NOT NULL,"
+     "  game_id      INTEGER NOT NULL,"
+     "  player_id    INTEGER NOT NULL,"
+     "  stat_type    TEXT NOT NULL,"
+     "  line_value   NUMERIC(8,2) NOT NULL,"
+     "  direction    TEXT,"
+     "  model_prob   DOUBLE PRECISION,"
+     "  edge         DOUBLE PRECISION,"
+     "  ev           DOUBLE PRECISION,"
+     "  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  UNIQUE (game_id, player_id, stat_type, line_value));"
+     "CREATE INDEX IF NOT EXISTS idx_scored_props_score_date"
+     "  ON scored_props (score_date)"),
 ]
 
 

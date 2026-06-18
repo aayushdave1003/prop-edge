@@ -162,6 +162,16 @@ python -m props.picks.log_picks --date "$TODAY"
 echo "--- Confirm MLB starters (morning check) ---"
 python -m props.picks.confirm_starters --date "$TODAY" || true
 
+# ── 6b. Score the FULL prop universe ─────────────────────────────────────────
+# log_picks above only persists the high-edge subset, so the dashboard's "Build
+# your own parlay" can only offer those ~28 picks. This scores EVERY player with
+# a fresh PrizePicks standard line on a modeled stat (recommended or not) and
+# upserts the full set into scored_props, giving the dashboard a model EV for any
+# player. Reuses predict_today's scoring/calibration; runs after the lines scrape
+# (§4) and after picks are generated (§6) so it sees the same fresh-line board.
+echo "--- Score full prop universe ---"
+python -m props.picks.score_universe --date "$TODAY" || echo "WARN: score_universe failed"
+
 # ── 7. Second settle pass ────────────────────────────────────────────────────
 echo "--- Second settle pass ---"
 python -m props.picks.settle_picks
