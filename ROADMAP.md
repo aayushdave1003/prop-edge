@@ -24,11 +24,9 @@ what's left to build, by category.
 ## 2. Model / analytics
 - ☐ **P3** **Retrain prod models on the full history for robustness (optional).** Prod hits was fit on ~2.8k rows of one 6-week 2024 window; the data now supports 135k continuous rows. MAE is neutral, but a model trained on 4 seasons is less fragile to distribution shift. Only worth it if it clears the (now in-domain) A/B gate — otherwise leave prod.
 - ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
-- ☐ **P3** **CLV as a training signal** — train toward beating the closing line, not just the realized stat (rewards finding soft lines).
 - ☐ **P3** **Monte-Carlo parlay simulation** — simulate the full joint distribution of a slate (with the correlation matrix) for true parlay EV + variance, beyond the pairwise approximation.
 - ☐ **P3** **Slate-level Kelly / portfolio sizing** — size the whole slate jointly (correlation-aware) instead of per-leg, to optimize bankroll growth vs variance.
 - ☐ **P3** **Playoff vs regular-season model split** — different distributions; a playoff-aware model (or feature) instead of suppressing playoff stats.
-- ☐ **P3** **Hierarchical / player random-effects** — partial-pooling for low-sample players (rookies, call-ups) instead of league priors.
 
 ## 4. Ops / automation & data integrity
 - ◧ **P2** **Player-identity reconciliation** — fuzzy box-score name matching mis-attributes games (Jared McCain picked up **45 phantom OKC games** he never played). ✅ Audit shipped: `data_audit` flags NBA/WNBA players spanning >2 teams (**23 candidates**) + **234 combo-name junk rows**. REMAINING (deferred — risky): re-key NBA/WNBA players by authoritative ESPN athlete ids + un-merge the mis-attributed games. Touches FK-referenced picks across thousands of rows, so it needs a reviewed migration, not a blind auto-merge.
