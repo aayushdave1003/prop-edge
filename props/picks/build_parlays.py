@@ -20,54 +20,72 @@ from scipy.stats import norm
 
 MULTIPLIERS = {2: 3.0, 3: 5.0, 4: 10.0}
 
-# Correlation adjustments to joint probability P(A) * P(B) + adj
-# Rough calibrated estimates; directionally correct even if not exact.
-CORR_SAME_TEAM_BOTH_OVER  =  0.06
-CORR_SAME_TEAM_BOTH_UNDER =  0.04
-CORR_SAME_TEAM_OPPOSITE   = -0.10   # one over / one under — anti-correlated, avoid
-CORR_DIFF_TEAM_BOTH_OVER  =  0.03   # both benefit from high-scoring game
-CORR_NATURAL_PAIR         =  0.08   # naturally linked stats for same player
+# ── Empirical leg-outcome correlations (rho of the "went over its line" indicator),
+# measured from settled history (correlate per-player over-indicators = actual >
+# last_10_avg, within games and per same-player stat pair). Replaces the old flat
+# heuristics, which OVERSTATED cross-player (same-team 0.06 / diff-team 0.03 vs
+# measured ~0.04 / ~0) and grossly UNDERSTATED same-player pairs (flat 0.08 vs
+# measured 0.26-0.72). For two Bernoulli legs, Cov = rho * sqrt(pA(1-pA) pB(1-pB));
+# both-over ≈ both-under ≈ rho, opposite over/under flips the sign.
+RHO_SAME_TEAM           = 0.04   # same team, same direction — game offense lifts teammates a little
+RHO_DIFF_TEAM           = 0.0    # different teams — empirically ~0 (the old 0.03 was spurious)
+RHO_SAME_PLAYER_DEFAULT = 0.20   # any same-player pair not specifically measured below
 
-NATURAL_STAT_PAIRS = {
-    frozenset(["points", "assists"]),
-    frozenset(["points", "pts_rebs_asts"]),
-    frozenset(["assists", "pts_rebs_asts"]),
-    frozenset(["rebounds", "pts_rebs_asts"]),
-    frozenset(["points", "pts_asts"]),
-    frozenset(["points", "pts_rebs"]),
-    frozenset(["rebounds", "pts_rebs"]),
-    frozenset(["assists", "rebs_asts"]),
-    frozenset(["rebounds", "rebs_asts"]),
+# Same-player stat pairs → measured rho of their over-indicators.
+NATURAL_PAIR_RHO = {
+    frozenset(["hits", "total_bases"]):  0.72,
+    frozenset(["total_bases", "rbis"]):  0.48,
+    frozenset(["hits", "runs"]):         0.38,
+    frozenset(["points", "rebounds"]):   0.34,
+    frozenset(["rebounds", "assists"]):  0.27,
+    frozenset(["points", "assists"]):    0.26,
 }
+# A combo stat strongly tracks any base stat it contains (e.g. points & PRA).
+_COMBO_COMPONENTS = {
+    "pts_rebs_asts":  {"points", "rebounds", "assists"},
+    "pts_rebs":       {"points", "rebounds"},
+    "pts_asts":       {"points", "assists"},
+    "rebs_asts":      {"rebounds", "assists"},
+    "blocks_steals":  {"blocks", "steals"},
+    "hits_runs_rbis": {"hits", "runs", "rbis"},
+}
+RHO_COMBO_OVERLAP = 0.60         # base stat + the combo that contains it
 
 MIN_EDGE_FOR_LEG = 0.06
 MAX_CANDIDATES   = 16
 
 
+def _combo_overlap(a: str, b: str) -> bool:
+    return (a in _COMBO_COMPONENTS and b in _COMBO_COMPONENTS[a]) or \
+           (b in _COMBO_COMPONENTS and a in _COMBO_COMPONENTS[b])
+
+
+def _pair_rho(leg1: dict, leg2: dict) -> float:
+    """Empirical correlation between the two legs' hit outcomes (unsigned)."""
+    if leg1["player_id"] == leg2["player_id"]:
+        a, b = leg1["stat_type"], leg2["stat_type"]
+        if a == b:
+            return 0.0
+        return (NATURAL_PAIR_RHO.get(frozenset([a, b]))
+                or (RHO_COMBO_OVERLAP if _combo_overlap(a, b) else RHO_SAME_PLAYER_DEFAULT))
+    if leg1["game_id"] != leg2["game_id"]:
+        return 0.0
+    t1, t2 = leg1.get("team_id"), leg2.get("team_id")
+    if t1 and t2 and t1 == t2:
+        return RHO_SAME_TEAM
+    return RHO_DIFF_TEAM
+
+
 def _corr_adj(leg1: dict, leg2: dict) -> float:
-    """Estimate covariance term to add to P(A)*P(B)."""
-    same_player = leg1["player_id"] == leg2["player_id"]
-    same_game   = leg1["game_id"] == leg2["game_id"]
-    t1, t2      = leg1.get("team_id"), leg2.get("team_id")
-    same_team   = (not same_player) and same_game and t1 and t2 and (t1 == t2)
-    diff_team   = (not same_player) and same_game and t1 and t2 and (t1 != t2)
-    both_over   = leg1["direction"] == "over"  and leg2["direction"] == "over"
-    both_under  = leg1["direction"] == "under" and leg2["direction"] == "under"
-    opposite    = leg1["direction"] != leg2["direction"]
-
-    if same_player:
-        pair = frozenset([leg1["stat_type"], leg2["stat_type"]])
-        return CORR_NATURAL_PAIR if pair in NATURAL_STAT_PAIRS else 0.0
-
-    if same_team:
-        if opposite:     return CORR_SAME_TEAM_OPPOSITE
-        if both_over:    return CORR_SAME_TEAM_BOTH_OVER
-        if both_under:   return CORR_SAME_TEAM_BOTH_UNDER
-
-    if diff_team and both_over:
-        return CORR_DIFF_TEAM_BOTH_OVER
-
-    return 0.0
+    """Covariance term to add to P(A)*P(B): empirical rho on the probability scale,
+    signed by direction agreement (opposite over/under flips it negative)."""
+    rho = _pair_rho(leg1, leg2)
+    if rho == 0.0:
+        return 0.0
+    if leg1["direction"] != leg2["direction"]:
+        rho = -rho
+    pa, pb = leg1["model_prob"], leg2["model_prob"]
+    return rho * (pa * (1 - pa) * pb * (1 - pb)) ** 0.5
 
 
 def _joint_prob_2(a: dict, b: dict) -> float:
