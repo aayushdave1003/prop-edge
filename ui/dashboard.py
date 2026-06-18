@@ -3,6 +3,7 @@
 Run: streamlit run ui/dashboard.py
 """
 import sys
+import itertools
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -13,7 +14,7 @@ from props.utils.db import engine
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
 from props.models.prob_calibration import calibrate
-from props.picks.build_parlays import build_diversified_parlay
+from props.picks.build_parlays import build_diversified_parlay, _joint_prob, MULTIPLIERS
 from props.picks.compute_clv import clv_points
 from props.picks.slate_kelly import slate_kelly_bankroll, slate_kelly_stakes
 
@@ -762,6 +763,26 @@ def load_all_settled_picks():
         ORDER BY pk.picked_at
     """
     return pd.read_sql(text(sql), engine)
+
+
+@st.cache_data(ttl=120)
+def load_scored_universe():
+    """Today's FULL scored prop board (props.picks.score_universe → scored_props):
+    every line-carrying player on a modeled stat, recommended or not. Powers the
+    Build-your-parlay picker so you can build from any player, not just logged picks."""
+    sql = """
+        SELECT sp.player_id, p.full_name AS player, sp.game_id, sp.sport_code,
+               t.abbreviation AS team, t.external_id AS team_ext_id,
+               sp.stat_type, sp.line_value AS line, sp.direction, sp.model_prob
+        FROM scored_props sp
+        JOIN players p USING (player_id)
+        LEFT JOIN teams t ON t.team_id = p.current_team_id
+        WHERE sp.score_date = (NOW() AT TIME ZONE 'America/Los_Angeles')::date
+    """
+    try:
+        return pd.read_sql(text(sql), engine)
+    except Exception:
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=120)
@@ -1909,33 +1930,82 @@ with tab_picks:
 
     # ── Build your own parlay (interactive) ───────────────────────────────────
     with st.expander("Build your own parlay", icon=":material/casino:"):
-        if df.empty:
-            st.caption("No picks today yet.")
+        # Full scored universe (ANY player, recommended or not) ∪ today's logged picks.
+        _uni = load_scored_universe()
+        _cols = ["player_id", "player", "game_id", "sport_code", "team",
+                 "team_ext_id", "stat_type", "line", "direction", "model_prob"]
+        if not df.empty:
+            _dfp = df[[c for c in _cols if c in df.columns]].copy()
+            _uni = pd.concat([_uni, _dfp], ignore_index=True) if not _uni.empty else _dfp
+        if not _uni.empty:
+            _uni = (_uni.dropna(subset=["model_prob", "line"])
+                        .drop_duplicates(subset=["player_id", "stat_type", "line", "direction"]))
+        if _uni.empty:
+            st.caption("No scored props yet — the daily run posts the full board each morning.")
         else:
-            _b = df.copy()
-            _b["label"] = _b.apply(
+            _pay = {2: 3.0, 3: 5.0, 4: 10.0, 5: 20.0, 6: 37.5}
+            st.caption(f"Build from any of **{len(_uni):,}** scored props across "
+                       f"{_uni['sport_code'].nunique()} sport(s) — recommended or not.")
+            f1, f2, f3 = st.columns(3)
+            _sports = sorted(_uni["sport_code"].dropna().unique())
+            _spsel = f1.multiselect("Sport", _sports, default=_sports, key="bp_sport")
+            _u = _uni[_uni["sport_code"].isin(_spsel)] if _spsel else _uni
+            _teams = sorted(_u["team"].dropna().unique())
+            _tmsel = f2.multiselect("Team", _teams, key="bp_team")
+            if _tmsel:
+                _u = _u[_u["team"].isin(_tmsel)]
+            _pq = f3.text_input("Player contains", key="bp_player")
+            if _pq:
+                _u = _u[_u["player"].str.contains(_pq, case=False, na=False)]
+
+            def _ld(rows):   # leg dicts for the MC joint-prob (team_ext_id used for same-team corr)
+                return tuple({"player_id": r.player_id, "game_id": r.game_id,
+                              "team_id": r.team_ext_id, "stat_type": r.stat_type,
+                              "direction": r.direction,
+                              "model_prob": calibrate(float(r.model_prob))} for r in rows)
+
+            # Best-EV diversified 2-pick available in the current filter (guarded).
+            try:
+                _pool = _u.sort_values("model_prob", ascending=False).head(14)
+                _best = None
+                for _a, _bb in itertools.combinations(_pool.itertuples(), 2):
+                    if _a.game_id == _bb.game_id:
+                        continue
+                    _ev = 3.0 * _joint_prob(_ld((_a, _bb))) - 1
+                    if _best is None or _ev > _best[0]:
+                        _best = (_ev, _a, _bb)
+                if _best:
+                    _ev, _a, _bb = _best
+                    st.caption(f"Best 2-pick EV in this filter: **{_ev:+.0%}**  ·  "
+                               f"{_a.player} {_a.direction.upper()} {float(_a.line):g} {_a.stat_type}  +  "
+                               f"{_bb.player} {_bb.direction.upper()} {float(_bb.line):g} {_bb.stat_type}")
+            except Exception:
+                pass
+
+            _u = _u.copy()
+            _u["label"] = _u.apply(
                 lambda r: f"{r['player']} {r['direction'].upper()} {float(r['line']):g} "
-                          f"{r['stat_type']} ({calibrate(float(r['model_prob'])):.0%})", axis=1)
-            _legs = st.multiselect("Pick 2–6 legs", _b["label"].tolist(),
+                          f"{r['stat_type']} · {calibrate(float(r['model_prob'])):.0%}"
+                          f"  [{str(r['sport_code']).upper()}]", axis=1)
+            _legs = st.multiselect("Your legs (2–6)", _u["label"].tolist(),
                                    max_selections=6, key="parlay_build")
-            _sel = _b[_b["label"].isin(_legs)]
+            _sel = _u[_u["label"].isin(_legs)]
             if len(_sel) < 2:
-                st.caption("Select at least 2 legs.")
+                st.caption("Select at least 2 legs to see the parlay EV.")
             else:
                 _n = len(_sel)
-                _joint = float(_sel["model_prob"].astype(float).map(calibrate).prod())
-                _payout = {2: 3.0, 3: 5.0, 4: 10.0, 5: 20.0, 6: 37.5}.get(_n)
+                _joint = _joint_prob(_ld(_sel.itertuples()))   # correlation-aware (MC)
+                _payout = _pay.get(_n)
                 _ngames = int(_sel["game_id"].nunique())
                 m1, m2, m3 = st.columns(3)
                 m1.metric("Legs", _n)
-                m2.metric("Joint hit", f"{_joint:.1%}", help="if independent")
+                m2.metric("Joint hit", f"{_joint:.1%}", help="correlation-aware (Monte-Carlo)")
                 if _payout:
                     m3.metric(f"Payout {_payout:g}×", f"EV {_joint * _payout - 1:+.0%}",
                               delta_color="normal" if _joint * _payout >= 1 else "inverse")
                 if _n - _ngames > 0:
-                    st.caption(f":material/warning: {_n - _ngames} same-game leg(s) — positively correlated, "
-                               "so the true joint (and EV) is higher than this independent "
-                               "estimate, but the parlay is riskier (busts as a block).")
+                    st.caption(f":material/warning: {_n - _ngames} same-game leg(s) — the EV already accounts "
+                               "for their correlation, but they bust as a block (higher variance).")
                 st.code("\n".join(f"{r['player']} {r['direction'].upper()} "
                                   f"{float(r['line']):g} {r['stat_type']}"
                                   for _, r in _sel.iterrows()))
