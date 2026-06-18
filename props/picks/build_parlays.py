@@ -16,6 +16,7 @@ so EV is even better than the independent calculation suggests.
 import itertools
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 MULTIPLIERS = {2: 3.0, 3: 5.0, 4: 10.0}
 
@@ -95,13 +96,49 @@ def _joint_prob_4(legs: tuple) -> float:
     return float(np.clip(base, 0.01, 0.99))
 
 
-def _joint_prob(legs: tuple) -> float:
+def _pairwise_rho(a: dict, b: dict) -> float:
+    """Latent Gaussian correlation implied by the prob-scale covariance `_corr_adj`.
+    Cov(A,B) = rho * sqrt(pA(1-pA) pB(1-pB)), so rho = corr_adj / that sqrt."""
+    adj = _corr_adj(a, b)
+    if adj == 0.0:
+        return 0.0
+    pa, pb = a["model_prob"], b["model_prob"]
+    denom = np.sqrt(pa * (1 - pa) * pb * (1 - pb))
+    return float(np.clip(adj / denom, -0.95, 0.95)) if denom > 0 else 0.0
+
+
+def mc_joint_prob(legs: tuple, n_sims: int = 40000) -> float:
+    """P(all legs hit) via a Gaussian copula over the legs' pairwise correlations.
+
+    Correct for any number of correlated legs, unlike the first-order analytic sum
+    (`_joint_prob_3/4`) which OVERSTATES stacked-parlay EV — e.g. a 4-leg same-team
+    stack reads joint .30 / +200% EV analytically vs .24 / +144% here. Seeded →
+    deterministic per leg-set. Only invoked when legs are actually correlated."""
     n = len(legs)
-    if n == 2: return _joint_prob_2(*legs)
-    if n == 3: return _joint_prob_3(legs)
-    if n == 4: return _joint_prob_4(legs)
-    # Fallback: independent
-    return float(np.clip(np.prod([l["model_prob"] for l in legs]), 0.01, 0.99))
+    p = np.array([l["model_prob"] for l in legs], dtype=float)
+    R = np.eye(n)
+    for i in range(n):
+        for j in range(i + 1, n):
+            R[i, j] = R[j, i] = _pairwise_rho(legs[i], legs[j])
+    # nearest-PSD: heuristic pairwise rhos need not be jointly consistent
+    w, V = np.linalg.eigh(R)
+    R = V @ np.diag(np.clip(w, 1e-6, None)) @ V.T
+    d = np.sqrt(np.diag(R)); R = R / np.outer(d, d)
+    L = np.linalg.cholesky(R)
+    Z = np.random.default_rng(42).standard_normal((n_sims, n)) @ L.T
+    hit = (Z < norm.ppf(p)).all(axis=1)
+    return float(np.clip(hit.mean(), 0.01, 0.99))
+
+
+def _joint_prob(legs: tuple) -> float:
+    """Exact independent product when no legs are correlated (the common case);
+    Gaussian-copula MC when they are (the analytic first-order sum overstated EV)."""
+    legs = tuple(legs)
+    has_corr = any(_corr_adj(legs[i], legs[j]) != 0.0
+                   for i in range(len(legs)) for j in range(i + 1, len(legs)))
+    if not has_corr:
+        return float(np.clip(np.prod([l["model_prob"] for l in legs]), 0.01, 0.99))
+    return mc_joint_prob(legs)
 
 
 def build_correlated_parlays(picks: pd.DataFrame, top_n: int = 10) -> list[dict]:
