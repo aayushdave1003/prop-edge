@@ -69,10 +69,15 @@ python -m props.ingest.mlb_schedule "$YESTERDAY"
 python -m props.ingest.mlb_schedule "$TODAY"
 python -m props.ingest.mlb_schedule "$TOMORROW"
 
+# NBA/NHL go quiet in summer; their schedule endpoints (flaky stats.nba.com,
+# api-web.nhle.com) then time out on empty future dates. A transient timeout
+# there must not inflate step_failures — a real in-season gap still surfaces via
+# ingest_monitor's slate_volume check. WARN, don't count. (MLB/WNBA stay hard:
+# in-season, and the spine of the daily slate.)
 echo "--- NBA schedule ---"
-python -m props.ingest.nba_schedule "$YESTERDAY"
-python -m props.ingest.nba_schedule "$TODAY"
-python -m props.ingest.nba_schedule "$TOMORROW"
+python -m props.ingest.nba_schedule "$YESTERDAY" || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
+python -m props.ingest.nba_schedule "$TODAY"     || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
+python -m props.ingest.nba_schedule "$TOMORROW"  || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
 
 echo "--- WNBA schedule ---"
 python -m props.ingest.wnba_schedule "$YESTERDAY"
@@ -80,9 +85,9 @@ python -m props.ingest.wnba_schedule "$TODAY"
 python -m props.ingest.wnba_schedule "$TOMORROW"
 
 echo "--- NHL schedule ---"
-python -m props.ingest.nhl_schedule "$YESTERDAY"
-python -m props.ingest.nhl_schedule "$TODAY"
-python -m props.ingest.nhl_schedule "$TOMORROW"
+python -m props.ingest.nhl_schedule "$YESTERDAY" || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
+python -m props.ingest.nhl_schedule "$TODAY"     || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
+python -m props.ingest.nhl_schedule "$TOMORROW"  || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
 
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 # When writing to Railway (remote DB), cap the batch to avoid backfilling years
