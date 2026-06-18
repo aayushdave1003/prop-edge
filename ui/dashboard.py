@@ -130,6 +130,8 @@ except Exception:
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0');
+.mi{font-family:'Material Symbols Outlined';font-weight:400;font-style:normal;line-height:1;vertical-align:-0.16em;font-size:1.05em;-webkit-font-smoothing:antialiased;}
 
 /* ── Design tokens ─────────────────────────────────────────────
    --bg deep base · --surface glass card · --line hairline border
@@ -966,7 +968,7 @@ def render_ops_view():
     c3.metric("DB size", m["db"]["size"])
     st.caption(f":material/casino: Odds API — {m['odds']['detail']}")
     _stale = (s["last_scrape_hours"] or 0) > 18 or (p["last_picked_hours"] or 0) > 36
-    _emoji = "🔴" if _stale else "🟢"
+    _emoji = ":material/error:" if _stale else ":material/check_circle:"
     st.caption(f"{_emoji} last scrape {s['last_scrape_hours']}h ago · "
                f"last slate {p['last_picked_hours']}h ago"
                + ("  — pipeline looks stale" if _stale else ""))
@@ -986,7 +988,7 @@ def render_ops_view():
     try:
         from props.ops.data_audit import run_checks as _audit
         for f in _audit():
-            st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+            st.write((":material/warning: " if f["level"] == "warn" else ":material/check_circle: ")
                      + f"**{f['name']}** — {f['detail']}")
     except Exception as e:
         st.caption(f"data audit unavailable: {e}")
@@ -995,7 +997,7 @@ def render_ops_view():
     try:
         from props.ops.feature_drift import run_checks as _drift
         for f in _drift():
-            st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+            st.write((":material/warning: " if f["level"] == "warn" else ":material/check_circle: ")
                      + f"**{f['name']}** — {f['detail']}")
     except Exception as e:
         st.caption(f"feature drift unavailable: {e}")
@@ -1005,7 +1007,7 @@ def render_ops_view():
         try:
             from props.ops.dashboard_monitor import run_checks
             for f in run_checks():
-                st.write(("⚠️ " if f["level"] == "warn" else "✅ ")
+                st.write((":material/warning: " if f["level"] == "warn" else ":material/check_circle: ")
                          + f"**{f['name']}** — {f['detail']}")
         except Exception as e:
             st.caption(f"health check unavailable: {e}")
@@ -1427,16 +1429,16 @@ def live_row_html(sport: str, stat_type: str, line: float, direction: str, live:
     if direction == "over":
         cleared = cur >= line
         color = "#2ee6a6" if cleared else "#ffcf5c"
-        txt = (f"✅ HIT {cur:g}/{line:g}" if cleared
+        txt = (f'<span class="mi">check_circle</span> HIT {cur:g}/{line:g}' if cleared
                else f"{cur:g}/{line:g} · needs {line-cur:g}+")
     else:  # under
         safe = cur < line
         color = "#2ee6a6" if safe else "#ff5d6c"
         txt = (f"{cur:g}/{line:g} · {line-cur:g} cushion" if safe
-               else f"❌ BUSTED {cur:g}/{line:g}")
+               else f'<span class="mi">cancel</span> BUSTED {cur:g}/{line:g}')
     return f"""
 <div class="prob-row" style="margin-top:8px">
-  <span class="prob-label" style="color:#ff5d6c">🔴 LIVE · {status}</span>
+  <span class="prob-label" style="color:#ff5d6c"><span class="mi" style="font-size:0.8em">fiber_manual_record</span> LIVE · {status}</span>
   <span class="prob-value" style="color:{color}">{txt}</span>
 </div>
 <div class="edge-bar-bg" style="margin-top:4px">
@@ -1534,7 +1536,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
 
     badge_cls  = "over" if direction == "over" else "under"
     badge_text = "OVER" if direction == "over" else "UNDER"
-    inj_html  = f'<div class="inj-badge">⚠ +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
+    inj_html  = f'<div class="inj-badge"><span class="mi">warning</span> +{inj:.0f} min from injuries</div>' if inj >= 15 else ""
 
     # The player's OWN injury status (warn before betting someone who's out/IL).
     # NULL joins come back as NaN (a truthy float), so coerce non-strings to "".
@@ -1548,7 +1550,7 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
         _soft = any(k in _s for k in ("day-to-day", "day to day", "questionable",
                                       "doubtful", "probable", "gtd", "game-time"))
         cls = "warn" if _soft else "out"
-        icon = "⚠" if _soft else "🚫"
+        icon = '<span class="mi">warning</span>' if _soft else '<span class="mi">block</span>'
         _in = row.get("injury_note")
         note = _in.strip() if isinstance(_in, str) else ""
         note = f" · {note[:48]}" if note else ""
@@ -1597,12 +1599,12 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
             why_bits.append("line moving your way")
     if not why_bits:
         why_bits.append(f"model {prob:.0%} confident")
-    why_html = f'<div class="why">💡 {" · ".join(why_bits[:3])}</div>'
+    why_html = f'<div class="why"><span class="mi">lightbulb</span> {" · ".join(why_bits[:3])}</div>'
 
     # ⭐ recommended picks (clear their category cutoff) — starred + highlighted.
     is_rec = bool(row.get("_rec", False))
     rec_cls = " rec" if is_rec else ""
-    star = '<span class="rec-star" title="Recommended — clears its category cutoff">⭐</span> ' if is_rec else ""
+    star = '<span class="rec-star" title="Recommended — clears its category cutoff"><span class="mi" style="font-size:0.85em;color:#ffcf5c">star</span></span> ' if is_rec else ""
 
     # Projection + likely range — a confidence band, not just a point prob. The
     # model's predicted_mean is a Poisson rate for counting stats, so the 25–75%
@@ -1620,10 +1622,10 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
             if _band is None:
                 from scipy.stats import poisson
                 _band = (int(poisson.ppf(0.25, pm)), int(poisson.ppf(0.75, pm)))
-            proj_html = (f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b>'
+            proj_html = (f'<div class="proj-line"><span class="mi">insights</span> Projection <b>{pm:.1f}</b>'
                          f' · likely <b>{_band[0]}–{_band[1]}</b></div>')
         except Exception:
-            proj_html = f'<div class="proj-line">📊 Projection <b>{pm:.1f}</b></div>'
+            proj_html = f'<div class="proj-line"><span class="mi">insights</span> Projection <b>{pm:.1f}</b></div>'
 
     # Weather chip (MLB) — wind blowing out drives offense (validated: 65% over
     # rate vs 43% calm/in). Only meaningful for hit/TB/HR-type props.
@@ -1631,16 +1633,16 @@ def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     if sport == "mlb":
         _wt, _wo, _dome = row.get("wx_temp"), row.get("wx_wind_out"), row.get("wx_dome")
         if _dome:
-            weather_html = '<div class="wx-chip">🏟️ dome (neutral)</div>'
+            weather_html = '<div class="wx-chip"><span class="mi">stadium</span> dome (neutral)</div>'
         elif _wo is not None and pd.notna(_wo):
             wo = float(_wo)
             t = f"{float(_wt):.0f}°F · " if _wt is not None and pd.notna(_wt) else ""
             if wo >= 5:
-                weather_html = f'<div class="wx-chip wx-out" title="Wind blowing out — boosts hits/TB/HR">{t}💨 wind out +{wo:.0f}</div>'
+                weather_html = f'<div class="wx-chip wx-out" title="Wind blowing out — boosts hits/TB/HR">{t}<span class="mi">air</span> wind out +{wo:.0f}</div>'
             elif wo <= -5:
-                weather_html = f'<div class="wx-chip wx-in" title="Wind blowing in — suppresses offense">{t}🍃 wind in {wo:.0f}</div>'
+                weather_html = f'<div class="wx-chip wx-in" title="Wind blowing in — suppresses offense">{t}<span class="mi">air</span> wind in {wo:.0f}</div>'
             else:
-                weather_html = f'<div class="wx-chip">{t}🍃 calm</div>'
+                weather_html = f'<div class="wx-chip">{t}<span class="mi">air</span> calm</div>'
 
     return _html(f"""
 <div class="pick-card{rec_cls}">
@@ -1727,7 +1729,7 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
     n_games = int(top["game_id"].nunique())
     return _html(f"""
 <div class="slate-card">
-  <div class="slate-title">⚡ Top {n}-Pick Slate · {mults[n]} payout</div>
+  <div class="slate-title"><span class="mi">bolt</span> Top {n}-Pick Slate · {mults[n]} payout</div>
   <div class="slate-meta">Diversified across {n_games} game{'s' if n_games != 1 else ''} · {joint:.0%} joint hit (if independent) · paper-tracking only, not betting advice</div>
   {legs_html}
 </div>""")
@@ -1737,7 +1739,7 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
 with st.sidebar:
     st.markdown("### :material/settings: Settings")
     _theme_qp = st.query_params.get("theme", "dark")
-    _light = st.toggle("☀️ Light mode", value=(_theme_qp == "light"), key="theme")
+    _light = st.toggle("Light mode", value=(_theme_qp == "light"), key="theme")
     st.query_params["theme"] = "light" if _light else "dark"
 
     st.markdown("---")
@@ -1816,7 +1818,7 @@ st.markdown(
     '<h1 style="font-size:2rem;margin-bottom:0;font-weight:900;letter-spacing:-0.03em">'
     '<span style="background:linear-gradient(135deg,#9d7bff,#22d3ee);'
     '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">'
-    '⚡ prop-edge</span></h1>',
+    '<span class="mi">bolt</span> prop-edge</span></h1>',
     unsafe_allow_html=True)
 st.markdown('<p style="color:#5f6678;margin-top:2px;margin-bottom:0.8rem;font-size:0.82rem;'
             'text-transform:uppercase;letter-spacing:0.08em">'
@@ -1826,7 +1828,7 @@ st.markdown('<p style="color:#5f6678;margin-top:2px;margin-bottom:0.8rem;font-si
 st.markdown('<div style="background:rgba(255,207,92,0.08);border:1px solid rgba(255,207,92,0.25);'
             'border-radius:10px;padding:9px 14px;margin-bottom:1.4rem;font-size:0.78rem;'
             'color:#c9b270;line-height:1.5">'
-            '⚠️ <b>Research / paper-tracking only — not betting advice.</b> '
+            '<span class="mi" style="color:#ffcf5c">warning</span> <b>Research / paper-tracking only — not betting advice.</b> '
             'This project places no bets and touches no accounts; it tracks model predictions '
             'against publicly-visible PrizePicks lines. Intended for 21+ in jurisdictions where '
             'sports wagering is legal. All results are hypothetical.</div>',
@@ -1969,7 +1971,7 @@ with tab_picks:
         rec_only = st.toggle(
             "Recommended only",
             value=_qp.get("rec", "0") == "1", key="rec",
-            help="Off (default): show every pick, with ⭐ on the ones that clear "
+            help="Off (default): show every pick, with a star on the ones that clear "
                  "their per-category confidence cutoff (sorted first). On: hide "
                  "the rest. Cutoffs are auto-tuned from settled history.")
 
@@ -2059,7 +2061,7 @@ with tab_picks:
             with st.expander(f":material/link: Correlated stacks ({len(_stacks)}) — pitcher Ks + opposing unders"):
                 for s in _stacks[:5]:
                     st.markdown(
-                        f"⚾ **{s['pitcher']}** OVER {s['p_line']:g} Ks  ＋  "
+                        f"<span class='mi'>sports_baseball</span> **{s['pitcher']}** OVER {s['p_line']:g} Ks  ＋  "
                         f"**{s['batter']}** UNDER {s['b_line']:g} {s['b_stat']}  "
                         f"<span style='color:#5f6678'>· joint ~{s['joint']:.0%} "
                         f"(they move together)</span>", unsafe_allow_html=True)
@@ -2084,7 +2086,7 @@ with tab_picks:
         if any_live:
             st.markdown(
                 '<div style="color:#ff5d6c;font-weight:700;margin:4px 0 10px">'
-                '🔴 LIVE games in progress — tracking picks in real time '
+                '<span class="mi" style="color:#ff5d6c;font-size:0.8em">fiber_manual_record</span> LIVE games in progress — tracking picks in real time '
                 '(auto-refreshes every 45s)</div>', unsafe_allow_html=True)
 
         # Card grid (3 per row) — wrapped in a fragment that re-fetches live
@@ -2275,8 +2277,8 @@ with tab_game:
 
     # ── WNBA & NHL (market-implied — no winner model for these sports) ─────────
     _wnba_nhl_date = _today.strftime("%Y%m%d")
-    _render_market_section("WNBA", "🏀", "basketball/wnba", _wnba_nhl_date)
-    _render_market_section("NHL",  "🏒", "hockey/nhl",      _wnba_nhl_date)
+    _render_market_section("WNBA", ":material/sports_basketball:", "basketball/wnba", _wnba_nhl_date)
+    _render_market_section("NHL",  ":material/sports_hockey:", "hockey/nhl",      _wnba_nhl_date)
 
 
 # ══ TAB 3: Performance ═══════════════════════════════════════════════════════
@@ -2309,7 +2311,7 @@ with tab_perf:
         if len(rec) >= 10:
             rec_wr = (rec["leg_result"] == "win").mean()
             st.success(
-                f"⭐ **Recommended tier (per-category cutoffs):** "
+                f":material/star: **Recommended tier (per-category cutoffs):** "
                 f"**{rec_wr:.1%}** win rate over {len(rec)} settled picks "
                 f"(vs {win_pct:.1%} for all) · 2-pick ROI {rec_wr**2*3-1:+.0%}. "
                 "This is the tier surfaced by default on Today's Picks.")
@@ -2655,11 +2657,11 @@ with tab_perf:
                 label = f"{row['sport_code'].upper()} {row['stat_type']} {row['direction'].upper()}"
                 wp = float(row["win_pct"]) if pd.notna(row["win_pct"]) else 0
                 if wp >= 60:
-                    recs_keep.append(f"✅ **{label}** — {wp:.1f}% win rate ({int(row['wins'])}W-{int(row['losses'])}L)")
+                    recs_keep.append(f":material/check_circle: **{label}** — {wp:.1f}% win rate ({int(row['wins'])}W-{int(row['losses'])}L)")
                 elif wp < 50:
-                    recs_drop.append(f"🚫 **{label}** — {wp:.1f}% win rate, below 50% ({int(row['wins'])}W-{int(row['losses'])}L)")
+                    recs_drop.append(f":material/block: **{label}** — {wp:.1f}% win rate, below 50% ({int(row['wins'])}W-{int(row['losses'])}L)")
                 elif 50 <= wp < 57.7:
-                    recs_watch.append(f"⚠️ **{label}** — {wp:.1f}% win rate, below breakeven")
+                    recs_watch.append(f":material/warning: **{label}** — {wp:.1f}% win rate, below breakeven")
 
             if recs_keep:
                 st.markdown("**Keep betting — above breakeven:**")
