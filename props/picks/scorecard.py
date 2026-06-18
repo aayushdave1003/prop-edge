@@ -69,6 +69,41 @@ def _drawdown(rec_rows):
     return round(peak - cum, 1), streak
 
 
+def _accuracy_block(rows) -> str:
+    """Monospace accuracy table over the loaded window: overall hit rate,
+    recommended-tier breakdown (overall + by sport), and per sport × line."""
+    win = [r for r in rows if r.leg_result in ("win", "loss")]
+    aw, al = _wl(win)
+    rw, rl = _wl(_rec(win))
+    _dts = [r.d for r in win]
+    days = (max(_dts) - min(_dts)).days + 1 if _dts else 0
+    L = [f"ACCURACY · last {days}d"]
+    if aw + al:
+        L.append(f"all picks      {aw}-{al}  ({100*aw/(aw+al):.0f}%)  ·  {aw} of {aw+al} hit")
+    if rw + rl:
+        L.append(f"recommended    {rw}-{rl}  ({100*rw/(rw+rl):.0f}%)  vs 57.7% breakeven")
+        for sp in ("mlb", "nba", "wnba", "nhl"):
+            w, l = _wl(_rec([r for r in win if r.sport_code == sp]))
+            if w + l:
+                L.append(f"   {sp:5} {w}-{l} ({100*w/(w+l):.0f}%)")
+    # per sport × line (stat/direction), all picks, n>=5
+    buckets: dict = {}
+    for r in win:
+        b = buckets.setdefault((r.sport_code, r.stat_type, r.direction), [0, 0])
+        b[0] += r.leg_result == "win"; b[1] += 1
+    items = sorted(((k, w, n) for k, (w, n) in buckets.items() if n >= 5),
+                   key=lambda t: (t[0][0], -t[2]))
+    _short = {"strikeouts_pitcher": "strikeouts", "strikeouts_batter": "K(bat)",
+              "total_bases": "tot_bases", "pts_rebs_asts": "PRA", "pts_rebs": "P+R",
+              "pts_asts": "P+A", "rebs_asts": "R+A", "blocks_steals": "blk+stl",
+              "threes_made": "3PM", "fg3_made": "3PM"}
+    if items:
+        L += ["", "by sport · line (n≥5):"]
+        for (sp, stat, d), w, n in items[:22]:
+            L.append(f"  {sp:4} {_short.get(stat, stat)[:12]:12} {d:5} {w}-{n-w:<2} {100*w/n:>3.0f}%")
+    return "```\n" + "\n".join(L)[:1010] + "\n```"
+
+
 def build_payload(rows, target_date, today=None):
     from datetime import timedelta
     if today is None:
@@ -129,6 +164,7 @@ def build_payload(rows, target_date, today=None):
 
     fields = sport_lines + [
         {"name": "7-day recommended", "value": r7, "inline": False},
+        {"name": "🎯 Accuracy", "value": _accuracy_block(rows), "inline": False},
     ]
     desc = (f"**Recommended: {rw}–{rl} ({rec_pct:.0%})** vs 57.7% breakeven "
             f"{'✅' if ok else '🔻'}\nOverall: {dw}–{dl} ({dw/(dw+dl):.0%})"
