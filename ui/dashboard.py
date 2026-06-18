@@ -15,6 +15,7 @@ from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from
 from props.models.prob_calibration import calibrate
 from props.picks.build_parlays import build_diversified_parlay
 from props.picks.compute_clv import clv_points
+from props.picks.slate_kelly import slate_kelly_bankroll, slate_kelly_stakes
 
 # Apply any pending schema migrations on startup (idempotent, tracked).
 run_migrations()
@@ -512,6 +513,22 @@ def simulate_bankroll(picks_df: pd.DataFrame):
     return curve, m
 
 
+@st.cache_data(ttl=300)
+def slate_kelly_curve(picks_df: pd.DataFrame):
+    """Correlation-aware slate-Kelly compounding bankroll — an illustrative
+    companion to the flat curve, sizing each day's clustered slate jointly (so
+    correlated same-game picks aren't over-staked). Fully guarded: returns
+    (None, {}) on any issue so it can never break the page."""
+    try:
+        need = {"pick_date", "player_id", "game_id", "team_id",
+                "stat_type", "direction", "model_prob", "leg_result"}
+        if not need.issubset(picks_df.columns) or picks_df.empty:
+            return None, {}
+        return slate_kelly_bankroll(picks_df)
+    except Exception:
+        return None, {}
+
+
 def _prediction_notice(sport: str, err: Exception) -> None:
     """Render a clean, non-alarming notice instead of a raw traceback.
 
@@ -722,6 +739,9 @@ def load_all_settled_picks():
     sql = """
         SELECT
             pk.pick_id,
+            pk.player_id,
+            pk.game_id,
+            g.home_team_id              AS team_id,
             pk.picked_at::date          AS pick_date,
             g.sport_code,
             pk.stat_type,
@@ -1990,6 +2010,25 @@ with tab_picks:
         # Slate card — top picks across all sports by edge
         if not filtered.empty:
             st.markdown(build_slate_card(filtered), unsafe_allow_html=True)
+            # Correlation-aware slate-Kelly stakes for today's full recommended slate
+            # (guarded — never break the page). Down-sizes clustered same-game picks
+            # that naive per-leg Kelly would over-stake.
+            try:
+                _rk = filtered[filtered["_rec"]] if "_rec" in filtered.columns else filtered.iloc[0:0]
+                if len(_rk) >= 2:
+                    _legs = [{"player_id": r.get("player_id"), "game_id": r.get("game_id"),
+                              "team_id": r.get("team_ext_id"), "stat_type": r.get("stat_type"),
+                              "direction": r.get("direction"), "model_prob": float(r["model_prob"])}
+                             for _, r in _rk.iterrows()]
+                    _f = slate_kelly_stakes(_legs)
+                    _ng = int(_rk["game_id"].nunique())
+                    st.caption(
+                        f"⚖️ **Slate-Kelly stakes** (correlation-aware · half-Kelly): stake "
+                        f"**{_f.sum():.0%} of bankroll** total across {len(_rk)} recommended picks on "
+                        f"{_ng} game{'s' if _ng != 1 else ''} (max {_f.max():.1%} on any one). Sizes the "
+                        f"slate jointly so correlated same-game picks aren't over-staked · paper sizing, not betting advice.")
+            except Exception:
+                pass
 
         # ── Tail this slate — one-click copyable text of the RECOMMENDED picks ──
         _rec_df = filtered[filtered["_rec"]] if "_rec" in filtered.columns else filtered.iloc[0:0]
@@ -2411,6 +2450,17 @@ with tab_perf:
             st.line_chart(chart, height=240)
             st.caption("Flat 1u/leg · win pays +0.73u, loss −1u (per-leg equivalent of a "
                        "2-pick 3× parlay, decimal √3) · paper-tracking only, not betting advice.")
+            # Correlation-aware slate-Kelly companion (Recommended scope only — the
+            # relevant, bounded slate; sizes clustered same-game picks jointly).
+            if bk_scope.startswith("Recommended"):
+                sk_curve, sk_m = slate_kelly_curve(bk_src)
+                if sk_m and sk_m.get("n_days", 0) >= 5:
+                    st.caption(
+                        f"⚖️ **Slate-Kelly sizing** (correlation-aware · half-Kelly · no leverage): "
+                        f"paper bankroll **{sk_m['final_mult']:.1f}× start** over {sk_m['n_days']} days, "
+                        f"max drawdown {sk_m['max_dd_pct']:.0%}. Sizes each day's clustered slate jointly so "
+                        f"correlated same-game picks aren't over-staked (per-leg Kelly would over-leverage these). "
+                        f"Illustrative — compounds the streak, unlike the flat curve above.")
 
         # ── Model backtest history ────────────────────────────────────────────
         bt_trend = load_backtest_trend()

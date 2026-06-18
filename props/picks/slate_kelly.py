@@ -26,6 +26,7 @@ from props.picks.build_parlays import _pairwise_rho
 NET_ODDS = 2.0          # a pick framed as a 3x bet (win → +2 units net), matching the per-leg Kelly
 KELLY_MULT = 0.5        # half-Kelly for safety
 MAX_STAKE_PER_PICK = 0.10   # cap any single pick at 10% of bankroll
+MAX_TOTAL_EXPOSURE = 1.0    # full-Kelly never leverages (sum of stakes <= bankroll); halved by KELLY_MULT
 N_SIMS = 20000
 
 
@@ -67,13 +68,51 @@ def slate_kelly_stakes(picks: list[dict], n_sims: int = N_SIMS,
     wins = _sample_wins(picks, n_sims).astype(float)
     ret = (NET_ODDS + 1) * wins - 1.0                 # per-pick return per unit staked, per scenario
     def neg_log_growth(f):
-        wealth = 1.0 + ret @ f
-        wealth = np.clip(wealth, 1e-6, None)           # guard ruin scenarios
+        wealth = np.clip(1.0 + ret @ f, 1e-6, None)    # guard ruin scenarios
         return -np.mean(np.log(wealth))
-    f0 = np.clip(per_leg_half_kelly(picks), 0, MAX_STAKE_PER_PICK)
-    res = minimize(neg_log_growth, f0, method="L-BFGS-B",
-                   bounds=[(0.0, MAX_STAKE_PER_PICK)] * n)
-    return np.clip(res.x, 0, None) * (kelly_mult / KELLY_MULT if kelly_mult != KELLY_MULT else 1.0)
+    # Full-Kelly solve with NO leverage (sum of stakes <= 1 bankroll) + per-pick cap,
+    # then scale by kelly_mult. Without the total cap the optimiser over-leverages
+    # when the (heuristic, understated) correlations make the slate look diversified.
+    f0 = np.minimum(per_leg_half_kelly(picks), MAX_STAKE_PER_PICK)
+    if f0.sum() > MAX_TOTAL_EXPOSURE:
+        f0 *= MAX_TOTAL_EXPOSURE / f0.sum()
+    res = minimize(neg_log_growth, f0, method="SLSQP",
+                   bounds=[(0.0, MAX_STAKE_PER_PICK)] * n,
+                   constraints=[{"type": "ineq", "fun": lambda f: MAX_TOTAL_EXPOSURE - f.sum()}],
+                   options={"maxiter": 200, "ftol": 1e-9})
+    f_full = np.clip(res.x, 0, None) if res.success else f0
+    return f_full * kelly_mult
+
+
+def slate_kelly_bankroll(picks, kelly_mult: float = KELLY_MULT):
+    """Compound a paper bankroll staking each DAY's full slate via slate_kelly_stakes.
+
+    `picks` is a DataFrame with columns: pick_date, player_id, game_id, team_id,
+    stat_type, direction, model_prob, leg_result. Returns (curve Series indexed by
+    date, metrics dict). This is the correlation-aware compounding counterpart to
+    the dashboard's flat 1u curve — it sizes the heavily-clustered slates jointly
+    (so 21 picks on one game aren't 21 independent bets) and compounds the result.
+    """
+    import pandas as pd
+    d = picks[picks["leg_result"].isin(["win", "loss"])].copy()
+    if d.empty:
+        return pd.Series(dtype=float), {}
+    bankroll, peak, max_dd = 1.0, 1.0, 0.0
+    rows = []
+    for day, grp in d.sort_values("pick_date").groupby("pick_date"):
+        legs = [{"player_id": r.get("player_id"), "game_id": r.get("game_id"),
+                 "team_id": r.get("team_id"), "stat_type": r.get("stat_type"),
+                 "direction": r.get("direction"), "model_prob": float(r["model_prob"])}
+                for _, r in grp.iterrows()]
+        f = slate_kelly_stakes(legs, kelly_mult=kelly_mult)
+        wins = (grp["leg_result"] == "win").to_numpy(dtype=float)
+        day_ret = float(np.sum(f * ((NET_ODDS + 1) * wins - 1.0)))
+        bankroll *= max(1e-6, 1.0 + day_ret)
+        peak = max(peak, bankroll); max_dd = max(max_dd, (peak - bankroll) / peak)
+        rows.append((pd.to_datetime(day), bankroll))
+    curve = pd.Series(dict(rows))
+    return curve, {"final_mult": bankroll, "n_days": len(rows),
+                   "total_return": bankroll - 1.0, "max_dd_pct": max_dd}
 
 
 def main():
