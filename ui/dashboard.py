@@ -102,7 +102,7 @@ def correlated_stacks(df: pd.DataFrame) -> list[dict]:
 
 st.set_page_config(page_title="prop-edge", layout="wide",
                    initial_sidebar_state="collapsed",
-                   page_icon="⚡")
+                   page_icon=":material/bolt:")
 
 # ── Mobile / "add to home screen" (PWA-lite) ─────────────────────────────────
 # Inject iOS/Android home-screen meta into the parent <head> so the dashboard
@@ -905,7 +905,7 @@ def load_player_why(name: str):
 
 def _home_button(key: str):
     """Back to the main dashboard — clears the drill-down query params."""
-    if st.button("🏠 Home", key=key):
+    if st.button("Home", icon=":material/home:", key=key):
         for k in ("player", "view"):
             st.query_params.pop(k, None)
         st.rerun()
@@ -914,7 +914,7 @@ def _home_button(key: str):
 def render_player_view(name: str):
     """Read-only drill-down on one player (reached via ?player=…)."""
     _home_button("home_player")
-    st.markdown(f"### 🔎 {name} — pick history")
+    st.markdown(f"### :material/search: {name} — pick history")
     df = load_player_detail(name)
     if df.empty:
         st.info(f"No settled picks for {name}.")
@@ -928,7 +928,7 @@ def render_player_view(name: str):
     # Why the model rates them — per-prediction feature contributions (SHAP-lite)
     _why = load_player_why(name)
     if _why:
-        st.markdown("##### 🧠 Why — what drives the model's latest projection")
+        st.markdown("##### :material/lightbulb: Why — what drives the model's latest projection")
         for stat, drivers in _why.items():
             st.caption(f"**{stat}** — {drivers}")
     # by stat × direction
@@ -951,7 +951,7 @@ def render_ops_view():
     (reached via ?view=ops). Odds credits, scrape volume, pipeline freshness, and
     DB growth in one place so a blow-up is visible before it bites."""
     _home_button("home_ops")
-    st.markdown("### 🛠️ Ops — cost / usage")
+    st.markdown("### :material/build: Ops — cost / usage")
     try:
         from props.ops.usage import gather
         m = gather()
@@ -964,7 +964,7 @@ def render_ops_view():
     c1.metric("Lines today", s["today_lines"], f"10d avg {s['avg_10d']:.0f}")
     c2.metric("Picks today", p["today_n"], f"{p['settled_7d']} settled / 7d")
     c3.metric("DB size", m["db"]["size"])
-    st.caption(f"🎰 Odds API — {m['odds']['detail']}")
+    st.caption(f":material/casino: Odds API — {m['odds']['detail']}")
     _stale = (s["last_scrape_hours"] or 0) > 18 or (p["last_picked_hours"] or 0) > 36
     _emoji = "🔴" if _stale else "🟢"
     st.caption(f"{_emoji} last scrape {s['last_scrape_hours']}h ago · "
@@ -979,7 +979,7 @@ def render_ops_view():
     st.markdown("##### Database — biggest tables")
     st.dataframe(pd.DataFrame(m["db"]["tables"], columns=["Table", "Size"]),
                  use_container_width=True, hide_index=True)
-    st.caption(f"💳 Railway $ isn't exposed by API — see the "
+    st.caption(f":material/credit_card: Railway $ isn't exposed by API — see the "
                f"[Railway usage page]({m['railway_billing_url']}); DB size is the proxy.")
 
     st.markdown("##### Data accuracy")
@@ -1058,7 +1058,7 @@ def load_pick_history():
 def render_history_view():
     """Filterable settled-pick browser with CSV export (reached via ?view=history)."""
     _home_button("home_history")
-    st.markdown("### 📜 Pick history")
+    st.markdown("### :material/history: Pick history")
     df = load_pick_history()
     if df.empty:
         st.info("No settled picks yet.")
@@ -1084,7 +1084,7 @@ def render_history_view():
     st.caption(f"{len(f)} picks · record {w}–{len(wl) - w}"
                + (f" ({w / len(wl) * 100:.0f}%)" if len(wl) else ""))
     st.dataframe(f, use_container_width=True, hide_index=True)
-    st.download_button("⬇️ Download CSV", f.to_csv(index=False).encode(),
+    st.download_button("Download CSV", f.to_csv(index=False).encode(),
                        "prop-edge-picks.csv", "text/csv", key="h_csv")
     st.stop()
 
@@ -1125,7 +1125,7 @@ def render_results_view():
         '<h1 style="font-size:2.2rem;font-weight:900;letter-spacing:-0.03em;margin-bottom:0">'
         '<span style="background:linear-gradient(135deg,#9d7bff,#22d3ee);'
         '-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">'
-        '⚡ prop-edge — track record</span></h1>'
+        'prop-edge — track record</span></h1>'
         '<p style="color:#5f6678;margin-top:2px;font-size:0.82rem;text-transform:uppercase;'
         'letter-spacing:0.08em">paper-tracking · not betting advice</p>',
         unsafe_allow_html=True)
@@ -1152,7 +1152,7 @@ def render_results_view():
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
     bk = load_bankroll()
     if bk:
-        st.markdown("##### 💰 Bankroll (paper) — recommended tier")
+        st.markdown("##### :material/savings: Bankroll (paper) — recommended tier")
         b1, b2, b3 = st.columns(3)
         b1.metric("Net units", f"{bk['total_units']:+.1f}u",
                   delta_color="normal" if bk["total_units"] >= 0 else "inverse")
@@ -1188,7 +1188,7 @@ def _player_panel(name: str):
 def render_compare_view():
     """Two players side by side (reached via ?view=compare)."""
     _home_button("home_compare")
-    st.markdown("### ⚖️ Compare players")
+    st.markdown("### :material/balance: Compare players")
     players = load_picked_players()
     c1, c2 = st.columns(2)
     a = c1.selectbox("Player A", ["—"] + players, key="cmp_a")
@@ -1735,13 +1735,13 @@ def build_slate_card(picks_df: pd.DataFrame) -> str:
 
 # ── Sidebar controls: theme toggle + share link ─────────────────────────────
 with st.sidebar:
-    st.markdown("### ⚙️ Settings")
+    st.markdown("### :material/settings: Settings")
     _theme_qp = st.query_params.get("theme", "dark")
     _light = st.toggle("☀️ Light mode", value=(_theme_qp == "light"), key="theme")
     st.query_params["theme"] = "light" if _light else "dark"
 
     st.markdown("---")
-    st.markdown("### 🔎 Player lookup")
+    st.markdown("### :material/search: Player lookup")
     _tidx = load_team_index()      # full league rosters (all teams)
     _idx = load_player_index()     # players we have game data for, by recent team
     # Cascade: pick the League, then the Team (every team in the league), then a
@@ -1763,7 +1763,7 @@ with st.sidebar:
             else:
                 st.caption("No tracked players for this team yet.")
 
-    st.markdown("### ⭐ Watchlist")
+    st.markdown("### :material/star: Watchlist")
     _all_players = load_picked_players()
     _watch_qp = [w for w in (st.query_params.get("watch", "") or "").split(",") if w]
     _watch = st.multiselect("Follow players", _all_players,
@@ -1776,11 +1776,11 @@ with st.sidebar:
     st.markdown("---")
     # A real (clickable, relative) link to the shareable results page — appends
     # ?view=results to the current URL.
-    st.markdown("📣 **[Open your shareable results page →](?view=results)**")
+    st.markdown(":material/share: **[Open your shareable results page →](?view=results)**")
     st.caption("Read-only record you can share — link copies the current URL + `?view=results`.")
-    st.markdown("🛠️ **[Ops · cost & usage →](?view=ops)**")
-    st.markdown("📜 **[Pick history · browse + export →](?view=history)**")
-    st.markdown("⚖️ **[Compare players →](?view=compare)**")
+    st.markdown(":material/build: **[Ops · cost & usage →](?view=ops)**")
+    st.markdown(":material/history: **[Pick history · browse + export →](?view=history)**")
+    st.markdown(":material/balance: **[Compare players →](?view=compare)**")
 
 # Light palette: override the design tokens (cards/components use the variables).
 if _light:
@@ -1846,7 +1846,7 @@ rec_count = int(_rec_mask(df).sum()) if len(df) else 0
 
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Today's Picks", len(df))
-c2.metric("⭐ Recommended", rec_count,
+c2.metric("Recommended", rec_count,
           help="Picks clearing their category's tuned confidence cutoff "
                "(per-sport/stat; see category_cutoffs.json).")
 c3.metric("Avg Edge", avg_edge)
@@ -1857,8 +1857,8 @@ c5.metric("7-Day Win Rate", win_pct_7)
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
 tab_picks, tab_game, tab_perf, tab_soft, tab_recent = st.tabs(
-    ["🃏 Today's Picks", "🏆 Game Predictions", "📊 Performance",
-     "💰 Soft Lines", "📋 Recent Picks"]
+    [":material/style: Today's Picks", ":material/emoji_events: Game Predictions", ":material/analytics: Performance",
+     ":material/savings: Soft Lines", ":material/receipt_long: Recent Picks"]
 )
 
 
@@ -1872,7 +1872,7 @@ with tab_picks:
     # AND the persisted/sticky filters, otherwise a stale narrow filter survives.
     rc1, rc2 = st.columns([1, 4])
     with rc1:
-        if st.button("🔄 Refresh picks", use_container_width=True,
+        if st.button("Refresh picks", icon=":material/refresh:", use_container_width=True,
                      help="Re-read the latest picks from the database and reset the "
                           "filters to show every sport. The pipeline adds picks "
                           "(MLB/NBA/WNBA/NHL) automatically each morning — tap this "
@@ -1897,16 +1897,16 @@ with tab_picks:
     if _wl_names and not df.empty:
         _wdf = df[df["player"].isin(_wl_names)]
         if not _wdf.empty:
-            with st.expander(f"⭐ Watchlist — {len(_wdf)} pick(s) for "
+            with st.expander(f":material/star: Watchlist — {len(_wdf)} pick(s) for "
                              f"{_wdf['player'].nunique()} followed player(s) today", expanded=True):
                 for _, _r in _wdf.iterrows():
-                    st.markdown(f"⭐ **{_r['player']}** — {_r['direction'].upper()} "
+                    st.markdown(f":material/star: **{_r['player']}** — {_r['direction'].upper()} "
                                 f"{float(_r['line']):g} {_r['stat_type']} "
                                 f"<span style='color:#5f6678'>({calibrate(float(_r['model_prob'])):.0%})</span>",
                                 unsafe_allow_html=True)
 
     # ── Build your own parlay (interactive) ───────────────────────────────────
-    with st.expander("🎰 Build your own parlay"):
+    with st.expander("Build your own parlay", icon=":material/casino:"):
         if df.empty:
             st.caption("No picks today yet.")
         else:
@@ -1931,7 +1931,7 @@ with tab_picks:
                     m3.metric(f"Payout {_payout:g}×", f"EV {_joint * _payout - 1:+.0%}",
                               delta_color="normal" if _joint * _payout >= 1 else "inverse")
                 if _n - _ngames > 0:
-                    st.caption(f"⚠️ {_n - _ngames} same-game leg(s) — positively correlated, "
+                    st.caption(f":material/warning: {_n - _ngames} same-game leg(s) — positively correlated, "
                                "so the true joint (and EV) is higher than this independent "
                                "estimate, but the parlay is riskier (busts as a block).")
                 st.code("\n".join(f"{r['player']} {r['direction'].upper()} "
@@ -1941,7 +1941,7 @@ with tab_picks:
 
     if df.empty:
         st.info("No picks logged today yet. The daily cloud run posts them each "
-                "morning — tap **🔄 Refresh picks** once it's done.")
+                "morning — tap **Refresh picks** once it's done.")
     else:
         # Filters — persisted in the URL so they survive a reload / share link.
         _qp = st.query_params
@@ -1967,7 +1967,7 @@ with tab_picks:
                                         default=_qp_default("dir", dir_opts, dir_opts), key="di")
 
         rec_only = st.toggle(
-            "⭐ Recommended only",
+            "Recommended only",
             value=_qp.get("rec", "0") == "1", key="rec",
             help="Off (default): show every pick, with ⭐ on the ones that clear "
                  "their per-category confidence cutoff (sorted first). On: hide "
@@ -2023,7 +2023,7 @@ with tab_picks:
                     _f = slate_kelly_stakes(_legs)
                     _ng = int(_rk["game_id"].nunique())
                     st.caption(
-                        f"⚖️ **Slate-Kelly stakes** (correlation-aware · half-Kelly): stake "
+                        f":material/balance: **Slate-Kelly stakes** (correlation-aware · half-Kelly): stake "
                         f"**{_f.sum():.0%} of bankroll** total across {len(_rk)} recommended picks on "
                         f"{_ng} game{'s' if _ng != 1 else ''} (max {_f.max():.1%} on any one). Sizes the "
                         f"slate jointly so correlated same-game picks aren't over-staked · paper sizing, not betting advice.")
@@ -2044,7 +2044,7 @@ with tab_picks:
             _parlay = ([{"player": p["player"], "prob": calibrate(float(p["model_prob"]))}
                         for _, p in _par.iterrows()] if len(_par) >= 2 else None)
             _label = _td.now(_tz("America/Los_Angeles")).strftime("%a %b %-d")
-            with st.expander(f"📋 Tail this slate — copy {len(_picks)} recommended picks"):
+            with st.expander(f":material/content_copy: Tail this slate — copy {len(_picks)} recommended picks"):
                 st.code(format_slate(_picks, _parlay, _label), language=None)
                 st.caption("Tap the copy icon (top-right of the box) to grab the slate. "
                            "Paper-tracking only — not betting advice.")
@@ -2056,7 +2056,7 @@ with tab_picks:
         # than independent legs), the opposite of the diversified parlay.
         _stacks = correlated_stacks(_rec_df) if not _rec_df.empty else []
         if _stacks:
-            with st.expander(f"🔗 Correlated stacks ({len(_stacks)}) — pitcher Ks + opposing unders"):
+            with st.expander(f":material/link: Correlated stacks ({len(_stacks)}) — pitcher Ks + opposing unders"):
                 for s in _stacks[:5]:
                     st.markdown(
                         f"⚾ **{s['pitcher']}** OVER {s['p_line']:g} Ks  ＋  "
@@ -2217,7 +2217,7 @@ with tab_game:
     _today = _dt.now(ZoneInfo("America/Los_Angeles")).date()
 
     # ── NBA ───────────────────────────────────────────────────────────────────
-    st.markdown("### 🏀 NBA")
+    st.markdown("### :material/sports_basketball: NBA")
     game_preds = load_game_predictions_data()
 
     if game_preds.empty:
@@ -2256,7 +2256,7 @@ with tab_game:
     # Read-only from games.context (persisted by the cron). No live schedule
     # fetch or LightGBM inference on render — that was the slow path / libgomp
     # risk this tab used to hit.
-    st.markdown("### ⚾ MLB")
+    st.markdown("### :material/sports_baseball: MLB")
     mlb_df = load_mlb_game_predictions()
     if mlb_df.empty:
         st.info("No MLB predictions yet today — the cron computes these each morning.")
@@ -2319,7 +2319,7 @@ with tab_perf:
         # play); ROI assumes independent legs at that rate.
         p_leg = rec_wr if len(rec) >= 10 else win_pct
         PARLAY_MULT = {2: 3.0, 3: 5.0, 4: 10.0}  # PrizePicks power play
-        with st.expander(f"🎰 ROI by parlay size (at {p_leg:.0%} per-leg win rate)", expanded=True):
+        with st.expander(f":material/casino: ROI by parlay size (at {p_leg:.0%} per-leg win rate)", expanded=True):
             roi_rows = []
             for n, mult in PARLAY_MULT.items():
                 joint = p_leg ** n
@@ -2335,7 +2335,7 @@ with tab_perf:
                        "but the all-hit chance compounds down — the +EV sweet spot "
                        "is usually the smallest parlay. Assumes independent legs.")
 
-        with st.expander("🎚️ Active confidence cutoffs (auto-tuned per category)"):
+        with st.expander(":material/tune: Active confidence cutoffs (auto-tuned per category)"):
             st.caption(
                 "Lowest model-confidence at which each category's settled win "
                 f"rate clears the {CUTOFFS.get('breakeven', 0.577):.1%} 2-pick "
@@ -2365,7 +2365,7 @@ with tab_perf:
 
         # ── Closing Line Value ────────────────────────────────────────────────
         st.divider()
-        st.subheader("📈 Closing Line Value")
+        st.subheader(":material/trending_up: Closing Line Value")
         clv_df = all_picks.copy()
         if "line_close" in clv_df.columns:
             clv_df["clv"] = clv_df.apply(
@@ -2429,7 +2429,7 @@ with tab_perf:
 
         # ── Paper bankroll / ROI ──────────────────────────────────────────────
         st.divider()
-        st.subheader("💰 Paper P&L")
+        st.subheader(":material/savings: Paper P&L")
         bk_scope = st.radio("Bets included", ["Recommended", "All picks"],
                             horizontal=True, key="bk")
         bk_src = (all_picks[_rec_mask(all_picks).values]
@@ -2456,7 +2456,7 @@ with tab_perf:
                 sk_curve, sk_m = slate_kelly_curve(bk_src)
                 if sk_m and sk_m.get("n_days", 0) >= 5:
                     st.caption(
-                        f"⚖️ **Slate-Kelly sizing** (correlation-aware · half-Kelly · no leverage): "
+                        f":material/balance: **Slate-Kelly sizing** (correlation-aware · half-Kelly · no leverage): "
                         f"paper bankroll **{sk_m['final_mult']:.1f}× start** over {sk_m['n_days']} days, "
                         f"max drawdown {sk_m['max_dd_pct']:.0%}. Sizes each day's clustered slate jointly so "
                         f"correlated same-game picks aren't over-staked (per-leg Kelly would over-leverage these). "
@@ -2483,7 +2483,7 @@ with tab_perf:
         wf = load_daily_backtest()
         if not wf.empty:
             st.divider()
-            st.subheader("🧪 Daily walk-forward backtest")
+            st.subheader(":material/science: Daily walk-forward backtest")
             latest = wf.iloc[0]
             w1, w2, w3, w4 = st.columns(4)
             w1.metric("Rec-tier win rate",
@@ -2514,7 +2514,7 @@ with tab_perf:
                     detail = {}
             material = [f for f in detail.get("cutoff_sweep", []) if f.get("material")]
             if material:
-                with st.expander(f"⚠️ Cutoff-fit findings ({len(material)}) — auto-tuner check"):
+                with st.expander(f":material/warning: Cutoff-fit findings ({len(material)}) — auto-tuner check"):
                     rows_disp = []
                     for f in material:
                         lw = (f"{f['live_winrate']*100:.0f}%"
@@ -2602,7 +2602,7 @@ with tab_perf:
         st.divider()
 
         # ── Edge leaderboard — best & worst buckets ──────────────────────────
-        st.subheader("🏆 Edge leaderboard")
+        st.subheader(":material/leaderboard: Edge leaderboard")
         if not hist.empty:
             _lb = hist[hist["picks"] >= 8].copy()
             if not _lb.empty:
@@ -2616,10 +2616,10 @@ with tab_perf:
                 cols = ["Bucket", "Record", "Win %", "vs 57.7%"]
                 lc1, lc2 = st.columns(2)
                 with lc1:
-                    st.caption("🔥 Hottest (min 8 settled)")
+                    st.caption(":material/local_fire_department: Hottest (min 8 settled)")
                     st.dataframe(_lb.head(6)[cols], use_container_width=True, hide_index=True)
                 with lc2:
-                    st.caption("🧊 Coldest")
+                    st.caption(":material/ac_unit: Coldest")
                     st.dataframe(_lb.tail(6).iloc[::-1][cols],
                                  use_container_width=True, hide_index=True)
             else:
@@ -2678,7 +2678,7 @@ with tab_perf:
 
 # ══ TAB 4: Soft Lines ════════════════════════════════════════════════════════
 with tab_soft:
-    st.subheader("💰 Soft lines vs the sharp market")
+    st.subheader(":material/savings: Soft lines vs the sharp market")
     st.caption("PrizePicks lines the sharp books (DK/FD) price as **+EV, independent "
                "of our model** — the line-shopping edge. We recover the sharp market's "
                "implied projection and re-price it at the PrizePicks line; a side whose "
@@ -2711,7 +2711,7 @@ with tab_soft:
 
 # ══ TAB 5: Recent Picks ══════════════════════════════════════════════════════
 with tab_recent:
-    st.markdown("##### 🔎 Browse settled & recent picks")
+    st.markdown("##### :material/search: Browse settled & recent picks")
     days = st.slider("Days back", 1, 60, 7)
     recent = load_recent_picks(days)
 
