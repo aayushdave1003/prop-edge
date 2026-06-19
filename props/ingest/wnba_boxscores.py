@@ -27,6 +27,32 @@ def find_unprocessed_games() -> list[dict]:
 
 
 def ensure_player(session, ext_id: str, full_name: str, team_id: int) -> int:
+    """Resolve a WNBA box-score athlete to the SAME player row PrizePicks lines use.
+
+    This previously blind-inserted keyed on the ESPN athlete id, which created a
+    PARALLEL row for every player — divorcing box-score games (espn_ row) from
+    PrizePicks lines (pp_ row). The split starved WNBA pick generation of
+    features (lines on a row with 0 games) and left 91 duplicate players. Now we
+    mirror nba_boxscores.resolve_player — fuzzy name (pg_trgm) -> last-name ->
+    create — so games land on the row that already holds the lines/picks.
+    """
+    res = session.execute(text("""
+        SELECT player_id FROM players
+        WHERE sport_code='wnba' AND similarity(full_name, :name) > 0.8
+        ORDER BY similarity(full_name, :name) DESC LIMIT 1
+    """), {"name": full_name}).first()
+    if not res:
+        last = full_name.rsplit(" ", 1)[-1]
+        res = session.execute(text("""
+            SELECT player_id FROM players
+            WHERE sport_code='wnba' AND full_name LIKE '%%' || :last LIMIT 1
+        """), {"last": last}).first()
+    if res:
+        # Existing player (typically the pp_ lines row): attach games here and
+        # keep the team current (the box score is authoritative for who suited up).
+        session.execute(text("UPDATE players SET current_team_id=:tid, active=true "
+                             "WHERE player_id=:pid"), {"tid": team_id, "pid": res[0]})
+        return res[0]
     result = session.execute(text("""
         INSERT INTO players (sport_code, external_id, full_name, current_team_id, active)
         VALUES ('wnba', :ext, :name, :tid, true)
