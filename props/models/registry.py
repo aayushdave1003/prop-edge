@@ -161,6 +161,18 @@ MODELS = [
     ),
 ]
 
+# NBA/WNBA combo markets — direct summed-target Poisson models
+# (props.models.basketball_combos_v1). stat_type matches prop_lines.
+MODELS += [
+    ModelEntry(
+        name=f"{sp}_{combo}_v1", sport_code=sp, stat_type=combo, role="player",
+        model_path=Path(f"models/{sp}_{combo}_v1.txt"),
+        meta_path=Path(f"models/{sp}_{combo}_v1_meta.json"),
+    )
+    for sp in ("nba", "wnba")
+    for combo in ("pts_rebs_asts", "pts_rebs", "pts_asts", "rebs_asts")
+]
+
 
 def get_models_for_sport(sport_code: str) -> list[ModelEntry]:
     return [m for m in MODELS if m.sport_code == sport_code]

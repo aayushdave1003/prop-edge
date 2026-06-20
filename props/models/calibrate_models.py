@@ -61,6 +61,21 @@ CONFIGS = [
      "played": lambda s: float(s.get("at_bats", 0) or 0) > 0},
 ]
 
+# NBA/WNBA combo markets — summed targets, rotation-player filter (minutes >= 10)
+_COMBO_COMPONENTS = {"pts_rebs_asts": ["points", "rebounds", "assists"],
+                     "pts_rebs": ["points", "rebounds"], "pts_asts": ["points", "assists"],
+                     "rebs_asts": ["rebounds", "assists"]}
+_COMBO_LINES = {"pts_rebs_asts": [9.5, 14.5, 19.5, 24.5, 29.5, 34.5],
+                "pts_rebs": [7.5, 11.5, 15.5, 19.5, 23.5],
+                "pts_asts": [7.5, 11.5, 15.5, 19.5, 23.5],
+                "rebs_asts": [3.5, 5.5, 7.5, 9.5, 11.5]}
+CONFIGS += [
+    {"name": f"{sp}_{combo}_v1", "sport": sp, "target": _COMBO_COMPONENTS[combo],
+     "lines": _COMBO_LINES[combo],
+     "played": lambda s: float(s.get("minutes", 0) or 0) >= 10}
+    for sp in ("nba", "wnba") for combo in _COMBO_COMPONENTS
+]
+
 MIN_POINTS = 400          # need this many (raw_prob, hit) pairs to trust the fit
 MIN_SPREAD = 0.03         # calibrated values must vary at least this much (not collapsed)
 

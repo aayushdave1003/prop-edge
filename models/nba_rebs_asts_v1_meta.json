@@ -1,0 +1,36 @@
+{
+  "model_path": "models/nba_rebs_asts_v1.txt",
+  "target": "rebs_asts",
+  "components": [
+    "rebounds",
+    "assists"
+  ],
+  "feature_keys": [
+    "last_5_avg_points",
+    "last_10_avg_points",
+    "last_20_avg_points",
+    "season_avg_points",
+    "last_5_avg_rebounds",
+    "last_10_avg_rebounds",
+    "last_20_avg_rebounds",
+    "season_avg_rebounds",
+    "last_5_avg_assists",
+    "last_10_avg_assists",
+    "last_20_avg_assists",
+    "season_avg_assists",
+    "last_5_avg_minutes",
+    "last_10_avg_minutes",
+    "last_20_avg_minutes",
+    "season_avg_minutes",
+    "last_10_avg_usage_rate",
+    "season_avg_usage_rate",
+    "last_10_avg_fg_attempted",
+    "last_10_avg_turnovers",
+    "days_rest",
+    "games_played_season"
+  ],
+  "best_iteration": 249,
+  "test_n": 4703,
+  "mae_improvement_pct": 3.71,
+  "trained_date": "2026-06-20"
+}
