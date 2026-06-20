@@ -53,6 +53,12 @@ CONFIGS = [
     {"name": "mlb_home_runs_v1", "sport": "mlb", "target": "home_runs",
      "lines": [0.5, 1.5],
      "played": lambda s: float(s.get("at_bats", 0) or 0) > 0},
+    {"name": "strikeouts_batter_v1", "sport": "mlb", "target": "strikeouts",
+     "lines": [0.5, 1.5, 2.5],
+     "played": lambda s: float(s.get("at_bats", 0) or 0) > 0},
+    {"name": "hits_runs_rbis_v1", "sport": "mlb", "target": ["hits", "runs", "rbis"],
+     "lines": [1.5, 2.5, 3.5, 4.5],
+     "played": lambda s: float(s.get("at_bats", 0) or 0) > 0},
 ]
 
 MIN_POINTS = 400          # need this many (raw_prob, hit) pairs to trust the fit
@@ -91,7 +97,11 @@ def calibrate_one(cfg: dict, force: bool) -> str:
     stats = pd.json_normalize(df["stats"])
     X = pd.DataFrame({k: pd.to_numeric(derived[k], errors="coerce").fillna(0)
                       if k in derived.columns else 0.0 for k in feature_keys}).astype(float)
-    actual = pd.to_numeric(stats[cfg["target"]], errors="coerce").fillna(0).values
+    tgt = cfg["target"]   # str (single box-score key) or list (combo = sum of keys)
+    if isinstance(tgt, (list, tuple)):
+        actual = sum(pd.to_numeric(stats[t], errors="coerce").fillna(0) for t in tgt).values
+    else:
+        actual = pd.to_numeric(stats[tgt], errors="coerce").fillna(0).values
 
     n, folds = len(X), 5
     fold_size = n // folds
@@ -122,12 +132,17 @@ def calibrate_one(cfg: dict, force: bool) -> str:
 
     pts = np.array([0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
     cal = iso.predict(pts)
-    # Reject degenerate maps: a tail pinned at the upper clip (sparse-tail
-    # overfit, e.g. HR 60%->99%) or too little dynamic range (collapsed to a
-    # flat ceiling, e.g. WNBA assists -> 33%). Both make the model worse.
-    if cal.max() >= 0.97 or (cal[-1] - cal[0]) < 0.15:
+    # Reject degenerate maps: (a) collapsed to a flat ceiling — too little
+    # dynamic range (e.g. WNBA assists -> ~33%), or (b) a tail pinned at the
+    # upper clip when that tail is SPARSE (overfit, e.g. HR 60%->99% on a handful
+    # of points). A pinned-high tail backed by many points is legitimate — easy
+    # combo/batter-K lines genuinely hit ~99% — so don't reject those.
+    n_tail = int((raw_probs >= 0.85).sum())
+    collapsed = (cal[-1] - cal[0]) < 0.15
+    sparse_pinned = cal.max() >= 0.97 and n_tail < 300
+    if collapsed or sparse_pinned:
         return (f"{name}: degenerate map (max={cal.max():.2f}, "
-                f"range={cal[-1]-cal[0]:.2f}) — SKIP, not saving")
+                f"range={cal[-1]-cal[0]:.2f}, tail_n={n_tail}) — SKIP, not saving")
 
     with open(out_path, "wb") as f:
         pickle.dump({"global": iso}, f)

@@ -1,0 +1,32 @@
+{
+  "model_path": "models/strikeouts_batter_v1.txt",
+  "target": "strikeouts",
+  "feature_keys": [
+    "last_5_avg_strikeouts",
+    "last_10_avg_strikeouts",
+    "last_20_avg_strikeouts",
+    "season_avg_strikeouts",
+    "last_5_avg_batter_k_rate",
+    "last_10_avg_batter_k_rate",
+    "last_20_avg_batter_k_rate",
+    "season_avg_batter_k_rate",
+    "last_5_avg_at_bats",
+    "last_10_avg_at_bats",
+    "pitcher_last_5_k_rate",
+    "pitcher_last_10_k_rate",
+    "last_10_avg_faced_k_rate",
+    "last_10_avg_batter_hard_contact",
+    "season_avg_batter_hard_contact",
+    "last_10_avg_batter_slg",
+    "last_10_avg_batter_iso",
+    "last_10_avg_pitcher_command",
+    "days_rest",
+    "games_played_season",
+    "park_factor"
+  ],
+  "best_iteration": 21,
+  "train_n": 84787,
+  "val_n": 740,
+  "test_n": 51744,
+  "trained_date": "2026-06-20"
+}
