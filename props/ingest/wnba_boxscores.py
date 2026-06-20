@@ -8,19 +8,28 @@ from props.utils.logging import log, configure_logging
 
 ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/summary"
 
+# Fallback stat order if ESPN omits the `names` label array (it normally doesn't).
+# This is ESPN's ACTUAL order — the parse maps by label, so order only matters here.
+_WNBA_STAT_ORDER = ["MIN", "PTS", "FG", "3PT", "FT", "REB", "AST", "TO",
+                    "STL", "BLK", "OREB", "DREB", "PF", "+/-"]
 
-def find_unprocessed_games() -> list[dict]:
+
+def find_unprocessed_games(reprocess_all: bool = False) -> list[dict]:
+    # reprocess_all=True re-fetches EVERY final game (used to correct historical
+    # box scores after a parse fix); default only fills games with no rows yet.
+    where_unprocessed = "" if reprocess_all else """
+              AND NOT EXISTS (SELECT 1 FROM player_games pg WHERE pg.game_id = g.game_id)"""
+    limit = "" if reprocess_all else "LIMIT 50"
     with session_scope() as session:
-        rows = session.execute(text("""
+        rows = session.execute(text(f"""
             SELECT g.game_id, g.external_id, g.home_team_id, g.away_team_id
             FROM games g
             WHERE g.sport_code = 'wnba'
               AND g.status = 'final'
-              AND NOT EXISTS (
-                  SELECT 1 FROM player_games pg WHERE pg.game_id = g.game_id
-              )
+              AND g.external_id IS NOT NULL
+              {where_unprocessed}
             ORDER BY g.game_date DESC
-            LIMIT 50
+            {limit}
         """)).all()
     return [{"game_id": r[0], "external_id": r[1],
              "home_team_id": r[2], "away_team_id": r[3]} for r in rows]
@@ -101,11 +110,21 @@ def process_game(session, game: dict) -> int:
                 name   = info.get("displayName", f"WNBA-{ext_id}")
                 stats_list = athlete.get("stats", [])
 
-                # ESPN stats order for WNBA: MIN PTS FG 3PT FT REB OREB DREB AST STL BLK TO PF +/-
-                #                             0   1   2   3   4   5    6    7   8   9   10  11  12  13
-                def _s(idx, default=0):
+                # Map by ESPN's label array, NOT hardcoded indices. ESPN's real
+                # order is  MIN PTS FG 3PT FT REB AST TO STL BLK OREB DREB PF +/-
+                # — the old hardcoded map assumed REB OREB DREB AST STL BLK TO,
+                # so assists read STEALS, blocks read OREB, turnovers read DREB,
+                # etc. (assists maxed at ~8, the steal count). Labels are robust
+                # to ordering, the same approach nba_boxscores uses.
+                labels = stat_group.get("names") or _WNBA_STAT_ORDER
+                lidx = {lab: i for i, lab in enumerate(labels)}
+
+                def _s(label, default=0):
+                    i = lidx.get(label)
+                    if i is None:
+                        return default
                     try:
-                        v = stats_list[idx]
+                        v = stats_list[i]
                         return 0 if v in ("--", "", None) else float(v)
                     except (IndexError, ValueError):
                         return default
@@ -117,31 +136,34 @@ def process_game(session, game: dict) -> int:
                     except (ValueError, IndexError):
                         return 0.0
 
-                mins = _minutes(stats_list[0]) if stats_list else 0.0
+                mins = _minutes(stats_list[lidx["MIN"]]) if stats_list and "MIN" in lidx else 0.0
 
-                def _fg(idx):
+                def _fg(label):
+                    i = lidx.get(label)
+                    if i is None:
+                        return 0, 0
                     try:
-                        made, att = str(stats_list[idx]).split("-")
+                        made, att = str(stats_list[i]).split("-")
                         return int(made), int(att)
                     except Exception:
                         return 0, 0
 
-                fg_made, fg_att   = _fg(2)   # total FG (includes 3s)
-                fg3_made, fg3_att = _fg(3)   # 3PT
-                ft_made, ft_att   = _fg(4)   # FT
+                fg_made, fg_att   = _fg("FG")    # total FG (includes 3s)
+                fg3_made, fg3_att = _fg("3PT")
+                ft_made, ft_att   = _fg("FT")
 
                 stat_dict = {
                     "minutes":        round(mins, 2),
-                    "points":         int(_s(1)),
-                    "rebounds":       int(_s(5)),
-                    "off_rebounds":   int(_s(6)),
-                    "def_rebounds":   int(_s(7)),
-                    "assists":        int(_s(8)),
-                    "steals":         int(_s(9)),
-                    "blocks":         int(_s(10)),
-                    "turnovers":      int(_s(11)),
-                    "personal_fouls": int(_s(12)),
-                    "plus_minus":     _s(13),
+                    "points":         int(_s("PTS")),
+                    "rebounds":       int(_s("REB")),
+                    "off_rebounds":   int(_s("OREB")),
+                    "def_rebounds":   int(_s("DREB")),
+                    "assists":        int(_s("AST")),
+                    "steals":         int(_s("STL")),
+                    "blocks":         int(_s("BLK")),
+                    "turnovers":      int(_s("TO")),
+                    "personal_fouls": int(_s("PF")),
+                    "plus_minus":     _s("+/-"),
                     "fg_made":        fg_made,
                     "fg_attempted":   fg_att,
                     "threes_made":    fg3_made,
@@ -157,7 +179,9 @@ def process_game(session, game: dict) -> int:
                                               stats, derived)
                     VALUES (:pid, :gid, :tid, :oid, :home, :played, :min,
                             CAST(:stats AS JSONB), '{}')
-                    ON CONFLICT (player_id, game_id) DO NOTHING
+                    ON CONFLICT (player_id, game_id) DO UPDATE
+                    SET stats = EXCLUDED.stats, minutes_played = EXCLUDED.minutes_played,
+                        did_play = EXCLUDED.did_play
                 """), {"pid": pid, "gid": game["game_id"], "tid": team_id, "oid": opp_id,
                        "home": is_home, "played": mins > 0, "min": round(mins, 2),
                        "stats": json.dumps(stat_dict)})
@@ -165,10 +189,10 @@ def process_game(session, game: dict) -> int:
     return rows
 
 
-def run():
+def run(reprocess_all: bool = False):
     configure_logging()
-    games = find_unprocessed_games()
-    log.info("found_unprocessed_wnba_games", count=len(games))
+    games = find_unprocessed_games(reprocess_all=reprocess_all)
+    log.info("found_unprocessed_wnba_games", count=len(games), reprocess_all=reprocess_all)
     if not games:
         return
 
@@ -185,4 +209,8 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--all", action="store_true",
+                    help="re-fetch & correct EVERY final game (not just unprocessed)")
+    run(reprocess_all=ap.parse_args().all)

@@ -27,6 +27,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 from sqlalchemy import text
@@ -63,14 +64,15 @@ def _recalibrate(stat: str):
         log.warning("no_calibrator_config", model=name)
 
 
-def _log_decision(stat: str, n: int, improvement: float, promoted: bool):
+def _log_decision(stat: str, n: int, improvement: float, promoted: bool, days: int):
     try:
+        since = date.today() - timedelta(days=days)   # backtest_runs.since_date is NOT NULL
         with engine.begin() as conn:
             conn.execute(text("""
                 INSERT INTO backtest_runs
-                    (run_at, sport, n_picks, mae_improvement_pct, trigger)
-                VALUES (NOW(), 'mlb', :n, :imp, :trig)
-            """), {"n": n, "imp": round(improvement, 2),
+                    (run_at, sport, since_date, n_picks, mae_improvement_pct, trigger)
+                VALUES (NOW(), 'mlb', :since, :n, :imp, :trig)
+            """), {"since": since, "n": n, "imp": round(improvement, 2),
                    "trig": f"autoretrain:{stat}" + ("" if promoted else ":kept")})
     except Exception as e:
         log.warning("autoretrain_log_failed", error=str(e)[:120])
@@ -112,7 +114,7 @@ def retrain_one(stat: str, min_improve: float, days: int, tune: bool = False) ->
             shutil.copy(cand_txt, prod_txt)
             shutil.copy(cand_meta, prod_meta)
             _recalibrate(stat)
-        _log_decision(stat, res["n"], imp, promote)
+        _log_decision(stat, res["n"], imp, promote, days)
         log.info("retrain_decision", stat=stat, improvement_pct=round(imp, 2),
                  n=res["n"], promoted=promote)
         return {"stat": stat, "status": "promoted" if promote else "kept",
