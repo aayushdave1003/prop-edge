@@ -32,5 +32,5 @@ what's left to build, by category.
 
 ## 5. Expansion (data-gated — unlocks as games/coverage accrue)
 - ☐ **P3** Extend the **model/market blend + soft-line finder to NHL/WNBA** — auto-tunes in once those have sharp-market coverage.
-- ☐ **P3** **New prop markets** — more stat types per sport (e.g. NBA turnovers/blocks-steals depth, MLB stolen bases) as their settled history grows.
+- ☐ **P3** **New prop markets** — ✅ shipped MLB `strikeouts_batter` (+4.78% MAE) and `hits_runs_rbis` (the #1 PrizePicks market, +1.68%, direct combo model). Runs assessed and **dropped** (−1.81%, too lineup-dependent). REMAINING candidates: NBA/WNBA combos (`pts_rebs_asts` etc. — all components now modeled, build via the joint-prob machinery); MLB `doubles`/`walks`/`stolen_bases` singles; MLB pitcher markets (`earned_runs_allowed`, `hits_allowed`). The new batter-K + HRR models ship on raw Poisson for now (sparse high-confidence tail blocks calibration; auto-calibrates as it densifies).
 - ☐ **P3** **New sports** — soccer / tennis / golf / UFC or CBB/CFB props (each needs its own ingest + models; biggest lift, biggest surface-area).
