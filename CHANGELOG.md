@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-06-21
+- ✅ **P3** **Residential proxy for PrizePicks — DONE.** `PRIZEPICKS_PROXY` secret provisioned (2026-06-12) and verified working on Actions: `daily.yml` (full pipeline) and `intraday-refresh` (`refresh.yml`, scrapes via proxy at 10 AM / 4 PM / 7 PM Pacific — both DST variants) both route the PrizePicks scrape through the residential proxy. Today's run confirms it (`fetched_projections=12156`, `inserted=5382`). The Mac-cron is now fully redundant — everything it did (3×/day lines + injuries + starters) runs on GitHub Actions. Remaining (on the user's Mac, optional): uninstall the local cron to stop the redundant double-scrape; it's a harmless idempotent backup until then.
+
 ## Shipped — 2026-06-19
 - ✅ **P2** **Player-identity reconciliation — DONE (and the headline bug was a misdiagnosis).** The "Jared McCain 45 phantom OKC games" turned out to be a **real mid-season trade** (clean Feb-3→Feb-7 handoff, zero same-day overlap, no name collision); NBA has **0** duplicate players and **0** distinct-name collisions >0.8 — the ">2 teams" flags were all legit journeymen. The real bug was **WNBA-only**: `wnba_boxscores.ensure_player` blind-inserted on the ESPN athlete id without fuzzy-matching, so **91 players** had their box-score games (`espn_` row) divorced from their PrizePicks lines (`pp_` row) — starving WNBA pick generation of features (112k lines on 0-game rows; 20 picks ever). Fixed: (1) ingest guard — `ensure_player` now fuzzy-matches before create, mirroring `nba_boxscores.resolve_player`; (2) reviewed one-time merge — collapsed all 91 splits onto the lines row (re-pointed 4,700 games + 132 child rows, deleted 91 emptied rows) in a verified transaction, **0 picks at risk, 0 data loss**, 87/91 survivors now hold both games + lines. The 234 combo-name junk rows are stale pre-guard residue (parse already skips `X + Y`); harmless, behind 344 lines.
 
