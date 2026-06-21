@@ -30,12 +30,22 @@ def _rows(session, days_back: int):
     return session.execute(text("""
         SELECT (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date AS d,
                g.sport_code, pk.stat_type, pk.direction,
-               pk.model_prob, pk.leg_result
+               pk.model_prob, pk.leg_result, pl.full_name AS player
         FROM picks pk JOIN games g USING (game_id)
+        LEFT JOIN players pl ON pl.player_id = pk.player_id
         WHERE pk.leg_result IN ('win', 'loss', 'push')
           AND (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
               >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - make_interval(days => :d)
     """), {"d": days_back}).all()
+
+
+def _top_n(rows, n=5):
+    """The day's N highest-confidence RECOMMENDED picks (model_prob desc), over
+    settled win/loss rows. Returns (wins, losses, the picks)."""
+    rec = [r for r in _rec(rows) if r.leg_result in ("win", "loss")]
+    top = sorted(rec, key=lambda r: float(r.model_prob), reverse=True)[:n]
+    w = sum(1 for r in top if r.leg_result == "win")
+    return w, len(top) - w, top
 
 
 def _wl(rows):
@@ -104,6 +114,32 @@ def _accuracy_block(rows) -> str:
     return "```\n" + "\n".join(L)[:1010] + "\n```"
 
 
+def _top5_block(day_rows, last7_rows, n=5) -> str | None:
+    """Monospace block: the day's top-N recommended picks (highest model_prob),
+    each with its hit/miss, plus the rolling top-N-per-day accuracy over 7 days."""
+    w, l, top = _top_n(day_rows, n)
+    if w + l == 0:
+        return None
+    _short = {"strikeouts_pitcher": "Ks", "strikeouts_batter": "K(bat)",
+              "total_bases": "TB", "hits_runs_rbis": "H+R+RBI", "home_runs": "HR",
+              "pts_rebs_asts": "PRA", "pts_rebs": "P+R", "pts_asts": "P+A",
+              "rebs_asts": "R+A", "earned_runs_allowed": "ER", "hits_allowed": "H-alw"}
+    L = [f"TOP {n} (by confidence) · {w}-{l} ({100*w/(w+l):.0f}%)"]
+    for r in top:
+        mark = "✓" if r.leg_result == "win" else "✗"
+        nm = (r.player or "?")[:15]
+        st = _short.get(r.stat_type, r.stat_type)[:9]
+        L.append(f" {mark} {nm:15} {st:9} {r.direction[:1].upper()} {100*float(r.model_prob):.0f}%")
+    # rolling top-N per day across the last 7 days (each day's best N, aggregated)
+    tw = tl = 0
+    for d in sorted({r.d for r in last7_rows}):
+        dw, dl, _ = _top_n([r for r in last7_rows if r.d == d], n)
+        tw += dw; tl += dl
+    if tw + tl:
+        L.append(f"7d top-{n}/day: {tw}-{tl} ({100*tw/(tw+tl):.0f}%)")
+    return "```\n" + "\n".join(L)[:1010] + "\n```"
+
+
 def build_payload(rows, target_date, today=None):
     from datetime import timedelta
     if today is None:
@@ -162,10 +198,11 @@ def build_payload(rows, target_date, today=None):
         k, w, n = weak[0]
         weak_line = f"\n⚠️ Weak spot (7d): {k[0]} {k[1]} {k[2]} {w}/{n} = {w/n:.0%}"
 
-    fields = sport_lines + [
-        {"name": "7-day recommended", "value": r7, "inline": False},
-        {"name": "🎯 Accuracy", "value": _accuracy_block(rows), "inline": False},
-    ]
+    fields = sport_lines + [{"name": "7-day recommended", "value": r7, "inline": False}]
+    top5 = _top5_block(day, last7)
+    if top5:
+        fields.append({"name": "🎯 Top 5 picks", "value": top5, "inline": False})
+    fields.append({"name": "🎯 Accuracy", "value": _accuracy_block(rows), "inline": False})
     desc = (f"**Recommended: {rw}–{rl} ({rec_pct:.0%})** vs 57.7% breakeven "
             f"{'✅' if ok else '🔻'}\nOverall: {dw}–{dl} ({dw/(dw+dl):.0%})"
             f"{dd_line}{weak_line}")
