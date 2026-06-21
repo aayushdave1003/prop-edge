@@ -14,7 +14,7 @@ what's left to build, by category.
 - ☐ **P3** **Pitcher velocity & pitch-mix trends** — declining velo flags fatigue/injury before results do; arsenal shifts move strikeout rates.
 - ☐ **P3** **Times-through-order penalty** — a pitcher's 3rd time through the lineup spikes hits/runs allowed; a strong K/ER signal.
 - ☐ **P3** **Bullpen rest / availability** — a gassed pen changes late-game run environment (totals, RBI).
-- ☐ **P3** **Team defense (OAA / DRS)** — a strong defense suppresses BABIP → fewer hits allowed than the arm alone implies.
+- ☐ **P3** **Team defense (OAA / DRS)** — **assessed, neutral.** A derivable team Defensive-Efficiency (DER) proxy was tested against the new `hits_allowed` model: the model *uses* it (top feature by gain) but it moves test MAE only **+0.06%** — redundant, because a pitcher's own rolling hits-allowed already encodes the defense behind them. True Statcast OAA isn't ingested (no fielding source) and would need a new ingest for near-zero expected upside. Don't pursue without a cheaper signal.
 - ☐ **P3** **NBA referee tendencies** — crews differ on foul rates → pace + FT-dependent props (points).
 - ☐ **P3** **NBA usage redistribution when a star sits** — extend teammate-absence beyond minutes to who absorbs the shots/assists.
 - ☐ **P3** **Travel / rest / time-zone fatigue** — extend the NBA back-to-back signal across sports (road trips, altitude, get-away games).
