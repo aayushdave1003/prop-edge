@@ -59,6 +59,12 @@ CONFIGS = [
     {"name": "hits_runs_rbis_v1", "sport": "mlb", "target": ["hits", "runs", "rbis"],
      "lines": [1.5, 2.5, 3.5, 4.5],
      "played": lambda s: float(s.get("at_bats", 0) or 0) > 0},
+    {"name": "earned_runs_allowed_v1", "sport": "mlb", "target": "earned_runs",
+     "lines": [1.5, 2.5, 3.5, 4.5],
+     "played": lambda s: float(s.get("batters_faced", 0) or 0) >= 15},
+    {"name": "hits_allowed_v1", "sport": "mlb", "target": "hits_allowed",
+     "lines": [3.5, 4.5, 5.5, 6.5, 7.5],
+     "played": lambda s: float(s.get("batters_faced", 0) or 0) >= 15},
 ]
 
 # NBA/WNBA combo markets — summed targets, rotation-player filter (minutes >= 10)

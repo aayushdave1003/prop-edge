@@ -71,6 +71,22 @@ MODELS = [
         meta_path=Path("models/hits_runs_rbis_v1_meta.json"),
     ),
     ModelEntry(
+        name="earned_runs_allowed_v1",
+        sport_code="mlb",
+        stat_type="earned_runs_allowed",
+        role="pitcher",
+        model_path=Path("models/earned_runs_allowed_v1.txt"),
+        meta_path=Path("models/earned_runs_allowed_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="hits_allowed_v1",
+        sport_code="mlb",
+        stat_type="hits_allowed",
+        role="pitcher",
+        model_path=Path("models/hits_allowed_v1.txt"),
+        meta_path=Path("models/hits_allowed_v1_meta.json"),
+    ),
+    ModelEntry(
         name="nba_points_v1",
         sport_code="nba",
         stat_type="points",
