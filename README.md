@@ -23,16 +23,16 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 ---
 
-## Results (mid-June 2026)
+## Results (late June 2026)
 
 | | Record | Win rate |
 |---|--------|----------|
-| **Recommended tier** | **234W – 111L** | **67.8%** |
-| All logged picks | 371W – 258L | 59.0% |
+| **Recommended tier** | **145W – 56L** | **72.1%** |
+| All logged picks | 613W – 479L | 56.1% |
 
-By sport (all picks): **MLB 62.4%** · NBA 52.9% (playoff-only so far) · WNBA 57.1%.
+By sport (all picks): **MLB 56.0%** · NBA 55.0% · WNBA 57.8%.
 
-666 picks settled. The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff that's auto-derived from settled history. A 2-pick PrizePicks parlay breaks even at **57.7%**; the recommended tier sits comfortably above it.
+1,092 picks settled. The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff that's auto-derived from settled history. A 2-pick PrizePicks parlay breaks even at **57.7%**; the recommended tier sits comfortably above it.
 
 ---
 
@@ -44,22 +44,22 @@ The thing that makes prop-edge unusual isn't the models — it's that the whole 
 - **Self-healing** — if a transient failure strands picks on already-final games, an end-of-run step re-attempts box scores + settlement until they clear, and the settle path auto-voids truly-unrecoverable orphans. It pings Discord only when it actually fixes something.
 - **Self-tuning** — per-category cutoffs (per sport, and per sport×stat where there's data) are recomputed from the live DB as picks settle: a stat that drifts below breakeven is **auto-suppressed**, and lifts itself once it proves out again. No manual retuning.
 - **Self-monitoring** — an ingest monitor checks line freshness, slate volume, box-score coverage, and the injury feed, and alerts on anomalies before they zero out a slate.
-- **Self-reporting** — a nightly **scorecard** (recommended-tier W/L vs breakeven, by sport, 7-day rolling, cold-streak alert), a **closing-line-value** tracker, a **daily walk-forward backtest** (replays the recommended-tier strategy over a rolling window of settled picks — win rate vs breakeven + trend, model calibration/Brier + drift, and a counterfactual cutoff sweep that audits the auto-tuner), and a **daily feature-ideas digest** that surfaces data-driven opportunities to build next.
+- **Self-reporting** — a nightly **scorecard** (recommended-tier W/L vs breakeven, by sport, 7-day rolling, **top-5-picks daily accuracy**, cold-streak alert), a **closing-line-value** tracker, a **daily walk-forward backtest** (replays the recommended-tier strategy over a rolling window of settled picks — win rate vs breakeven + trend, model calibration/Brier + drift, and a counterfactual cutoff sweep that audits the auto-tuner), and a **daily feature-ideas digest** that surfaces data-driven opportunities to build next.
 
 ---
 
-## Models (17 active)
+## Models (27 active)
 
-Poisson regression per stat (binary classifier for home runs); NBA combo stats (PRA, P+R, P+A, R+A) are derived from component lambdas. Isotonic calibration on top, recalibrated on full regular-season data and excluding playoffs (a different distribution).
+Poisson regression per stat (binary classifier for home runs). Combo stats (NBA/WNBA PRA·P+R·P+A·R+A, MLB hits+runs+RBIs) are **direct summed-target models** — they beat summing component lambdas. Isotonic calibration on top, recalibrated on full regular-season data and excluding playoffs (a different distribution).
 
 | Sport | Models |
 |-------|--------|
-| **MLB** | strikeouts, hits, RBIs, total bases, home runs |
-| **NBA** | points, rebounds, assists, threes, + 4 derived combos, winner model |
-| **WNBA** | points, rebounds, assists |
+| **MLB** | pitcher strikeouts, **batter strikeouts**, hits, RBIs, total bases, home runs, **hits+runs+RBIs**, **earned runs allowed**, **hits allowed** |
+| **NBA** | points, rebounds, assists, threes, **+ 4 combos (PRA, P+R, P+A, R+A)**, winner model |
+| **WNBA** | points, rebounds, assists, **+ 4 combos** |
 | **NHL** | goals, assists, saves |
 
-NBA/MLB also have game-winner models; NHL/WNBA winner models become trainable as history accrues (the daily feature-ideas digest flags when they're ready).
+New markets earn their slot only if they beat a season-average baseline out-of-sample — pitcher ER/hits-allowed (+8% / +18% MAE) and the combos shipped; low-frequency batter events (runs, walks, doubles, steals, singles) were assessed and **dropped** as un-modelable noise. NBA/MLB also have game-winner models; NHL/WNBA winner models become trainable as history accrues.
 
 ---
 
@@ -67,10 +67,10 @@ NBA/MLB also have game-winner models; NHL/WNBA winner models become trainable as
 
 | Sport | Player-games | Derived features |
 |-------|-------------|------------------|
-| MLB   | 224,000+ | 137 |
+| MLB   | 228,000+ | 137 |
 | NBA   | 36,000+  | 120 |
-| WNBA  | 1,500+   | 135 |
-| NHL   | 560+     | 114 |
+| WNBA  | 9,700+   | 135 |
+| NHL   | 58,000+  | 114 |
 
 The PrizePicks scraper covers 40+ stat types across all four sports.
 
@@ -96,7 +96,7 @@ The PrizePicks scraper covers 40+ stat types across all four sports.
 - **Availability / projected minutes** — a recency-weighted minutes projection (last-5 > last-10 > last-20) drops likely-DNP basketball picks and minutes that are collapsing out of the rotation, without over-suppressing returnees (a teammate-out bump keeps bench players who'll absorb minutes). Plus scratched-pitcher voids. All suppression rules live in one documented module.
 - **Stale-game & orphan handling** — never logs picks for already-played games; settlement auto-voids picks whose line was pruned or whose game never went final.
 - **Correlation-aware parlays** — the suggested slate never stacks two legs from the same game in the same direction (the cluster that busts together).
-- **Model/market blend** — the stored probability is a per-sport blend of the model and the sharp no-vig market (`w·model + (1−w)·market`), with weights self-tuned from settled results: **NBA leans on the market** (deep, efficient) and **MLB leans on the model** (softer market). It only blends against a real line — never a neutral prior. Cut the daily Brier 0.245→0.235.
+- **Model/market blend** — the stored probability is a per-sport blend of the model and the no-vig market (`w·model + (1−w)·market`), with weights self-tuned from settled results: **NBA leans on the market** (deep, efficient) and **MLB leans on the model** (softer market). The market line is a **median no-vig consensus across 6 books** (DK, FD, BetMGM, Caesars, BetRivers, BetOnline) — robust to any one book shading, and ~70% more props get a true line than DK+FD alone. It only blends against a real line — never a neutral prior. Cut the daily Brier 0.245→0.235.
 - **Calibration** — isotonic per model, refit on regular-season data, plus a self-tuning **Platt recalibration** learned from settled paper results that corrects residual over-confidence; it sizes Kelly and the shown confidence on the corrected probability. Closing-line-value tracked as the long-run edge signal.
 
 ---
@@ -131,7 +131,7 @@ Data sources:  PrizePicks (via residential proxy) · MLB Stats API · ESPN · nb
 
 PrizePicks-style cards: player photo + team logo, line/direction/confidence, **per-pick "why"** (form + market edge + line movement), form dots, Kelly sizing, injury-status badge, line-movement signal, live in-game tracker, combo cards. Every pick is shown, with the **recommended** ones (clearing their category cutoff) **⭐ starred** and sorted first. A **🔄 Refresh picks** button re-reads the DB on demand so a slate logged after you opened the page (NBA/WNBA picks often land after MLB) shows up without waiting on the cache.
 
-Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value** (incl. **sharp-market CLV** vs the DK/FD close), **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
+Performance tab: win rate vs the 57.7% breakeven, recommended-tier proof, **active confidence cutoffs**, **closing line value** (incl. **sharp-market CLV** vs the multi-book no-vig close), **ROI by parlay size**, paper P&L, **daily walk-forward backtest** (rec-tier win-rate trend, Brier, and cutoff-fit findings), calibration, win rate by stat × direction.
 
 A **💰 Soft Lines** tab ranks tonight's PrizePicks props the sharp market prices as +EV — independent of the model. It recovers the sharp book's implied projection (Poisson mean from its no-vig prob) and re-prices it at the PrizePicks line; a side clearing the 57.7% breakeven is a soft line. A **📋 Tail this slate** box exports the recommended picks as copyable text, and the morning slate can also be **emailed** (free SMTP push) alongside the Discord digest.
 
@@ -168,7 +168,7 @@ Key env vars (`.env`): `DATABASE_URL`, `RAILWAY_DATABASE_URL`, `DISCORD_WEBHOOK_
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for the full, continuously-updated list. The build of the autonomous system is done; remaining work is largely data-gated (winner models unlock as history accrues) or a deliberate accuracy upgrade (re-up the odds feed for market-vs-model edge).
+See **[ROADMAP.md](ROADMAP.md)** for the full, continuously-updated list. The build of the autonomous system is done, and the high-value model work is largely exhausted — new signal features (team defense, times-through-order, pitcher velo, …) have been assessed and shown neutral on the now-saturated models, and the prop-market lane is built out. What's left is data-gated (NHL/WNBA market blend as sharp coverage accrues) or seasonal: a **college-basketball foundation is built and parked for tip-off in November**.
 
 ---
 
