@@ -26,10 +26,10 @@
     "days_rest",
     "games_played_season"
   ],
-  "best_iteration": 22,
-  "train_n": 146302,
+  "best_iteration": 36,
+  "train_n": 146339,
   "val_n": 379,
-  "test_n": 6097,
+  "test_n": 11065,
   "prediction_distribution": "binary",
-  "trained_date": "2026-06-04"
+  "trained_date": "2026-06-22"
 }
