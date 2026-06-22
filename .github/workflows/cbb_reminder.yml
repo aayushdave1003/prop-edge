@@ -1,0 +1,30 @@
+name: cbb-season-reminder
+
+# CBB tips off in early November. The June-2026 build left the foundation in place
+# (ingest + cbb_rolling + cbb_models_v1, 2025-26 season) but the models were weak,
+# so CBB was NOT activated. This is a once-a-season Discord nudge to revisit it on
+# live data — reliable (runs regardless of any local session), costs one ping, and
+# commits nothing automatically. Fires ~Nov 12 (a week+ into the season, enough
+# live games + PrizePicks CBB lines to retrain against). Manually dispatchable too.
+on:
+  schedule:
+    - cron: "26 15 12 11 *"   # ~Nov 12, 15:26 UTC, annually
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord CBB-revisit reminder
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && { echo "no webhook"; exit 0; }
+          curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK_URL" -d '{
+            "embeds": [{
+              "title": "🏀 CBB season is underway — revisit the build",
+              "description": "The college-basketball foundation is built (ingest + cbb_rolling + cbb_models_v1). In June the models were weak (best +1.4%; points/assists/threes lost to baseline) due to intrinsic variance. **Now retrain on the live season, filtered to bettable (high-minute/established) players**, and decide: activate or drop.\n\nPlan + context: `ROADMAP.md` → New sports.",
+              "color": 15844367,
+              "footer": {"text": "annual CBB-season reminder"}
+            }]
+          }'
