@@ -1,7 +1,7 @@
 """Fetch live player prop lines from The Odds API for sharp-book EV comparison.
 
-Computes the no-vig midpoint probability from DraftKings + FanDuel and returns a
-lookup keyed by (player, stat, line) that predict_today uses to compute
+Computes a median no-vig probability across a consensus of major US books and
+returns a lookup keyed by (player, stat, line) that predict_today uses to compute
 market_edge and the model/market blend. Covers NBA + MLB (the sports with deep,
 sharply-priced prop markets).
 
@@ -9,13 +9,19 @@ Requires ODDS_API_KEY in .env. Falls back to an empty dict (gracefully disabling
 market comparison) when the key is absent or the API is unavailable.
 """
 from datetime import date, timedelta
+from statistics import median
 import requests
 from props.utils.config import settings
 from props.utils.logging import log
 
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
-SHARP_BOOKS   = ["draftkings", "fanduel"]
+# Consensus books — all major liquid US props books (+ betonlineag, sharp on props).
+# The Odds API bills per region, not per book, so widening this is free; a 6-book
+# median no-vig is a tighter, outlier-robust "true" line than the old DK+FD mean
+# (FanDuel's MLB prop coverage is thin, so 2 books was often really 1).
+SHARP_BOOKS   = ["draftkings", "fanduel", "betmgm", "williamhill_us",
+                 "betrivers", "betonlineag"]
 
 # The Odds API sport keys for the leagues we price.
 SPORT_KEYS = {"nba": "basketball_nba", "mlb": "baseball_mlb"}
@@ -132,7 +138,9 @@ def _build_for_sport(target_date: date, sport: str, out: dict) -> None:
     events = fetch_events(target_date, sport)
     if not events:
         return
-    raw: dict[tuple, dict[str, list]] = {}
+    # Per (player, stat, line): collect each book's OWN no-vig over-prob, then take
+    # the median across books — robust to a single soft book shading the line.
+    raw: dict[tuple, list] = {}
     for event in events:
         data = fetch_event_props(event["id"], sport)
         if not data:
@@ -154,13 +162,9 @@ def _build_for_sport(target_date: date, sport: str, out: dict) -> None:
                 for k, prices in pairs.items():
                     if "over" not in prices or "under" not in prices:
                         continue
-                    raw.setdefault(k, {"over": [], "under": []})
-                    raw[k]["over"].append(prices["over"])
-                    raw[k]["under"].append(prices["under"])
-    for k, prices in raw.items():
-        avg_over  = sum(prices["over"])  / len(prices["over"])
-        avg_under = sum(prices["under"]) / len(prices["under"])
-        out[k] = round(_no_vig_prob(avg_over, avg_under), 4)
+                    raw.setdefault(k, []).append(_no_vig_prob(prices["over"], prices["under"]))
+    for k, probs in raw.items():
+        out[k] = round(median(probs), 4)
 
 
 def build_market_probs(target_date: date, sports=("nba", "mlb")) -> dict[tuple, float]:

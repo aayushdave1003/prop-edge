@@ -30,7 +30,8 @@ from props.utils.logging import log, configure_logging
 
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
-SHARP_BOOKS   = ["draftkings", "fanduel"]
+SHARP_BOOKS   = ["draftkings", "fanduel", "betmgm", "williamhill_us",
+                 "betrivers", "betonlineag"]
 
 SPORT_KEY = {
     "nba": "basketball_nba",
