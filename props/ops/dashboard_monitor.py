@@ -76,7 +76,7 @@ def _alert(findings: list[dict]):
         "footer": {"text": "dashboard_monitor"},
     }]}
     try:
-        requests.post(settings.discord_webhook_url, json=payload, timeout=10)
+        requests.post(settings.discord_webhook_url, json=payload, timeout=10)  # type: ignore[arg-type]
     except Exception as e:
         log.warning("dashboard_monitor_alert_failed", error=str(e)[:120])
 

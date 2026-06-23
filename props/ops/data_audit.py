@@ -157,7 +157,7 @@ def _alert(findings: list[dict]):
         "color": 0xE8A317, "footer": {"text": "data_audit"},
     }]}
     try:
-        requests.post(settings.discord_webhook_url, json=payload, timeout=10)
+        requests.post(settings.discord_webhook_url, json=payload, timeout=10)  # type: ignore[arg-type]
     except Exception as e:
         log.warning("data_audit_alert_failed", error=str(e)[:120])
 
