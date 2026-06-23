@@ -24,7 +24,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from props.utils.db import engine
-from props.utils.logging import configure_logging, log
+from props.utils.logging import configure_logging
 from props.models.retrain_and_promote import MIN_PROMOTE_PCT
 
 W = 10

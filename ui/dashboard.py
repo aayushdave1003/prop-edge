@@ -14,7 +14,7 @@ from props.utils.db import engine
 from props.maintenance.migrate import run_migrations
 from props.models.category_cutoffs import rec_cutoff, load_cutoffs, compute_from_db
 from props.models.prob_calibration import calibrate
-from props.picks.build_parlays import build_diversified_parlay, _joint_prob, MULTIPLIERS
+from props.picks.build_parlays import build_diversified_parlay, _joint_prob
 from props.picks.compute_clv import clv_points
 from props.picks.slate_kelly import slate_kelly_bankroll, slate_kelly_stakes
 

@@ -116,7 +116,6 @@ def slate_kelly_bankroll(picks, kelly_mult: float = KELLY_MULT):
 
 
 def main():
-    from datetime import date
     from sqlalchemy import text
     from props.utils.db import engine
     from props.utils.logging import configure_logging
