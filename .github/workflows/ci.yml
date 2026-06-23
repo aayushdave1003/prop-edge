@@ -32,7 +32,10 @@ jobs:
       - name: Install deps
         run: |
           pip install -r requirements.txt
-          pip install pytest flake8 mypy ruff
+          # Pinned: unpinned dev tools mean a new ruff/mypy release silently
+          # breaks main (mypy 2.1.0's stricter json= arg-type check did exactly
+          # that). Bump deliberately. These are the versions verified green.
+          pip install pytest==9.1.1 flake8==7.3.0 mypy==2.1.0 ruff==0.15.18
       - name: Byte-compile (syntax check)
         run: python -m compileall -q props ui
       - name: Lint — undefined names / use-before-assign / redefinition (NameError-class bugs)
