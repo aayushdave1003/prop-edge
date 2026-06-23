@@ -6,7 +6,7 @@ from sqlalchemy import text
 from props.utils.db import engine, session_scope
 from props.utils.logging import log, configure_logging
 from props.features.derived_writer import write_derived, feat_dict
-from props.features.nfl_rolling import WINDOWS, ROLL_STATS, compute_rolling_for_player
+from props.features.nfl_rolling import ROLL_STATS, compute_rolling_for_player
 
 
 def load_player_games() -> pd.DataFrame:
