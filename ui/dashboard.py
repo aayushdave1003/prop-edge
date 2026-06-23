@@ -557,6 +557,7 @@ def load_todays_picks():
             g.sport_code,
             p.full_name       AS player,
             p.external_id     AS player_ext_id,
+            p.photo_url       AS photo_url,
             t.abbreviation    AS team,
             t.external_id     AS team_ext_id,
             pk.stat_type,
@@ -1471,7 +1472,9 @@ def live_row_html(sport: str, stat_type: str, line: float, direction: str, live:
 
 def build_pick_card(row, form_df: pd.DataFrame, live: dict = None) -> str:
     sport   = row["sport_code"]
-    photo   = player_photo_url(row.get("player_ext_id", ""), sport)
+    # Prefer the PrizePicks-shipped headshot (works for WNBA, whose pp_-keyed ids
+    # make the ESPN-id URL invalid); fall back to the per-sport constructed URL.
+    photo   = row.get("photo_url") or player_photo_url(row.get("player_ext_id", ""), sport)
     logo    = team_logo_url(row.get("team_ext_id", ""), sport)
     direction = row["direction"]
     line    = float(row["line"])

@@ -134,6 +134,11 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  UNIQUE (game_id, player_id, stat_type, line_value));"
      "CREATE INDEX IF NOT EXISTS idx_scored_props_score_date"
      "  ON scored_props (score_date)"),
+    # PrizePicks ships a per-player headshot URL; store it so the dashboard shows
+    # real photos across all sports (WNBA especially — its players are pp_-keyed,
+    # so the ESPN-id headshot URL the UI builds was invalid → fallback).
+    ("0014_players_photo_url",
+     "ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT"),
 ]
 
 

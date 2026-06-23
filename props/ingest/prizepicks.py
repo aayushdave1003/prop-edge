@@ -161,6 +161,7 @@ def parse_projection(proj: dict, included_lookup: dict) -> dict | None:
         "sport_code": sport_code,
         "player_external_id": player_external_id,
         "player_name": player_name,
+        "image_url": player_attrs.get("image_url"),
         "team_abbr": team_abbr,
         "game_external_id": game_external_id,
         "stat_type": canonical_stat,
@@ -381,6 +382,7 @@ def run():
     with session_scope() as session:
         maps = load_reference_maps(session)   # one-time pre-load (avoids per-line round-trips)
         line_rows = []
+        photo_updates: dict[int, str] = {}    # player_id -> PrizePicks headshot URL
         for proj in projections:
             try:
                 rec = parse_projection(proj, included_lookup)
@@ -401,6 +403,12 @@ def run():
             if player_id is None:
                 skipped += 1
                 continue
+
+            # PrizePicks ships a real per-player headshot at /images/players/...;
+            # /manual/ URLs are generic placeholders we skip (let the UI fall back).
+            img = rec.get("image_url") or ""
+            if "/players/" in img and "CMBO" not in img:
+                photo_updates[player_id] = img
 
             # Resolve to the player's REAL game (team + date) when we can; only
             # fall back to a pp_ placeholder when the match isn't unambiguous.
@@ -425,6 +433,10 @@ def run():
                 )
                 VALUES ('prizepicks', :sc, :pid, :gid, :stat, :line, :variant, TRUE, :ts)
             """), line_rows)
+
+        if photo_updates:
+            session.execute(text("UPDATE players SET photo_url = :url WHERE player_id = :pid"),
+                            [{"pid": pid, "url": url} for pid, url in photo_updates.items()])
 
     with session_scope() as session:
         session.execute(text("""
