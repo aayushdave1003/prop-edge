@@ -1,0 +1,29 @@
+name: nfl-season-reminder
+
+# NFL kicks off in early September. The June-2026 build proved NFL is the best
+# new-sport fit — rushing_yards (+5.1%) and receiving_yards (+4.5%) beat baseline
+# on one season — but it wasn't activated (off-season, single-season data). This
+# is a once-a-season Discord nudge to finish the job on the live season. Fires
+# ~Sept 14 (week 2, enough games + PrizePicks NFL lines to retrain/validate).
+on:
+  schedule:
+    - cron: "31 15 14 9 *"   # ~Sept 14, 15:31 UTC, annually
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord NFL-activation reminder
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && { echo "no webhook"; exit 0; }
+          curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK_URL" -d '{
+            "embeds": [{
+              "title": "🏈 NFL season is underway — activate the build",
+              "description": "The NFL foundation is built (nfl_schedule/boxscores/rolling + nfl_models_v1). In June, **rushing_yards +5.1%** and **receiving_yards +4.5%** beat baseline (best new-sport result). **Now: backfill more seasons + the live one, retrain, validate, then wire PrizePicks NFL (LEAGUE_TO_SPORT) + scripts/daily.sh + register the winning models.** passing_yards/receptions were weak — re-check on more data.\n\nPlan: `ROADMAP.md` → New sports.",
+              "color": 2123412,
+              "footer": {"text": "annual NFL-season reminder"}
+            }]
+          }'
