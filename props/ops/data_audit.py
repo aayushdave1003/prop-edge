@@ -53,13 +53,16 @@ def run_checks() -> list[dict]:
                                                   for s in EXPECTED_TEAMS)})
 
         # ── duplicate abbreviations within a league (collision bug) ──────────
-        # CBB is exempt: ~725 teams (D1 + their D2/D3 opponents) make abbreviation
-        # collisions inevitable and benign (e.g. Peru State + Paul Smith's both
-        # "PSC") — external_id is the real key, abbr is display-only. The check
-        # matters for the 30-32-team pro leagues where a collision IS a bug.
+        # The big multi-league / multi-division sports are exempt: cbb (~725 D1 +
+        # D2/D3 opponents → Peru State + Paul Smith's both "PSC"), cfb (FBS + FCS
+        # opponents), and soccer (100+ clubs across 6 leagues → Brentford/Brest
+        # both "BRE", Paris FC/Parma "PAR", Torino/Toronto "TOR"). Collisions are
+        # inevitable and benign there — external_id is the real key, abbr is
+        # display-only. The check matters for the 30-32-team pro leagues where a
+        # collision IS a bug.
         dups = c.execute(text(f"""
             SELECT sport_code, abbreviation, COUNT(*) n
-            FROM teams WHERE {REAL_TEAM} AND sport_code <> 'cbb'
+            FROM teams WHERE {REAL_TEAM} AND sport_code NOT IN ('cbb', 'cfb', 'soccer')
             GROUP BY 1, 2 HAVING COUNT(*) > 1 ORDER BY 1, 2
         """)).all()
         if dups:
