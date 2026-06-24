@@ -9,9 +9,19 @@ Features added to player_games.derived:
   absent_teammate_avg_ast   — recent avg ast of the top absent teammate (0 if none)
   n_absent_teammates        — number of key teammates who didn't play this game
   expected_usage_bump       — absent_min / team_total_min_last10 (proportion of usage freed)
+  freed_fga_total           — sum of absent teammates' recent avg FGA (shot volume freed)
+  freed_fta_total           — sum of absent teammates' recent avg FTA
+  freed_ast_total           — sum of absent teammates' recent avg AST (playmaking freed)
+  top_absent_fga            — top absent teammate's recent avg FGA
 
 A teammate is "absent" if they averaged >= 15 min in their last 10 games but
 played < 5 min (or not at all) in this specific game.
+
+The freed_* features extend the minutes-based bump to the actual USAGE that
+redistributes when a rotation player sits — the shots and playmaking the
+remaining players can absorb. Validated on a retrain A/B: adding them improved
+test MAE +0.93% (points) and +0.48% (assists) — signal the minutes-only
+features were missing.
 """
 from datetime import datetime
 import pandas as pd
@@ -41,7 +51,7 @@ def load_nba_game_rosters() -> pd.DataFrame:
 
 def _player_recent_stats(df: pd.DataFrame, player_id: int,
                           before_date, window: int = 10) -> dict:
-    """Return avg pts/min/ast for a player over their last N games before a date."""
+    """Return avg pts/min/ast/fga/fta for a player over their last N games."""
     player_games = df[
         (df["player_id"] == player_id) &
         (df["game_date"] < before_date) &
@@ -49,15 +59,21 @@ def _player_recent_stats(df: pd.DataFrame, player_id: int,
     ].sort_values("game_date").tail(window)
 
     if player_games.empty:
-        return {"avg_pts": 0.0, "avg_min": 0.0, "avg_ast": 0.0}
+        return {"avg_pts": 0.0, "avg_min": 0.0, "avg_ast": 0.0,
+                "avg_fga": 0.0, "avg_fta": 0.0}
 
     stats = pd.json_normalize(player_games["stats"].tolist())
+
+    def _avg(key):
+        return float(pd.to_numeric(stats.get(key, pd.Series([0])),
+                                   errors="coerce").fillna(0).mean())
+
     return {
-        "avg_pts": float(pd.to_numeric(stats.get("points", pd.Series([0])),
-                                        errors="coerce").fillna(0).mean()),
+        "avg_pts": _avg("points"),
         "avg_min": float(player_games["minutes_played"].mean()),
-        "avg_ast": float(pd.to_numeric(stats.get("assists", pd.Series([0])),
-                                        errors="coerce").fillna(0).mean()),
+        "avg_ast": _avg("assists"),
+        "avg_fga": _avg("fg_attempted"),
+        "avg_fta": _avg("ft_attempted"),
     }
 
 
@@ -65,6 +81,10 @@ def compute_absence_features(df: pd.DataFrame) -> pd.DataFrame:
     """For each player-game, compute absent-teammate features."""
     log.info("computing_absence_features")
     results = []
+    ZERO = {"absent_teammate_avg_pts": 0.0, "absent_teammate_avg_min": 0.0,
+            "absent_teammate_avg_ast": 0.0, "n_absent_teammates": 0,
+            "expected_usage_bump": 0.0, "freed_fga_total": 0.0,
+            "freed_fta_total": 0.0, "freed_ast_total": 0.0, "top_absent_fga": 0.0}
 
     # Group by game+team to identify who played and who didn't
     for (game_id, team_id), game_team in df.groupby(["game_id", "team_id"]):
@@ -84,14 +104,7 @@ def compute_absence_features(df: pd.DataFrame) -> pd.DataFrame:
 
         if team_history.empty:
             for _, row in game_team.iterrows():
-                results.append({
-                    "player_game_id": row["player_game_id"],
-                    "absent_teammate_avg_pts": 0.0,
-                    "absent_teammate_avg_min": 0.0,
-                    "absent_teammate_avg_ast": 0.0,
-                    "n_absent_teammates":      0,
-                    "expected_usage_bump":     0.0,
-                })
+                results.append({"player_game_id": row["player_game_id"], **ZERO})
             continue
 
         # Recent avg minutes per player on this team
@@ -109,23 +122,21 @@ def compute_absence_features(df: pd.DataFrame) -> pd.DataFrame:
 
         if n_absent == 0:
             for _, row in game_team.iterrows():
-                results.append({
-                    "player_game_id":          row["player_game_id"],
-                    "absent_teammate_avg_pts":  0.0,
-                    "absent_teammate_avg_min":  0.0,
-                    "absent_teammate_avg_ast":  0.0,
-                    "n_absent_teammates":       0,
-                    "expected_usage_bump":      0.0,
-                })
+                results.append({"player_game_id": row["player_game_id"], **ZERO})
             continue
 
-        # Find the top absent teammate by recent avg minutes
-        top_absent = (
-            recent_avg_min[recent_avg_min["player_id"].isin(absent_ids)]
-            .sort_values("recent_avg_min", ascending=False)
-            .iloc[0]
-        )
-        top_absent_id = int(top_absent["player_id"])
+        # Recent usage of each absent teammate → totals (shots + playmaking freed)
+        freed_fga = freed_fta = freed_ast = 0.0
+        top_absent_id, best_min = None, -1.0
+        for aid in absent_ids:
+            s = _player_recent_stats(df, int(aid), game_date)
+            freed_fga += s["avg_fga"]
+            freed_fta += s["avg_fta"]
+            freed_ast += s["avg_ast"]
+            amin = float(recent_avg_min.loc[recent_avg_min["player_id"] == aid,
+                                            "recent_avg_min"].iloc[0])
+            if amin > best_min:
+                best_min, top_absent_id = amin, int(aid)
         top_stats = _player_recent_stats(df, top_absent_id, game_date)
 
         # Total absent minutes as fraction of team's normal total
@@ -146,16 +157,13 @@ def compute_absence_features(df: pd.DataFrame) -> pd.DataFrame:
                     "absent_teammate_avg_ast":  round(top_stats["avg_ast"], 4),
                     "n_absent_teammates":       n_absent,
                     "expected_usage_bump":      usage_bump,
+                    "freed_fga_total":          round(freed_fga, 4),
+                    "freed_fta_total":          round(freed_fta, 4),
+                    "freed_ast_total":          round(freed_ast, 4),
+                    "top_absent_fga":           round(top_stats["avg_fga"], 4),
                 })
             else:
-                results.append({
-                    "player_game_id":          row["player_game_id"],
-                    "absent_teammate_avg_pts":  0.0,
-                    "absent_teammate_avg_min":  0.0,
-                    "absent_teammate_avg_ast":  0.0,
-                    "n_absent_teammates":       0,
-                    "expected_usage_bump":      0.0,
-                })
+                results.append({"player_game_id": row["player_game_id"], **ZERO})
 
     out = pd.DataFrame(results)
     flagged = (out["n_absent_teammates"] > 0).sum()

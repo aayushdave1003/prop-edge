@@ -30,6 +30,12 @@ CONFIGS = [
     {"name": "nba_threes_made_v1", "sport": "nba", "target": "fg3_made",
      "lines": [0.5, 1.5, 2.5, 3.5, 4.5, 5.5],
      "played": lambda s: float(s.get("minutes", 0) or 0) >= 10},
+    {"name": "nba_points_v1", "sport": "nba", "target": "points",
+     "lines": [9.5, 14.5, 17.5, 19.5, 22.5, 24.5, 29.5, 34.5],
+     "played": lambda s: float(s.get("minutes", 0) or 0) >= 10},
+    {"name": "nba_assists_v1", "sport": "nba", "target": "assists",
+     "lines": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 9.5],
+     "played": lambda s: float(s.get("minutes", 0) or 0) >= 10},
 
     {"name": "wnba_points_v1", "sport": "wnba", "target": "points",
      "lines": [5.5, 9.5, 12.5, 14.5, 17.5, 19.5, 22.5, 24.5],

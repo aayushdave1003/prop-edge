@@ -86,6 +86,11 @@ FEATURE_KEYS = [
     "absent_teammate_avg_min",
     "n_absent_teammates",
     "expected_usage_bump",
+    # Usage redistribution — shots + playmaking freed when a rotation player sits
+    "freed_fga_total",
+    "freed_fta_total",
+    "freed_ast_total",
+    "top_absent_fga",
     # Basketball IQ
     "last_10_avg_usage_rate",
     "season_avg_usage_rate",

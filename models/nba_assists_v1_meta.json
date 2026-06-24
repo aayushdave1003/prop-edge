@@ -49,6 +49,10 @@
     "absent_teammate_avg_min",
     "n_absent_teammates",
     "expected_usage_bump",
+    "freed_fga_total",
+    "freed_fta_total",
+    "freed_ast_total",
+    "top_absent_fga",
     "last_10_avg_usage_rate",
     "season_avg_usage_rate",
     "last_10_avg_ast_to_pts_ratio",
@@ -64,9 +68,9 @@
     "team_isolation_rate",
     "team_pnr_bh_rate"
   ],
-  "best_iteration": 237,
-  "train_n": 7227,
-  "val_n": 2537,
-  "test_n": 14940,
-  "trained_date": "2026-06-03"
+  "best_iteration": 168,
+  "train_n": 3955,
+  "val_n": 2529,
+  "test_n": 15010,
+  "trained_date": "2026-06-24"
 }
