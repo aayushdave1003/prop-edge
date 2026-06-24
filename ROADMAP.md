@@ -23,7 +23,7 @@ what's left to build, by category.
 
 ## 2. Model / analytics
 - ☐ **P3** **Retrain prod models on the full history for robustness (optional).** Prod hits was fit on ~2.8k rows of one 6-week 2024 window; the data now supports 135k continuous rows. MAE is neutral, but a model trained on 4 seasons is less fragile to distribution shift. Only worth it if it clears the (now in-domain) A/B gate — otherwise leave prod.
-- ☐ **P3** **Model ensembling / stacking** — blend model versions (or a 2nd algorithm) per stat where it reduces MAE.
+- ☐ **P3** **Model ensembling / stacking** — **assessed, neutral; lane closed.** Built `props.models.ensemble_eval` (distribution-preserving: every member outputs a Poisson λ so the CDF+isotonic step survives) and tested two ensembles per stat against the +0.5% A/B gate. Nothing cleared it: **seedbag** (avg of 5 seed/feature-fraction-varied GBMs) gained +0.01% hits / −0.05% total_bases / +0.11% points / +0.22% assists; **glmblend** (GBM ⊕ linear Poisson GLM, weight tuned on val) either collapsed to pure-GBM (w=1.0, +0.00%) or only nudged up by going pure-linear (hits w=0 → +0.40%, which breaks the λ interpretation and still misses the bar). The single calibrated Poisson GBM is at the MAE floor — stacking adds <0.25%, not worth the multi-model inference + recalibration burden. (The ensemble that *does* pay off — model⊕market blending — is already shipped in `blend_weights.py`.) Re-runnable via the harness as data grows / new markets land.
 - ☐ **P3** **Playoff vs regular-season model split** — different distributions; a playoff-aware model (or feature) instead of suppressing playoff stats.
 
 ## 4. Ops / automation & data integrity
