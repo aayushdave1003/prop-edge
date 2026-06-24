@@ -1,0 +1,29 @@
+name: aug-sports-reminder
+
+# College football and the EPL both kick off in mid-to-late August. The June-2026
+# build proved each has a real modelable market — CFB receiving_yards (+4.0%) and
+# soccer saves (+14.3%, the strongest single new-sport market) + fouls (+1.5%) —
+# but neither was activated (off-season, single-season data). Once-a-season nudge
+# to finish on the live seasons. Fires ~Aug 25 (both underway).
+on:
+  schedule:
+    - cron: "29 15 25 8 *"   # ~Aug 25, 15:29 UTC, annually
+  workflow_dispatch:
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord CFB + soccer activation reminder
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && { echo "no webhook"; exit 0; }
+          curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK_URL" -d '{
+            "embeds": [{
+              "title": "🏈⚽ CFB + EPL seasons underway — activate the builds",
+              "description": "Foundations are built (ingest/rolling/models). In June: **CFB receiving_yards +4.0%**, **soccer saves +14.3% + fouls +1.5%** beat baseline. **Now: backfill more seasons + the live ones, retrain, validate, then wire PrizePicks (LEAGUE_TO_SPORT) + daily.sh + register the winners.** CFB rushing/passing and soccer shots/goals were weak — re-check on more data.\n\nPlan: `ROADMAP.md` → New sports.",
+              "color": 9055202,
+              "footer": {"text": "annual CFB + EPL season reminder"}
+            }]
+          }'
