@@ -7,7 +7,7 @@ from sqlalchemy import text
 from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
-LEAGUES = ["eng.1"]   # EPL; extend with esp.1, ita.1, ger.1, … as desired
+LEAGUES = ["eng.1", "esp.1", "ger.1", "ita.1", "fra.1", "usa.1"]   # EPL, La Liga, Bundesliga, Serie A, Ligue 1, MLS
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer/{lg}/scoreboard"
 
 
