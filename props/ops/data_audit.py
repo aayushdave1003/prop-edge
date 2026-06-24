@@ -11,6 +11,7 @@ Checks:
   - duplicate abbrevs   — two teams sharing an abbreviation (a collision bug)
   - junk games          — home==away, or a PrizePicks-placeholder team in a game
   - placeholder leakage — settled picks pointing at a placeholder team
+  - scratch picks        — lost legs on a player who didn't play (missed late scratch)
   - stale team mapping   — players.current_team_id ≠ their most-recent game's team
 
 Run:  python -m props.ops.data_audit          (alerts on problems)
@@ -109,6 +110,34 @@ def run_checks() -> list[dict]:
         if leak:
             findings.append({"level": "warn", "name": "placeholder_picks",
                              "detail": f"{leak} settled pick(s) tied to a placeholder team"})
+
+        # ── late-scratch leakage into settled picks ──────────────────────────
+        # A pick that LOST because the player barely/never played is a scratch the
+        # injury feed + suppression missed. No-shows with no box-score row are
+        # already voided (zero P&L) and excluded here; the harmful case is a
+        # player who suited up, logged <5 min (or did_play=false), and lost the
+        # leg. Historically tiny (3 lost legs ever, all fringe role players on one
+        # date) — this is a regression guard: if suppression breaks, the rate
+        # climbs and the digest catches it. The predictive version (cross-check vs
+        # confirmed lineups) is data-gated: no lineup feed + a shallow ~1-month
+        # injury-snapshot history.
+        scratch = c.execute(text("""
+            SELECT p.full_name FROM picks pk
+            JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
+            JOIN games g ON g.game_id = pk.game_id
+            JOIN players p ON p.player_id = pk.player_id
+            WHERE pk.leg_result = 'loss'
+              AND pk.settled_at >= NOW() - INTERVAL '14 days'
+              AND (pg.did_play = false
+                   OR (g.sport_code IN ('nba', 'wnba') AND COALESCE(pg.minutes_played, 0) < 5))
+        """)).scalars().all()
+        if scratch:
+            findings.append({"level": "warn", "name": "scratch_picks",
+                             "detail": f"{len(scratch)} lost leg(s) on a no-show/late scratch in "
+                                       f"last 14d — {', '.join(scratch[:5])} (check suppression)"})
+        else:
+            findings.append({"level": "ok", "name": "scratch_picks",
+                             "detail": "no lost legs on late scratches in last 14d"})
 
         # ── stale current_team_id vs most-recent game (informational) ────────
         stale = c.execute(text("""
