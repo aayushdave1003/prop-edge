@@ -50,6 +50,9 @@ def train_one(stat, out):
     tr, te = df[df.game_date < cutoff], df[df.game_date >= cutoff]
     vc = tr["game_date"].quantile(0.85)
     fit, val = tr[tr.game_date < vc], tr[tr.game_date >= vc]
+    if len(fit) < 50 or len(val) < 10 or len(te) < 10:
+        log.info("soccer_skip_sparse", stat=stat, fit=len(fit), val=len(val), te=len(te))
+        return {"name": f"soccer_{stat}_v1", "improvement_pct": float("nan"), "n": len(te)}
     params = {"objective": "poisson", "learning_rate": 0.05, "num_leaves": 31, "min_data_in_leaf": 30,
               "feature_fraction": 0.8, "bagging_fraction": 0.8, "bagging_freq": 5,
               "lambda_l2": 1.0, "verbose": -1, "seed": 42}
@@ -73,9 +76,12 @@ def main():
     out = load()
     results = [train_one(s, out) for s in SPECS]
     print("\n=== Soccer models (MAE vs season-avg baseline) ===")
-    for r in sorted(results, key=lambda x: -x["improvement_pct"]):
-        v = "SHIP" if r["improvement_pct"] > 0 else "drop (worse than baseline)"
-        print(f"  {r['name']:26} {r['improvement_pct']:+6.2f}%  (n={r['n']})  -> {v}")
+    for r in sorted(results, key=lambda x: x["improvement_pct"] if x["improvement_pct"] == x["improvement_pct"] else -1e9, reverse=True):
+        imp = r["improvement_pct"]
+        if imp != imp:
+            print(f"  {r['name']:26}  (n={r['n']})  -> skipped (sparse)")
+        else:
+            print(f"  {r['name']:26} {imp:+6.2f}%  (n={r['n']})  -> {'SHIP' if imp > 0 else 'drop (worse than baseline)'}")
 
 
 if __name__ == "__main__":
