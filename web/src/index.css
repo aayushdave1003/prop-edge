@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   prop-edge brand token. Cyan is the primary palette (logo, active league chip,
+   primary buttons). To switch to the indigo/violet alt palette from the brief,
+   change --brand to #6366F1 and --brand-glow to rgba(99,102,241,0.35) — nothing
+   else needs to move. Brand-cyan = identity/selection; edge-green = a good pick;
+   the two never swap jobs.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --brand: #22d3ee;
+  --brand-glow: rgba(34, 211, 238, 0.35);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg, #0b0f14);
+  color: #f4f7fa;
+  -webkit-font-smoothing: antialiased;
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Hide scrollbars on the horizontally-scrolling chip rows but keep scrolling. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 1.4s ease-in-out infinite;
+}
