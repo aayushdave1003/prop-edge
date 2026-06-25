@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-06-25
+- ✅ **P3** **NBA usage redistribution when a star sits — DONE.** Extended the minutes-based teammate-absence features to the actual *usage* freed when a rotation player (≥15 min avg) sits: `freed_fga_total`/`freed_fta_total`/`freed_ast_total` (summed recent avgs of absent rotation teammates) + `top_absent_fga`. Assess-first cleared the bar (resid corr +0.09–0.11 vs the 0.03 bar; ~0 corr with the raw outcome), A/B confirmed real gain (**points +0.93% / assists +0.48% MAE** over the prior feature set). Wired into `nba_points_v1` + `nba_assists_v1`, backfilled derived, retrained (now +5.35% / +1.77% vs season-avg baseline) and recalibrated (both isotonic maps non-degenerate).
+
 ## Shipped — 2026-06-24
 - ✅ **P3** **Retrain prod models on the full history for robustness — DONE.** Ran `retrain_and_promote` (trains each candidate on the full now-derived history, A/B-gates vs prod at +0.5% MAE on the 60-day settled window). **`total_bases` PROMOTED at +1.32%** (prod 1.3951 → 1.3767 MAE, n=9927, candidate trained on 138k rows; recalibrated) — a real robustness *and* accuracy win. **`hits` (−0.97%) and `home_runs` (−1.23%) regressed → correctly KEPT prod** — confirms the data-saturation finding (the narrower-window incumbents already generalize). Promoted total_bases deploys on commit.
 
