@@ -45,9 +45,9 @@
     "wx_temp",
     "wx_wind_out"
   ],
-  "best_iteration": 31,
-  "train_n": 2798,
-  "val_n": 3319,
-  "test_n": 3460,
-  "trained_date": "2026-06-14"
+  "best_iteration": 159,
+  "train_n": 84787,
+  "val_n": 740,
+  "test_n": 52930,
+  "trained_date": "2026-06-24"
 }

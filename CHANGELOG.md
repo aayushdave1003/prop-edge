@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-06-24
+- ✅ **P3** **Retrain prod models on the full history for robustness — DONE.** Ran `retrain_and_promote` (trains each candidate on the full now-derived history, A/B-gates vs prod at +0.5% MAE on the 60-day settled window). **`total_bases` PROMOTED at +1.32%** (prod 1.3951 → 1.3767 MAE, n=9927, candidate trained on 138k rows; recalibrated) — a real robustness *and* accuracy win. **`hits` (−0.97%) and `home_runs` (−1.23%) regressed → correctly KEPT prod** — confirms the data-saturation finding (the narrower-window incumbents already generalize). Promoted total_bases deploys on commit.
+
 ## Shipped — 2026-06-21
 - ✅ **P3** **Residential proxy for PrizePicks — DONE.** `PRIZEPICKS_PROXY` secret provisioned (2026-06-12) and verified working on Actions: `daily.yml` (full pipeline) and `intraday-refresh` (`refresh.yml`, scrapes via proxy at 10 AM / 4 PM / 7 PM Pacific — both DST variants) both route the PrizePicks scrape through the residential proxy. Today's run confirms it (`fetched_projections=12156`, `inserted=5382`). The Mac-cron is now fully redundant — everything it did (3×/day lines + injuries + starters) runs on GitHub Actions. Remaining (on the user's Mac, optional): uninstall the local cron to stop the redundant double-scrape; it's a harmless idempotent backup until then.
 
