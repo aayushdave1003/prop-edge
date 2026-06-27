@@ -1,22 +1,20 @@
-"""FastAPI app serving the prop-edge pick board.
+"""FastAPI app serving the prop-edge pick board (research / paper-tracking).
 
 Run:  uvicorn props.api.server:app --reload --port 8000
-Endpoints:
-  GET /api/health            -> liveness
-  GET /api/leagues           -> leagues w/ picks today + their stat types
-  GET /api/picks?league&stat -> today's picks (contract in web/ README)
+  GET /api/health
+  GET /api/leagues
+  GET /api/picks?league=&stat=&stat=&direction=&recommended=
+  GET /api/games?league=
 """
 from __future__ import annotations
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from props.api.repo import fetch_picks, fetch_leagues
+from props.api.repo import fetch_picks, fetch_leagues, fetch_games
 
-app = FastAPI(title="prop-edge API", version="1.0")
+app = FastAPI(title="prop-edge API", version="2.0")
 
-# The board is a static SPA on a different origin in dev (Vite :5173) and may be
-# served from anywhere in prod; this API is public, read-only model output.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,7 +35,16 @@ def leagues() -> dict:
 
 @app.get("/api/picks")
 def picks(
-    league: str | None = Query(default=None, description="sport_code, e.g. nba"),
-    stat: str | None = Query(default=None, description="internal stat_type, e.g. points"),
+    league: str | None = Query(default=None),
+    stat: list[str] | None = Query(default=None, description="repeatable internal stat_type"),
+    direction: str | None = Query(default=None, description="over|under"),
+    recommended: int = Query(default=0, description="1 = recommended only"),
 ) -> dict:
-    return {"picks": fetch_picks(league=league, stat=stat)}
+    return fetch_picks(
+        league=league, stats=stat, direction=direction, recommended_only=bool(recommended)
+    )
+
+
+@app.get("/api/games")
+def games(league: str | None = Query(default=None)) -> dict:
+    return {"games": fetch_games(league=league)}

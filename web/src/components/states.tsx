@@ -55,7 +55,7 @@ export function ErrorState({ onRetry }: { onRetry: () => void }) {
       </p>
       <button
         onClick={onRetry}
-        className="mt-5 rounded-full bg-brand px-5 py-2 text-sm font-semibold text-black shadow-glow-sm transition hover:brightness-110"
+        className="mt-5 rounded-full bg-violet px-5 py-2 text-sm font-semibold text-white shadow-violet-soft transition hover:brightness-110"
       >
         Retry
       </button>

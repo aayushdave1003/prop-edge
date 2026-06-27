@@ -1,68 +1,102 @@
-import { ChevronDown, LogoMark, PlusIcon } from "./icons";
+import { BoltMark, RefreshIcon } from "./icons";
 
-// Sportsbook-style top bar. The account/balance/invite cluster is styled but
-// non-functional (placeholders), per the brief.
-export function TopNav() {
+export const TABS = [
+  "Today's Picks",
+  "Game Predictions",
+  "Performance",
+  "Soft Lines",
+  "Recent Picks",
+] as const;
+export type Tab = (typeof TABS)[number];
+
+// PrizePicks-style bar — but NO wallet/balance/deposit chrome (research framing).
+export function TopNav({
+  tab,
+  onTab,
+  asOf,
+  onRefresh,
+  onToggleSidebar,
+}: {
+  tab: Tab;
+  onTab: (t: Tab) => void;
+  asOf: string;
+  onRefresh: () => void;
+  onToggleSidebar: () => void;
+}) {
   return (
     <header className="sticky top-0 z-20 border-b border-white/5 bg-bg/85 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-[1400px] items-center gap-6 px-4 sm:px-6">
-        {/* logo */}
+      <div className="mx-auto flex h-16 max-w-[1500px] items-center gap-4 px-4 sm:px-6">
+        {/* mobile sidebar toggle */}
+        <button
+          onClick={onToggleSidebar}
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-ink-dim hover:bg-surface lg:hidden"
+          aria-label="Toggle utilities"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+          </svg>
+        </button>
+
+        {/* brand */}
         <div className="flex items-center gap-2">
-          <LogoMark className="h-7 w-7 text-brand" />
+          <BoltMark className="h-7 w-7" />
           <span className="text-lg font-extrabold tracking-tight text-ink">
-            prop<span className="text-brand">-edge</span>
+            prop<span className="bg-brand-bolt bg-clip-text text-transparent">-edge</span>
           </span>
         </div>
 
-        {/* primary tabs */}
-        <nav className="hidden items-center gap-1 sm:flex">
-          <Tab label="Board" active />
-          <Tab label="My Lineups" />
+        {/* tab pill group */}
+        <nav className="no-scrollbar ml-2 hidden items-center gap-1 overflow-x-auto rounded-full bg-surface/70 p-1 ring-1 ring-white/5 md:flex">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              onClick={() => onTab(t)}
+              className={[
+                "shrink-0 rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
+                t === tab
+                  ? "bg-violet text-white shadow-violet-soft"
+                  : "text-ink-dim hover:text-ink",
+              ].join(" ")}
+            >
+              {t}
+            </button>
+          ))}
         </nav>
 
         <div className="flex-1" />
 
-        {/* right cluster */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button className="hidden items-center gap-2 rounded-full px-2 py-1 text-sm font-semibold text-ink-dim transition hover:text-ink md:flex">
-            Invite Friends
-            <span className="rounded-full bg-edge px-2 py-0.5 text-xs font-bold text-black">
-              GET $25
-            </span>
-          </button>
-          <span className="hidden rounded-full bg-surface px-3 py-1.5 text-sm font-bold text-ink ring-1 ring-white/8 sm:inline">
-            $0.00
+        {/* refresh + as-of (no balance, no wallet) */}
+        <div className="flex items-center gap-3">
+          <span className="hidden text-[11px] leading-tight text-ink-dim lg:block">
+            Showing picks as of {asOf};
+            <br />
+            new picks land each morning
           </span>
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-black shadow-glow-sm transition hover:brightness-110"
-            aria-label="Add funds"
+            onClick={onRefresh}
+            className="flex items-center gap-1.5 rounded-full bg-violet px-3.5 py-2 text-sm font-semibold text-white shadow-violet-soft transition hover:brightness-110"
           >
-            <PlusIcon className="h-4 w-4" />
-          </button>
-          <button className="flex items-center gap-1 rounded-full bg-surface py-1 pl-1 pr-2 ring-1 ring-white/8">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-brand/30 to-surface-hover text-xs font-bold text-ink">
-              AD
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 text-ink-dim" />
+            <RefreshIcon className="h-4 w-4" />
+            <span className="hidden sm:inline">Refresh picks</span>
           </button>
         </div>
       </div>
-    </header>
-  );
-}
 
-function Tab({ label, active }: { label: string; active?: boolean }) {
-  return (
-    <button
-      className={[
-        "relative px-3 py-2 text-sm font-semibold transition",
-        active ? "text-ink" : "text-ink-dim hover:text-ink",
-      ].join(" ")}
-    >
-      {label}
-      {active && (
-        <span className="absolute inset-x-2 -bottom-[1px] h-0.5 rounded-full bg-brand shadow-glow-sm" />
-      )}
-    </button>
+      {/* mobile tab row */}
+      <nav className="no-scrollbar flex items-center gap-1 overflow-x-auto border-t border-white/5 px-3 py-2 md:hidden">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => onTab(t)}
+            className={[
+              "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition",
+              t === tab ? "bg-violet text-white" : "bg-surface text-ink-dim",
+            ].join(" ")}
+          >
+            {t}
+          </button>
+        ))}
+      </nav>
+    </header>
   );
 }
