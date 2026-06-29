@@ -3,16 +3,14 @@ name: daily-pipeline
 # Always-on replacement for the local Mac cron: generates picks daily even when
 # the laptop is off. Runs the same scripts/daily.sh against the Railway DB.
 #
-# DST-safe scheduling: GitHub cron is UTC and doesn't follow DST, so we trigger
-# at BOTH the PDT and PST UTC times for 7 AM PT and let exactly one through per
-# day. The gate keys on WHICH cron fired (github.event.schedule) + the current
-# DST offset — NOT the actual run hour, because GitHub frequently delivers
-# scheduled events 1–2h late (an hour-based gate skipped real runs). Manual
-# dispatch always runs.
+# Scheduling: ONE daily UTC cron (no DST dual-cron). GitHub bills every triggered
+# run — including a dual-cron's gated-out twin — rounded up to a full minute, so
+# the old PDT+PST pair burned ~30 wasted min/month here. A single cron at 14:00
+# UTC fires once/day: 7 AM in summer (PDT), 6 AM in winter (PST). An hour's
+# seasonal drift on a morning batch is immaterial. Manual dispatch still works.
 on:
   schedule:
-    - cron: "0 14 * * *"   # 7 AM PDT (summer, UTC-7)
-    - cron: "0 15 * * *"   # 7 AM PST (winter, UTC-8)
+    - cron: "0 14 * * *"   # 7 AM PDT / 6 AM PST
   workflow_dispatch: {}
 
 concurrency:
@@ -23,7 +21,7 @@ jobs:
   daily:
     runs-on: ubuntu-latest
     # The full pipeline (4 sports × schedules/box-scores/features + settle +
-    # predict) runs ~35-40 min; 45 was too tight and a slow API made it time out
+    # predict) runs ~35-40 min; 45 was too tight and a slow API timed out
     # mid-predict, before picks/Discord. 90 gives headroom.
     timeout-minutes: 90
     env:
@@ -37,42 +35,18 @@ jobs:
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
       LOG_LEVEL: INFO
     steps:
-      - name: Gate one run per day (DST-safe, delay-independent)
-        id: gate
-        env:
-          SCHED: ${{ github.event.schedule }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          OFFSET=$(TZ=America/Los_Angeles date +%z)   # -0700 PDT, -0800 PST
-          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
-          RUN=no
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            RUN=yes
-          elif [ "$SCHED" = "0 14 * * *" ] && [ "$OFFSET" = "-0700" ]; then
-            RUN=yes   # 14:00 UTC cron, summer = 7 AM PDT
-          elif [ "$SCHED" = "0 15 * * *" ] && [ "$OFFSET" = "-0800" ]; then
-            RUN=yes   # 15:00 UTC cron, winter = 7 AM PST
-          fi
-          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
-          echo "run=$RUN" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'yes'
 
       - uses: actions/setup-python@v5
-        if: steps.gate.outputs.run == 'yes'
         with:
           python-version: "3.13"
           cache: pip
 
       - name: System deps (libgomp for LightGBM)
-        if: steps.gate.outputs.run == 'yes'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
 
       - name: Install Python deps
-        if: steps.gate.outputs.run == 'yes'
         run: pip install -r requirements.txt
 
       - name: Run daily pipeline
-        if: steps.gate.outputs.run == 'yes'
         run: bash scripts/daily.sh

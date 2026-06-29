@@ -1,22 +1,21 @@
 name: intraday-refresh
 
 # Intraday injury + starter refreshes (lightweight — no model inference).
-# PrizePicks LINES are deliberately NOT refreshed here: PrizePicks blocks
-# datacenter IPs, so the line scrape runs on the Mac (scripts/scrape_lines.sh).
-# Injuries + starters use ESPN/MLB feeds that work fine from the cloud.
+# PrizePicks LINES are deliberately NOT refreshed here unless a residential proxy
+# is configured (PrizePicks blocks datacenter IPs). Injuries + starters use
+# ESPN/MLB feeds that work fine from the cloud.
 #
-# DST-safe: GitHub cron is UTC and doesn't follow DST, so each slot has a PDT and
-# a PST cron and the gate lets exactly one through, keyed on WHICH cron fired
-# (github.event.schedule) + the current DST offset — NOT the run hour, since
-# GitHub delivers scheduled events 1–2h late. Manual dispatch always runs.
+# Scheduling: ONE UTC cron per slot (no DST dual-cron). GitHub bills every
+# triggered run — including a dual-cron's gated-out twin, rounded up to a full
+# minute — so the old PDT+PST pairs burned ~90 wasted min/month here. Single
+# crons fire once/slot: the listed times are PDT; in winter (PST) they land an
+# hour earlier (9 AM / 3 PM / 6 PM), which is fine for refreshes. Manual dispatch
+# still works.
 on:
   schedule:
-    - cron: "0 17 * * *"   # 10 AM PDT
-    - cron: "0 18 * * *"   # 10 AM PST
-    - cron: "0 23 * * *"   #  4 PM PDT
-    - cron: "0 0 * * *"    #  4 PM PST
-    - cron: "0 2 * * *"    #  7 PM PDT
-    - cron: "0 3 * * *"    #  7 PM PST
+    - cron: "0 17 * * *"   # 10 AM PDT / 9 AM PST
+    - cron: "0 23 * * *"   #  4 PM PDT / 3 PM PST
+    - cron: "0 2 * * *"    #  7 PM PDT / 6 PM PST
   workflow_dispatch: {}
 
 concurrency:
@@ -35,39 +34,14 @@ jobs:
       PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
       LOG_LEVEL: INFO
     steps:
-      - name: Gate slots (DST-safe, delay-independent)
-        id: gate
-        env:
-          SCHED: ${{ github.event.schedule }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          OFFSET=$(TZ=America/Los_Angeles date +%z)   # -0700 PDT, -0800 PST
-          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
-          RUN=no
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            RUN=yes
-          else
-            case "$SCHED" in
-              "0 17 * * *"|"0 23 * * *"|"0 2 * * *") [ "$OFFSET" = "-0700" ] && RUN=yes ;;  # PDT slots
-              "0 18 * * *"|"0 0 * * *"|"0 3 * * *")  [ "$OFFSET" = "-0800" ] && RUN=yes ;;  # PST slots
-            esac
-          fi
-          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
-          echo "run=$RUN" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'yes'
       - uses: actions/setup-python@v5
-        if: steps.gate.outputs.run == 'yes'
         with:
           python-version: "3.13"
           cache: pip
-      - if: steps.gate.outputs.run == 'yes'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
-      - if: steps.gate.outputs.run == 'yes'
-        run: pip install -r requirements.txt
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
+      - run: pip install -r requirements.txt
       - name: Refresh lines (via proxy) + injuries + starters
-        if: steps.gate.outputs.run == 'yes'
         run: |
           # PrizePicks lines only when a residential proxy is configured (it
           # blocks datacenter IPs); otherwise the Mac cron owns scraping.

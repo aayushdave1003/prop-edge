@@ -5,13 +5,13 @@ name: weekly-retrain
 # promotes ONLY the ones that beat prod — then commits whatever model files
 # changed so the promotions deploy on Railway. Nothing promotes on a regression.
 #
-# DST-safe: GitHub cron is UTC and doesn't follow DST, so Monday morning has a PDT
-# and a PST cron and the gate lets exactly one through (same pattern as daily.yml).
-# Manual dispatch always runs and can target a subset / threshold.
+# Scheduling: ONE Monday UTC cron (no DST dual-cron — the gated-out twin still
+# billed a rounded-up minute). 16:00 UTC = 9 AM PDT / 8 AM PST; the hour of
+# seasonal drift is immaterial for a weekly retrain. Manual dispatch always runs
+# and can target a subset / threshold.
 on:
   schedule:
-    - cron: "0 16 * * 1"   # ~9 AM PDT Monday (summer, UTC-7)
-    - cron: "0 17 * * 1"   # ~9 AM PST Monday (winter, UTC-8)
+    - cron: "0 16 * * 1"   # ~9 AM PDT / 8 AM PST, Monday
   workflow_dispatch:
     inputs:
       only:
@@ -40,41 +40,17 @@ jobs:
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       LOG_LEVEL: INFO
     steps:
-      - name: Gate one run per week (DST-safe)
-        id: gate
-        env:
-          SCHED: ${{ github.event.schedule }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          OFFSET=$(TZ=America/Los_Angeles date +%z)
-          echo "event=$EVENT schedule='$SCHED' pacific_offset=$OFFSET"
-          RUN=no
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            RUN=yes
-          elif [ "$SCHED" = "0 16 * * 1" ] && [ "$OFFSET" = "-0700" ]; then
-            RUN=yes
-          elif [ "$SCHED" = "0 17 * * 1" ] && [ "$OFFSET" = "-0800" ]; then
-            RUN=yes
-          fi
-          [ "$RUN" = "no" ] && echo "Skipping — cron doesn't match current DST."
-          echo "run=$RUN" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
-        if: steps.gate.outputs.run == 'yes'
       - uses: actions/setup-python@v5
-        if: steps.gate.outputs.run == 'yes'
         with:
           python-version: "3.13"
           cache: pip
       - name: System deps (libgomp for LightGBM)
-        if: steps.gate.outputs.run == 'yes'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgomp1
       - name: Install deps
-        if: steps.gate.outputs.run == 'yes'
         run: pip install -r requirements.txt
 
       - name: Retrain + A/B-gate + promote
-        if: steps.gate.outputs.run == 'yes'
         run: |
           ARGS=""
           if [ -n "${{ github.event.inputs.only }}" ]; then ARGS="--only ${{ github.event.inputs.only }}"; fi
@@ -82,7 +58,6 @@ jobs:
           python -m props.models.retrain_and_promote $ARGS
 
       - name: Commit promoted models
-        if: steps.gate.outputs.run == 'yes'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
