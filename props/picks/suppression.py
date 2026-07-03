@@ -97,13 +97,24 @@ def is_out_status(status: str) -> bool:
 
 
 def is_stale_game(game_state: dict, game_id, target_date) -> bool:
-    """True if the game is already played (final/live) or dated before the
-    target date — we neither log picks for it nor put it in the Discord digest."""
+    """True if we should NOT log or surface a pick for this game: it's already
+    played (final/live), it isn't on the target date (a past game is stale; a
+    future game is only a soft early line), or it's an unknown game we can't
+    validate.
+
+    Fail-safe: an id missing from game_state (dangling / unresolved placeholder)
+    returns True, so a pick is never logged for a game we can't confirm is a
+    still-upcoming game on the target date. The old default (return False) let
+    post-game lookahead picks and future soft-line picks through when a run fired
+    off its morning schedule.
+    """
     gstate = game_state.get(int(game_id))
     if gstate is None:
-        return False
+        return True
     status, gdate = gstate
-    return status in ("final", "live") or (gdate is not None and gdate < target_date)
+    if status in ("final", "live"):
+        return True
+    return gdate is None or gdate != target_date
 
 
 def line_in_range(stat_type: str, line_value: float) -> bool:
