@@ -8,8 +8,11 @@ Run:  uvicorn props.api.server:app --reload --port 8000
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from props.api.repo import fetch_picks, fetch_leagues, fetch_games
 
@@ -48,3 +51,12 @@ def picks(
 @app.get("/api/games")
 def games(league: str | None = Query(default=None)) -> dict:
     return {"games": fetch_games(league=league)}
+
+
+# Serve the built React board (web/dist) from the SAME service, so the SPA calls
+# /api/* same-origin — one Railway service, one URL. Mounted LAST so it doesn't
+# shadow the /api routes. Skipped if the build isn't present (e.g. running the
+# API bare in local dev, where Vite serves the frontend on :5173 instead).
+_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web", "dist")
+if os.path.isdir(_DIST):
+    app.mount("/", StaticFiles(directory=_DIST, html=True), name="board")

@@ -1,0 +1,37 @@
+# prop-edge pick board — FastAPI (/api/*) + the built React SPA in ONE service.
+#
+# In Railway: New Service → deploy from this repo → set Build "Dockerfile Path"
+# to `Dockerfile.board`, then set the service variables DATABASE_URL (point at
+# the Postgres service, e.g. ${{Postgres.DATABASE_URL}}) and RAILWAY_DATABASE_URL.
+# Railway injects $PORT. See BOARD_DEPLOY.md for the full walkthrough.
+
+# ── Stage 1: build the React board (web/ → web/dist) ─────────────────────────
+FROM node:20-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# ── Stage 2: Python API that also serves the built SPA ───────────────────────
+FROM python:3.13-slim-bookworm
+# libgomp1 for any lightgbm import pulled in transitively by the model helpers.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# App code (incl. props/models/*.json calibration tables) + the built SPA.
+COPY props ./props
+COPY --from=web /web/dist ./web/dist
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+
+# Railway injects $PORT. The API mounts web/dist at / (same-origin /api calls).
+CMD ["sh", "-c", "uvicorn props.api.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

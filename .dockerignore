@@ -16,3 +16,6 @@ cron.log
 daily_cron.log
 logs/
 props.egg-info
+node_modules
+web/node_modules
+web/dist
