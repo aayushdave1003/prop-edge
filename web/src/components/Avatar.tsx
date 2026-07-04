@@ -1,50 +1,40 @@
 import { useState } from "react";
 
-// Player headshot with a deterministic monogram fallback (colored circle) when
-// headshot_url is null OR the image fails to load.
-const MONO_COLORS = [
-  "#1F6FEB",
-  "#8957E5",
-  "#DB61A2",
-  "#E3582C",
-  "#2DA44E",
-  "#BF8700",
-  "#0F8B8D",
-];
-
+// Circular headshot with a mono monogram fallback (accent initials on accent-soft)
+// when headshot_url is null OR the image fails to load. Matches the design's
+// "object-position: top center" crop.
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function colorFor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return MONO_COLORS[h % MONO_COLORS.length];
-}
-
-export function Avatar({ name, src }: { name: string; src: string | null }) {
+export function Avatar({
+  name,
+  src,
+  size = 46,
+}: {
+  name: string;
+  src: string | null;
+  size?: number;
+}) {
   const [failed, setFailed] = useState(false);
   const showImg = src && !failed;
-
   return (
     <div
-      className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full ring-1 ring-white/10"
-      style={showImg ? undefined : { background: colorFor(name) }}
+      className="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-accent-soft font-mono font-bold text-accent"
+      style={{ width: size, height: size, fontSize: size * 0.33 }}
     >
-      {showImg ? (
+      {initials(name)}
+      {showImg && (
         <img
           src={src}
-          alt={name}
+          alt=""
           loading="lazy"
           onError={() => setFailed(true)}
-          className="h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover"
+          style={{ objectPosition: "top center", background: "#12101d" }}
         />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center text-base font-bold text-white/95">
-          {initials(name)}
-        </div>
       )}
     </div>
   );

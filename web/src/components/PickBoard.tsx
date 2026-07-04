@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { Pick, SortKey } from "../types";
 import { PickCard } from "./PickCard";
 
-// Sorts (default Edge desc = best leans first) then lays out the responsive grid.
+// Recommended (edge) picks always first, then by the active sort key.
 export function PickBoard({
   picks,
   sort,
@@ -15,25 +15,24 @@ export function PickBoard({
   onToggleWatch: (id: string) => void;
 }) {
   const sorted = useMemo(() => {
-    const arr = [...picks];
-    if (sort === "edge") {
-      arr.sort((a, b) => Math.abs(b.edge_pct) - Math.abs(a.edge_pct));
-    } else if (sort === "confidence") {
-      arr.sort(
-        (a, b) => b.model_confidence - a.model_confidence || Math.abs(b.edge_pct) - Math.abs(a.edge_pct),
-      );
-    } else {
-      arr.sort((a, b) => (a.start_time ?? "").localeCompare(b.start_time ?? ""));
-    }
-    return arr;
+    const key = (a: Pick, b: Pick) => {
+      if (sort === "confidence") return b.model_confidence - a.model_confidence;
+      if (sort === "start") return (a.start_time ?? "").localeCompare(b.start_time ?? "");
+      return Math.abs(b.edge_pct) - Math.abs(a.edge_pct);
+    };
+    return [...picks].sort((a, b) => Number(b.recommended) - Number(a.recommended) || key(a, b));
   }, [picks, sort]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      {sorted.map((p) => (
+    <div
+      className="grid gap-4"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(322px, 1fr))" }}
+    >
+      {sorted.map((p, i) => (
         <PickCard
           key={p.id}
           pick={p}
+          rank={i + 1}
           watched={watched.has(p.id)}
           onToggleWatch={() => onToggleWatch(p.id)}
         />

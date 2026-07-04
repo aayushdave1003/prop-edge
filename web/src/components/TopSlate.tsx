@@ -1,105 +1,84 @@
 import { useState } from "react";
 import type { TopSlate as TopSlateT } from "../types";
+import { Avatar } from "./Avatar";
+import { BoltMark } from "./icons";
 
-// The diversified "Top N-Pick Slate" hero. Money sizing is labeled paper /
-// hypothetical — never betting advice. "Tail" copies text only (no bet action).
+// Correlation-aware Top-N slate. Money sizing is paper / hypothetical. "Tail
+// slate · copy" writes a text summary to the clipboard (no bet action).
 export function TopSlate({ slate }: { slate: TopSlateT }) {
-  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const copyText = slate.legs
-    .map(
-      (l) =>
-        `${l.player} (${l.league.toUpperCase()}) ${l.stat_type} ${l.recommendation.toUpperCase()} ${l.line} — ${l.confidence}%`,
-    )
-    .join("\n");
-
   async function copy() {
+    const text =
+      `prop-edge — Top ${slate.n}-leg slate (paper-tracking, hypothetical)\n` +
+      slate.legs
+        .map((l) => `${l.player} (${l.league.toUpperCase()}) ${l.stat_type} ${l.recommendation.toUpperCase()} ${l.line} · ${l.confidence}%`)
+        .join("\n");
     try {
-      await navigator.clipboard.writeText(
-        `prop-edge — Top ${slate.n}-pick slate (paper-tracking, hypothetical)\n${copyText}`,
-      );
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      /* clipboard blocked — no-op */
+      /* clipboard blocked */
     }
   }
 
   return (
-    <div className="rounded-2xl border border-violet/40 bg-surface/80 p-4 shadow-violet-soft">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-extrabold text-ink">
-          ⚡ Top {slate.n}-Pick Slate ·{" "}
-          <span className="text-violet">{slate.payout}× payout</span>
-        </h2>
-        <span className="text-xs text-ink-dim">
-          Diversified across {slate.games} games · {slate.joint_hit_pct}% joint hit (if
-          independent) · paper-tracking only
-        </span>
+    <div
+      className="rounded-[18px] border border-accent-border p-4"
+      style={{ background: "linear-gradient(180deg, rgba(124,92,255,0.08) 0%, rgba(124,92,255,0.015) 46%, transparent 100%)" }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-brand text-[#0A0A11] shadow-btn">
+            <BoltMark className="h-4 w-4" />
+          </span>
+          <div>
+            <div className="text-[16px] font-extrabold tracking-tight text-ink">
+              Top {slate.n}-Leg Slate{" "}
+              <span className="tnum font-bold text-accent">{slate.payout}× payout</span>
+            </div>
+            <div className="mt-0.5 text-[11.5px] text-ink-3">
+              Correlation-aware · {slate.games} games · {slate.joint_hit_pct}% joint hit (if
+              independent) · paper sizing
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={copy}
+          className="rounded-[11px] border border-accent-border bg-accent-soft px-3.5 py-2 text-[12.5px] font-semibold text-accent transition hover:brightness-110"
+        >
+          {copied ? "Copied ✓" : "Tail slate · copy"}
+        </button>
       </div>
 
-      <ul className="mt-3 divide-y divide-white/5">
+      <div className="mt-3.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         {slate.legs.map((l, i) => {
           const over = l.recommendation === "over";
           return (
-            <li key={i} className="flex items-center justify-between gap-3 py-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-ink">
+            <div key={i} className="flex items-center gap-2.5 rounded-[13px] border border-hair bg-black/20 p-2.5">
+              <Avatar name={l.player} src={null} size={34} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-bold text-ink">
                   {l.player}
-                  <span className="ml-2 text-[11px] font-bold uppercase text-ink-dim">
-                    {l.league}
-                  </span>
+                  <span className="ml-1.5 text-[9.5px] font-bold uppercase text-ink-4">{l.league}</span>
                 </div>
-                <div className="text-xs text-ink-dim">
-                  {l.stat_type} · {l.line} · {l.confidence}% conf
-                  {l.stake_pct != null && (
-                    <span className="text-violet"> · stake {l.stake_pct}% (paper)</span>
-                  )}
+                <div className="tnum mt-0.5 truncate text-[11px] text-ink-3">
+                  {l.stat_type} · {l.line} · {l.confidence}%
+                  {l.stake_pct != null && <span className="text-accent"> · {l.stake_pct}%</span>}
                 </div>
               </div>
               <span
                 className={[
-                  "shrink-0 rounded-full px-3 py-1 text-xs font-bold uppercase",
-                  over ? "bg-mint/15 text-mint" : "bg-coral/15 text-coral",
+                  "shrink-0 rounded-lg px-2 py-1 text-[11px] font-extrabold uppercase",
+                  over ? "bg-pos/[0.14] text-pos" : "bg-neg/[0.14] text-neg",
                 ].join(" ")}
               >
-                {over ? "▲ Over" : "▼ Under"}
+                {over ? "▲" : "▼"}
               </span>
-            </li>
+            </div>
           );
         })}
-      </ul>
-
-      {/* slate-Kelly explainer — clearly paper sizing */}
-      <p className="mt-3 rounded-lg bg-violet/5 px-3 py-2 text-[11px] leading-snug text-ink-dim">
-        <span className="font-semibold text-violet">Slate-Kelly stakes · paper sizing, not betting advice.</span>{" "}
-        Correlation-aware half-Kelly over the joint outcome distribution
-        {slate.max_stake_pct != null && <> · capped at {slate.max_stake_pct}% of bankroll per leg</>}.
-        Hypothetical only.
-      </p>
-
-      {/* tail (copy text only) */}
-      <div className="mt-3">
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="text-xs font-semibold text-util-blue underline underline-offset-2"
-        >
-          {open ? "Hide" : `Tail this slate — copy ${slate.n} picks`}
-        </button>
-        {open && (
-          <div className="mt-2 rounded-lg bg-bg-deep p-3">
-            <pre className="no-scrollbar overflow-x-auto whitespace-pre-wrap text-[11px] text-ink-dim">
-              {copyText}
-            </pre>
-            <button
-              onClick={copy}
-              className="mt-2 rounded-full bg-violet px-3 py-1.5 text-xs font-semibold text-white transition hover:brightness-110"
-            >
-              {copied ? "Copied ✓" : "Copy picks"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

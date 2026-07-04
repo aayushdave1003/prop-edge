@@ -54,3 +54,16 @@ export async function fetchGames(league?: string): Promise<Game[]> {
   const data = await res.json();
   return (Array.isArray(data) ? data : data.games) as Game[];
 }
+
+export async function fetchPerformance(): Promise<import("./types").Performance> {
+  const res = await fetch("/api/performance");
+  if (!res.ok) throw new Error(`performance ${res.status}`);
+  return res.json();
+}
+
+export async function fetchSoftLines(league?: string): Promise<import("./types").SoftLine[]> {
+  const qs = league ? `?league=${league}` : "";
+  const res = await fetch(`/api/soft_lines${qs}`);
+  if (!res.ok) throw new Error(`soft_lines ${res.status}`);
+  return (await res.json()).soft_lines;
+}

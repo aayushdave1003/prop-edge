@@ -411,3 +411,145 @@ def fetch_games(league=None) -> list[dict]:
             "model_pick": fav, "implied_line": margin, "starters": starters,
         })
     return out
+
+
+# ── Performance (settled-pick track record) + Soft Lines ─────────────────────
+_WINPAY = 1.0 / 0.577 - 1.0  # per-leg payout at the 2-pick breakeven (57.7%)
+
+
+def fetch_performance() -> dict:
+    """Track record from SETTLED picks (paper / hypothetical). Recommended tier =
+    picks that cleared their per-category cutoff. All numbers are real outcomes."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT sport_code, stat_type, direction, model_prob, leg_result,
+                   settled_at, market_prob, market_prob_close
+            FROM picks
+            WHERE leg_result IN ('win','loss') AND model_prob IS NOT NULL
+        """)).mappings().all()
+
+    def rec_of(r):
+        return float(r["model_prob"]) >= _cut(r["sport_code"], r["stat_type"], r["direction"], r["model_prob"])
+
+    def rate(rs):
+        w = sum(1 for r in rs if r["leg_result"] == "win")
+        n = len(rs)
+        return w, n - w, (round(w / n * 100, 1) if n else 0.0)
+
+    recs = [r for r in rows if rec_of(r)]
+    rw, rl, rpct = rate(recs)
+    aw, al, apct = rate(rows)
+
+    # CLV: did our side's no-vig prob improve from open to close?
+    clv_vals = []
+    for r in rows:
+        mo, mc = r["market_prob"], r["market_prob_close"]
+        if mo is None or mc is None:
+            continue
+        over = r["direction"] == "over"
+        so = float(mo) if over else 1 - float(mo)
+        sc = float(mc) if over else 1 - float(mc)
+        clv_vals.append(sc - so)
+    clv = round(sum(clv_vals) / len(clv_vals) * 100, 1) if clv_vals else 0.0
+
+    # rolling rec-tier win-rate trend (~14 points, trailing window) — daily rec
+    # volume is too thin for a per-day series, so this is a moving average.
+    from collections import defaultdict
+    recs_sorted = sorted((r for r in recs if r["settled_at"] is not None), key=lambda r: r["settled_at"])
+    trend = []
+    if len(recs_sorted) >= 10:
+        win = max(20, len(recs_sorted) // 8)
+        pts = 14
+        for i in range(pts):
+            end = round((i + 1) / pts * len(recs_sorted))
+            window = recs_sorted[max(0, end - win):end]
+            if len(window) >= 5:
+                w = sum(1 for r in window if r["leg_result"] == "win")
+                trend.append({"i": i, "pct": round(w / len(window) * 100, 1)})
+
+    # by sport (rec tier) + paper ROI (flat 1u at breakeven odds)
+    bysport_map = defaultdict(list)
+    for r in recs:
+        bysport_map[r["sport_code"]].append(r)
+    by_sport, roi_by_sport = [], []
+    for sp, rs in sorted(bysport_map.items(), key=lambda kv: -len(kv[1])):
+        w, loss, pct = rate(rs)
+        if w + loss < 5:
+            continue
+        by_sport.append({"sport": league_label(sp), "w": w, "l": loss, "pct": pct})
+        roi = (w * _WINPAY - loss) / (w + loss) * 100
+        roi_by_sport.append({"sport": league_label(sp), "roi": round(roi, 1)})
+
+    # calibration bins + Brier
+    bins = [(0.50, 0.55), (0.55, 0.60), (0.60, 0.65), (0.65, 0.70), (0.70, 1.01)]
+    calib = []
+    for lo, hi in bins:
+        b = [r for r in rows if lo <= float(r["model_prob"]) < hi]
+        if len(b) < 10:
+            continue
+        pred = sum(float(r["model_prob"]) for r in b) / len(b)
+        act = sum(1 for r in b if r["leg_result"] == "win") / len(b)
+        calib.append({"pred": round(pred * 100, 1), "actual": round(act * 100, 1), "n": len(b)})
+    brier = round(sum((float(r["model_prob"]) - (1 if r["leg_result"] == "win" else 0)) ** 2 for r in rows) / len(rows), 3) if rows else None
+
+    # by market × lean (rec tier), strongest first
+    mk = defaultdict(list)
+    for r in recs:
+        mk[(r["stat_type"], r["direction"])].append(r)
+    by_market = []
+    for (stat, direction), rs in mk.items():
+        w, loss, pct = rate(rs)
+        if w + loss >= 8:
+            by_market.append({"market": stat_label(stat), "lean": direction, "pct": pct, "n": w + loss})
+    by_market.sort(key=lambda x: -x["pct"])
+
+    over_be = round(rpct - 57.7, 1)
+    return {
+        "recommended": {"pct": rpct, "w": rw, "l": rl, "over_breakeven": over_be},
+        "all_picks": {"pct": apct, "w": aw, "l": al},
+        "clv_pct": clv,
+        "trend": trend,
+        "by_sport": by_sport,
+        "roi_by_sport": roi_by_sport,
+        "calibration": calib,
+        "brier": brier,
+        "by_market": by_market[:8],
+    }
+
+
+def fetch_soft_lines(league=None) -> list[dict]:
+    """Market-based +EV signals (independent of the model): PrizePicks lines the
+    sharp no-vig consensus prices as beatable. Latest run, meaningful edge only."""
+    params = {}
+    lf = ""
+    if league:
+        lf = "AND sport_code = :league"
+        params["league"] = league.lower()
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"""
+            SELECT sport_code, player_name, stat_type, pp_line, sharp_line,
+                   sharp_over_prob, best_side, best_prob, edge
+            FROM soft_lines
+            WHERE run_date = (SELECT MAX(run_date) FROM soft_lines)
+              AND best_prob >= 0.55 {lf}
+            ORDER BY best_prob DESC
+            LIMIT 60
+        """), params).mappings().all()
+
+    out = []
+    for r in rows:
+        best = float(r["best_prob"])
+        over = r["best_side"] == "over"
+        sharp_over = float(r["sharp_over_prob"]) if r["sharp_over_prob"] is not None else 0.5
+        out.append({
+            "player": {"name": r["player_name"], "team": "", "headshot_url": None},
+            "league": r["sport_code"],
+            "stat_type": stat_label(r["stat_type"]),
+            "pp_line": float(r["pp_line"]),
+            "sharp_line": float(r["sharp_line"]) if r["sharp_line"] is not None else None,
+            "recommendation": "over" if over else "under",
+            "market_ev_pct": round((best - 0.5) / 0.5 * 100 * 0.5, 1),  # EV over a coinflip stake
+            "consensus_prob": round(best * 100),
+            "sharp_over_prob": round(sharp_over, 3),
+        })
+    return out

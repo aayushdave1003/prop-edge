@@ -14,7 +14,9 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from props.api.repo import fetch_picks, fetch_leagues, fetch_games
+from props.api.repo import (
+    fetch_picks, fetch_leagues, fetch_games, fetch_performance, fetch_soft_lines,
+)
 
 app = FastAPI(title="prop-edge API", version="2.0")
 
@@ -51,6 +53,16 @@ def picks(
 @app.get("/api/games")
 def games(league: str | None = Query(default=None)) -> dict:
     return {"games": fetch_games(league=league)}
+
+
+@app.get("/api/performance")
+def performance() -> dict:
+    return fetch_performance()
+
+
+@app.get("/api/soft_lines")
+def soft_lines(league: str | None = Query(default=None)) -> dict:
+    return {"soft_lines": fetch_soft_lines(league=league)}
 
 
 # Serve the built React board (web/dist) from the SAME service, so the SPA calls

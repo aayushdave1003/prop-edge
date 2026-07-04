@@ -2,29 +2,24 @@
 
 export function SkeletonCard() {
   return (
-    <div className="rounded-2xl border border-white/5 bg-surface p-4">
+    <div className="rounded-[18px] border border-hair bg-card-std p-4">
       <div className="flex items-center gap-3">
-        <div className="h-14 w-14 rounded-full bg-white/10 animate-pulse-soft" />
+        <div className="h-[46px] w-[46px] rounded-full bg-white/10 animate-pulse-soft" />
         <div className="flex-1 space-y-2">
           <div className="h-3 w-2/3 rounded bg-white/10 animate-pulse-soft" />
           <div className="h-2.5 w-1/2 rounded bg-white/5 animate-pulse-soft" />
         </div>
       </div>
-      <div className="mt-5 flex flex-col items-center gap-2">
-        <div className="h-9 w-20 rounded bg-white/10 animate-pulse-soft" />
-        <div className="h-2.5 w-24 rounded bg-white/5 animate-pulse-soft" />
-      </div>
-      <div className="mt-5 grid grid-cols-2 gap-2">
-        <div className="h-9 rounded-full bg-white/10 animate-pulse-soft" />
-        <div className="h-9 rounded-full bg-white/5 animate-pulse-soft" />
-      </div>
+      <div className="mt-4 h-20 rounded-[14px] bg-white/[0.04] animate-pulse-soft" />
+      <div className="mt-4 h-2 rounded bg-white/10 animate-pulse-soft" />
+      <div className="mt-3 h-2 rounded bg-white/5 animate-pulse-soft" />
     </div>
   );
 }
 
 export function SkeletonBoard() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(322px, 1fr))" }}>
       {Array.from({ length: 8 }).map((_, i) => (
         <SkeletonCard key={i} />
       ))}
@@ -34,28 +29,21 @@ export function SkeletonBoard() {
 
 export function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-surface/40 py-20 text-center">
-      <div className="mb-3 text-4xl">📉</div>
-      <p className="text-lg font-semibold text-ink">No edges found for this filter</p>
-      <p className="mt-1 max-w-sm text-sm text-ink-dim">
-        Try another league or stat type — the board only shows props the model has
-        a live projection for today.
-      </p>
+    <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.012] px-5 py-[70px] text-center">
+      <div className="text-[15px] font-semibold text-ink-2">No leans match these filters</div>
+      <div className="mt-1.5 text-[12.5px] text-ink-3">Loosen the market, direction, or edge-only filter.</div>
     </div>
   );
 }
 
 export function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-coral/30 bg-coral/5 py-20 text-center">
-      <div className="mb-3 text-4xl">⚠️</div>
-      <p className="text-lg font-semibold text-ink">Couldn’t load picks</p>
-      <p className="mt-1 max-w-sm text-sm text-ink-dim">
-        The prediction API didn’t respond. Check that it’s running, then retry.
-      </p>
+    <div className="rounded-[18px] border border-neg/30 bg-neg/[0.05] px-5 py-[70px] text-center">
+      <div className="text-[15px] font-semibold text-ink">Couldn’t load the board</div>
+      <div className="mt-1.5 text-[12.5px] text-ink-3">The prediction API didn’t respond.</div>
       <button
         onClick={onRetry}
-        className="mt-5 rounded-full bg-violet px-5 py-2 text-sm font-semibold text-white shadow-violet-soft transition hover:brightness-110"
+        className="mt-5 rounded-[11px] bg-brand px-5 py-2 text-[13px] font-semibold text-[#0A0A11] shadow-btn transition hover:brightness-105"
       >
         Retry
       </button>

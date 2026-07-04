@@ -1,23 +1,12 @@
-// Utility footer links in the blue/amber utility style. Research framing — these
-// are informational, not a betting product's help chrome.
+// Two muted methodology lines.
 export function Footer() {
   return (
-    <footer className="mt-14 flex flex-col items-center gap-2">
-      <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wide">
-        <a href="#" className="text-util-blue underline underline-offset-2 hover:brightness-125">
-          Help Center
-        </a>
-        <span className="h-3 w-px bg-white/15" />
-        <a href="#" className="text-util-blue underline underline-offset-2 hover:brightness-125">
-          How It Works
-        </a>
-        <span className="h-3 w-px bg-white/15" />
-        <a href="#" className="text-util-blue underline underline-offset-2 hover:brightness-125">
-          Scoring Chart
-        </a>
-      </div>
-      <p className="text-[11px] text-amber/80">
-        Research / paper-tracking only — not betting advice. All results hypothetical.
+    <footer className="mt-14 space-y-1 text-center">
+      <p className="text-[11.5px] text-ink-3">
+        prop-edge · self-running ML · MLB · NBA · WNBA · NHL
+      </p>
+      <p className="text-[11px] text-ink-4">
+        Poisson + isotonic calibration · multi-book no-vig blend · paper-tracking only
       </p>
     </footer>
   );

@@ -1,4 +1,4 @@
-// Inline SVG icons (no icon library). All inherit currentColor unless noted.
+// Inline SVG icons (no icon library). Inherit currentColor unless noted.
 type P = { className?: string };
 
 export function SearchIcon({ className }: P) {
@@ -6,14 +6,6 @@ export function SearchIcon({ className }: P) {
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <circle cx="11" cy="11" r="7" />
       <path d="m20 20-3.2-3.2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-export function ChevronRight({ className }: P) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
-      <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -29,19 +21,10 @@ export function RefreshIcon({ className }: P) {
   );
 }
 
-export function Star({ className, filled }: P & { filled?: boolean }) {
+export function ChevronRight({ className }: P) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth={1.8}
-    >
-      <path
-        d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 17.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.9L12 3.5Z"
-        strokeLinejoin="round"
-      />
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+      <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -49,42 +32,31 @@ export function Star({ className, filled }: P & { filled?: boolean }) {
 export function WindIcon({ className }: P) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path d="M3 8h11a3 3 0 1 0-3-3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 16h15a3 3 0 1 1-3 3" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 12h7" strokeLinecap="round" />
+      <path d="M4 12h11a3 3 0 1 0-3-3M4 16h15a3 3 0 1 1-3 3" strokeLinecap="round" />
     </svg>
   );
 }
 
-export function SportGlyph({ className }: P) {
+// the 5-point burst used for the Edge badge + watch star
+export function BurstStar({ className, filled }: P & { filled?: boolean }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={1.6}
+    >
+      <path d="M12 2l2.9 6.3L22 9.2l-5 5 1.2 7.1L12 17.9 5.8 21.3 7 14.2l-5-5 7.1-.9z" />
     </svg>
   );
 }
 
-export function InfoIcon({ className }: P) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5M12 8h.01" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-// prop-edge brand mark — a lightning bolt; fill it with the cyan→blue gradient.
+// brand lightning bolt (rendered inside a gradient tile)
 export function BoltMark({ className }: P) {
   return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden>
-      <defs>
-        <linearGradient id="boltGrad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#22D3EE" />
-          <stop offset="100%" stopColor="#3B82F6" />
-        </linearGradient>
-      </defs>
-      <path d="M13 2 4.5 13.5H11l-1.5 8.5L19.5 10H13l.9-8Z" fill="url(#boltGrad)" />
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M13 2 4.5 13.5H11l-1.5 8.5L19.5 10H13l.9-8Z" />
     </svg>
   );
 }

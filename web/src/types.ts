@@ -101,3 +101,35 @@ export interface Game {
   implied_line: string | null;
   starters?: { home: string; away: string } | null;
 }
+
+// ── Performance ──────────────────────────────────────────────────────────────
+export interface PerfRecord {
+  pct: number;
+  w: number;
+  l: number;
+  over_breakeven?: number;
+}
+export interface Performance {
+  recommended: PerfRecord;
+  all_picks: PerfRecord;
+  clv_pct: number;
+  trend: { i: number; pct: number }[];
+  by_sport: { sport: string; w: number; l: number; pct: number }[];
+  roi_by_sport: { sport: string; roi: number }[];
+  calibration: { pred: number; actual: number; n: number }[];
+  brier: number | null;
+  by_market: { market: string; lean: Lean; pct: number; n: number }[];
+}
+
+// ── Soft Lines ───────────────────────────────────────────────────────────────
+export interface SoftLine {
+  player: { name: string; team: string; headshot_url: string | null };
+  league: string;
+  stat_type: string;
+  pp_line: number;
+  sharp_line: number | null;
+  recommendation: Lean;
+  market_ev_pct: number;
+  consensus_prob: number;
+  sharp_over_prob: number;
+}
