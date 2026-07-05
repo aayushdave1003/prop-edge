@@ -198,8 +198,18 @@ python -m props.picks.confirm_starters --date "$TODAY" || true
 # upserts the full set into scored_props, giving the dashboard a model EV for any
 # player. Reuses predict_today's scoring/calibration; runs after the lines scrape
 # (§4) and after picks are generated (§6) so it sees the same fresh-line board.
-echo "--- Score full prop universe ---"
-python -m props.picks.score_universe --date "$TODAY" || echo "WARN: score_universe failed"
+# score_universe (the full-universe model EV powering the dashboard's "build your
+# own parlay") is the ~28-min hog — I/O-bound per-player queries to the remote DB.
+# Run it EVERY OTHER DAY (even day-of-year) to stay under the GitHub Actions
+# minutes budget. Only this secondary full-universe view goes ≤1 day stale on skip
+# days; the recommended picks (log_picks above) are generated daily regardless.
+# 10# forces base-10 so a zero-padded day-of-year (e.g. 007) isn't read as octal.
+if [ $(( 10#$(date +%j) % 2 )) -eq 0 ]; then
+    echo "--- Score full prop universe ---"
+    python -m props.picks.score_universe --date "$TODAY" || echo "WARN: score_universe failed"
+else
+    echo "--- Score full prop universe: skipped (every-other-day; scored_props kept from last run) ---"
+fi
 
 # ── 7. Second settle pass ────────────────────────────────────────────────────
 echo "--- Second settle pass ---"
