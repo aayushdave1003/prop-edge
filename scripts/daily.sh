@@ -113,23 +113,47 @@ python -m props.ingest.mlb_weather --since-days 3 || echo "WARN: mlb_weather fai
 python -m props.features.mlb_weather_features --since-days 5 || echo "WARN: mlb_weather_features failed"
 
 # ── 3. Rolling features ──────────────────────────────────────────────────────
-echo "--- NBA rolling features ---"
-python -m props.features.nba_rolling
-python -m props.features.nba_opposing_team
-python -m props.features.nba_home_away
-python -m props.features.nba_back_to_back
-python -m props.features.nba_streak
-python -m props.features.nba_teammate_absence
-python -m props.features.nba_basketball_iq
-python -m props.features.nba_play_types
+# Skip a sport's (expensive) rolling-feature derivation when it's out of season.
+# No games in the last 10 days = nothing new to derive, and recomputing a static
+# off-season dataset was ~11 min of pure waste (NBA rolling in July). Auto-resumes
+# when the sport returns. In-season sports (MLB/WNBA) always run.
+has_recent_games() {
+    python - "$1" <<'PY'
+import sys
+from sqlalchemy import text
+from props.utils.db import session_scope
+with session_scope() as s:
+    n = s.execute(text("SELECT COUNT(*) FROM games WHERE sport_code=:s "
+                       "AND game_date >= CURRENT_DATE - 10"), {"s": sys.argv[1]}).scalar()
+print(1 if n else 0)
+PY
+}
+
+if [ "$(has_recent_games nba)" = "1" ]; then
+    echo "--- NBA rolling features ---"
+    python -m props.features.nba_rolling
+    python -m props.features.nba_opposing_team
+    python -m props.features.nba_home_away
+    python -m props.features.nba_back_to_back
+    python -m props.features.nba_streak
+    python -m props.features.nba_teammate_absence
+    python -m props.features.nba_basketball_iq
+    python -m props.features.nba_play_types
+else
+    echo "--- NBA rolling features: skipped (off-season, no games in 10d) ---"
+fi
 
 echo "--- WNBA rolling features ---"
 python -m props.features.wnba_rolling
 python -m props.features.wnba_basketball_iq
 
-echo "--- NHL rolling features ---"
-python -m props.features.nhl_rolling
-python -m props.features.nhl_advanced_stats
+if [ "$(has_recent_games nhl)" = "1" ]; then
+    echo "--- NHL rolling features ---"
+    python -m props.features.nhl_rolling
+    python -m props.features.nhl_advanced_stats
+else
+    echo "--- NHL rolling features: skipped (off-season, no games in 10d) ---"
+fi
 
 echo "--- MLB rolling features ---"
 python -m props.features.mlb_rolling
