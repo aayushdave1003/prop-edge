@@ -1,6 +1,9 @@
-"""Scrape injury statuses from ESPN's API for NBA and MLB.
+"""Scrape injury statuses from ESPN's API for NBA, WNBA, MLB and NHL.
 
-Stores latest status per player in player_injuries table. Runs daily.
+Stores latest status per player in player_injuries table. Runs daily; the pick
+suppression filters players whose latest status is "out". WNBA + NHL were added
+2026-07 after the scratch_picks guard surfaced WNBA no-shows (e.g. Sonia Citron)
+slipping through — the feed had them "Out", we just weren't fetching WNBA.
 """
 from curl_cffi import requests
 from sqlalchemy import text
@@ -11,13 +14,17 @@ from props.maintenance.migrate import run_migrations
 
 URLS = {
     "nba": "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/injuries",
+    "wnba": "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba/injuries",
     "mlb": "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/injuries",
+    "nhl": "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries",
 }
 
 # Statuses that mean "will not play tonight" — sport-specific
 OUT_STATUSES = {
     "nba": {"Out", "Doubtful"},
+    "wnba": {"Out", "Doubtful"},
     "mlb": {"10-Day-IL", "15-Day-IL", "60-Day-IL", "7-Day-IL", "Out"},
+    "nhl": {"Out", "Injured Reserve", "Suspension"},
 }
 
 
@@ -62,10 +69,15 @@ def run():
     configure_logging()
     run_migrations()  # ensures player_injuries exists (migration 0004)
     for sport in URLS:
-        rows = fetch(sport)
-        store(rows)
-        out_count = sum(1 for r in rows if r["status"] in OUT_STATUSES[sport])
-        log.info("injuries_fetched", sport=sport, total=len(rows), out=out_count)
+        # Per-sport isolation: one flaky ESPN endpoint must not abort the others
+        # (a WNBA outage shouldn't drop MLB/NBA suppression).
+        try:
+            rows = fetch(sport)
+            store(rows)
+            out_count = sum(1 for r in rows if r["status"] in OUT_STATUSES[sport])
+            log.info("injuries_fetched", sport=sport, total=len(rows), out=out_count)
+        except Exception as exc:
+            log.warning("injuries_fetch_failed", sport=sport, error=str(exc)[:160])
 
 
 if __name__ == "__main__":
