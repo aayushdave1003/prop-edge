@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchGames, fetchLeagues, fetchPerformance, fetchPicks, fetchSoftLines } from "./api";
-import type { Direction, Game, League, Performance, PicksResponse, SoftLine, SortKey } from "./types";
+import type { Direction, Game, League, Performance, PicksResponse, SoftLine, SortKey, StatOption } from "./types";
 import { DisclaimerBanner } from "./components/DisclaimerBanner";
 import { TABS, TopNav, type Tab } from "./components/TopNav";
 import { SummaryRow } from "./components/SummaryRow";
@@ -52,13 +52,20 @@ export default function App() {
   const loadLeagues = useCallback(async () => {
     const lg = await fetchLeagues();
     setLeagues(lg);
-    setLeague((cur) => cur ?? lg.find((l) => l.available)?.code ?? lg[0]?.code ?? null);
+    // Default to the cross-sport "All" view so the landing shows the best 4-leg
+    // slate across every sport.
+    setLeague((cur) => cur ?? "all");
   }, []);
 
   const loadPicks = useCallback(async () => {
     setStatus("loading");
     try {
-      const resp = await fetchPicks({ league: league ?? undefined, stats, direction, recommendedOnly });
+      const resp = await fetchPicks({
+        league: league && league !== "all" ? league : undefined, // "all" = no league filter
+        stats,
+        direction,
+        recommendedOnly,
+      });
       setData(resp);
       setStatus("ok");
       setAsOf(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
@@ -113,7 +120,31 @@ export default function App() {
     if (tab === "Soft Lines") void loadSoft();
   }, [tab, loadSoft]);
 
-  const activeLeague = useMemo(() => leagues.find((l) => l.code === league) ?? null, [leagues, league]);
+  // Prepend a synthetic "All" league (cross-sport): merged market chips + total
+  // count. Its picks come from an unfiltered /api/picks; the slate is already global.
+  const displayLeagues = useMemo(() => {
+    const avail = leagues.filter((l) => l.available);
+    const byKey = new Map<string, StatOption>();
+    for (const l of avail)
+      for (const s of l.stats) {
+        const e = byKey.get(s.key);
+        if (e) e.count += s.count;
+        else byKey.set(s.key, { ...s });
+      }
+    const all: League = {
+      code: "all",
+      label: "All",
+      count: avail.reduce((n, l) => n + l.count, 0),
+      available: true,
+      stats: [...byKey.values()].sort((a, b) => b.count - a.count),
+    };
+    return [all, ...leagues];
+  }, [leagues]);
+
+  const activeLeague = useMemo(
+    () => displayLeagues.find((l) => l.code === league) ?? null,
+    [displayLeagues, league],
+  );
   const visiblePicks = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? (data?.picks ?? []).filter((p) => p.player.name.toLowerCase().includes(q)) : (data?.picks ?? []);
@@ -145,7 +176,7 @@ export default function App() {
           <div className="space-y-[22px]">
             <SummaryRow summary={data?.summary ?? null} />
             <SportSelector
-              leagues={leagues}
+              leagues={displayLeagues}
               active={league}
               onSelect={(c) => {
                 setLeague(c);
@@ -200,7 +231,7 @@ export default function App() {
         {tab === "Game Predictions" && (
           <div className="space-y-5">
             <SportSelector
-              leagues={leagues}
+              leagues={displayLeagues}
               active={league}
               onSelect={setLeague}
               onUnavailable={(lbl) => flash(`${lbl} — not in season yet`)}
