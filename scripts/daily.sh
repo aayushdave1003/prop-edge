@@ -163,6 +163,13 @@ python -m props.features.mlb_opposing_lineup
 python -m props.features.mlb_batter_vs_pitcher
 python -m props.features.mlb_advanced_stats
 
+# ── 3d. WNBA game-winner predictions (dashboard "Game Predictions" tab) ───────
+# NBA persists its own game context inside log_picks/predict_today; WNBA uses the
+# same basketball winner model but had no caller, so its games showed "no games".
+# Cheap (a few games); no-ops off-season when there are no WNBA games.
+echo "--- WNBA game predictions ---"
+python -m props.picks.predict_game --sport wnba --date "$TODAY" || echo "WARN: wnba game predictions failed"
+
 # ── 4. Live data refreshes ───────────────────────────────────────────────────
 # PrizePicks blocks datacenter IPs, so the scrape only runs here when a
 # residential proxy is configured (PRIZEPICKS_PROXY) — then the pipeline is

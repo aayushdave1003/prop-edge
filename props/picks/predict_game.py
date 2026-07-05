@@ -16,24 +16,27 @@ from props.utils.db import engine
 from props.utils.logging import log
 
 
-CLF_PATH  = Path("models/nba_winner_v1_classifier.txt")
-REG_PATH  = Path("models/nba_winner_v1_regressor.txt")
-META_PATH = Path("models/nba_winner_v1_meta.json")
-
-
-def _load_models():
-    if not CLF_PATH.exists() or not REG_PATH.exists():
-        log.warning("winner_models_not_found", path=str(CLF_PATH))
+# Basketball winner models share this inference code (same box-score features);
+# only the sport_code + model paths differ. NBA and WNBA both use it. (Hockey/
+# baseball have their own feature shapes.)
+def _load_models(sport: str = "nba"):
+    clf_path = Path(f"models/{sport}_winner_v1_classifier.txt")
+    reg_path = Path(f"models/{sport}_winner_v1_regressor.txt")
+    meta_path = Path(f"models/{sport}_winner_v1_meta.json")
+    if not clf_path.exists() or not reg_path.exists():
+        log.warning("winner_models_not_found", path=str(clf_path))
         return None, None, None
-    clf  = lgb.Booster(model_file=str(CLF_PATH))
-    reg  = lgb.Booster(model_file=str(REG_PATH))
-    with open(META_PATH) as f:
+    clf = lgb.Booster(model_file=str(clf_path))
+    reg = lgb.Booster(model_file=str(reg_path))
+    with open(meta_path) as f:
         meta = json.load(f)
     return clf, reg, meta
 
 
-def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False) -> dict:
-    """Query recent team history and compute rolling features for inference."""
+def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False,
+                      sport: str = "nba") -> dict:
+    """Query recent team history and compute rolling features for inference.
+    Works for any basketball league (nba/wnba) — same box-score keys."""
     sql = text("""
         WITH team_pts AS (
             SELECT pg.game_id, pg.team_id,
@@ -45,7 +48,7 @@ def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False
                    SUM((pg.stats->>'off_rebounds')::float) AS oreb
             FROM player_games pg
             JOIN games g USING (game_id)
-            WHERE g.sport_code = 'nba'
+            WHERE g.sport_code = :sport
               AND g.status = 'final'
               AND g.home_score IS NOT NULL
               AND g.home_score > 0
@@ -66,7 +69,7 @@ def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False
         JOIN team_pts my  ON my.game_id  = pg.game_id AND my.team_id  = pg.team_id
         JOIN team_pts opp ON opp.game_id = pg.game_id AND opp.team_id = pg.opponent_id
         WHERE pg.team_id = :tid
-          AND g.sport_code = 'nba'
+          AND g.sport_code = :sport
           AND g.status = 'final'
           AND g.game_date < :d
           AND pg.team_id <> pg.opponent_id
@@ -75,7 +78,7 @@ def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False
         ORDER BY g.game_date DESC
         LIMIT 25
     """)
-    df = pd.read_sql(sql, engine, params={"tid": team_id, "d": before_date})
+    df = pd.read_sql(sql, engine, params={"tid": team_id, "d": before_date, "sport": sport})
     if df.empty:
         return {}
 
@@ -120,19 +123,20 @@ def get_team_features(team_id: int, before_date: date, is_playoffs: bool = False
 
 
 def predict_games(nba_games: list, target_date: date,
-                  game_context: dict = None) -> list[dict]:
+                  game_context: dict = None, sport: str = "nba",
+                  is_playoffs: bool = False) -> list[dict]:
     """
-    For each game in nba_games, compute team features and predict outcome.
+    For each game, compute team features and predict outcome. Works for nba/wnba
+    (same basketball feature shape). `sport` selects the model + team history.
 
     Returns list of prediction dicts, one per game.
     game_context: {game_id: {total, home_spread, implied_home, implied_away, ...}}
     """
-    clf, reg, meta = _load_models()
+    clf, reg, meta = _load_models(sport)
     if clf is None:
         return []
 
     feature_keys = meta["feature_keys"]
-    is_playoffs  = True  # assume playoffs if running during May
 
     predictions = []
     for g in nba_games:
@@ -142,8 +146,8 @@ def predict_games(nba_games: list, target_date: date,
         if not gid or not htid or not atid or htid == atid:
             continue
 
-        hf = get_team_features(htid, target_date, is_playoffs)
-        af = get_team_features(atid, target_date, is_playoffs)
+        hf = get_team_features(htid, target_date, is_playoffs, sport=sport)
+        af = get_team_features(atid, target_date, is_playoffs, sport=sport)
         if not hf or not af:
             log.warning("missing_team_features", game_id=gid)
             continue
@@ -270,3 +274,49 @@ def print_game_predictions(predictions: list[dict], team_names: dict):
                     print("\n  ► PASS — model and market agree, no meaningful edge")
         else:
             print("  Market:  lines not yet available")
+
+
+def _todays_games_for_sport(sport: str, target_date: date) -> list[dict]:
+    """Games for the sport on target_date as {game_id, home_team_id, away_team_id}."""
+    with engine.connect() as c:
+        rows = c.execute(text("""
+            SELECT game_id, home_team_id, away_team_id
+            FROM games
+            WHERE sport_code = :s AND game_date = :d
+              AND home_team_id IS NOT NULL AND away_team_id IS NOT NULL
+        """), {"s": sport, "d": target_date}).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def predict_and_persist(sport: str, target_date: date) -> int:
+    """Generate winner predictions for a basketball league's games today and store
+    them in games.context — what the dashboard + /api/games read. NBA persists via
+    predict_today's own flow; this covers WNBA (same basketball model shape)."""
+    games = _todays_games_for_sport(sport, target_date)
+    if not games:
+        log.info("no_games_for_winner", sport=sport, date=target_date.isoformat())
+        return 0
+    preds = predict_games(games, target_date, sport=sport)
+    if not preds:
+        log.info("no_winner_preds", sport=sport, games=len(games))
+        return 0
+    from props.picks.predict_today import persist_game_context  # lazy — avoids import cycle
+    n = persist_game_context(preds)
+    log.info("winner_context_persisted", sport=sport, games=len(games), persisted=n)
+    return n
+
+
+def main():
+    import argparse
+    from props.utils.logging import configure_logging
+    configure_logging()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--sport", default="wnba", help="basketball league (nba/wnba)")
+    ap.add_argument("--date", default=None, help="YYYY-MM-DD (default: today PT)")
+    args = ap.parse_args()
+    target = date.fromisoformat(args.date) if args.date else date.today()
+    print(f"{args.sport} game predictions persisted: {predict_and_persist(args.sport, target)}")
+
+
+if __name__ == "__main__":
+    main()
