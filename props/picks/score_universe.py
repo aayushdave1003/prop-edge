@@ -98,6 +98,47 @@ def _fresh_line_player_ids(sport_code: str, target_date: date) -> dict[int, int]
     return out
 
 
+# ── per-run caches ───────────────────────────────────────────────────────────
+# score_universe iterates ~10 MLB models; _augment_mlb_universe was re-run per
+# model, rebuilding IDENTICAL per-player features for the whole line universe each
+# time (batter_features etc. are model-independent — only the final key-slice
+# differs). Cache the expensive reads for one run (cleared in run()). This is the
+# 28-min hog's redundancy; caching is safe because a run is a fixed target_date.
+_LINE_PIDS: dict = {}
+_MLB_BATTER: dict = {}
+_MLB_PITCH_QUAL: dict = {}
+_MLB_OPP_LINEUP: dict = {}
+
+
+def _clear_caches() -> None:
+    for d in (_LINE_PIDS, _MLB_BATTER, _MLB_PITCH_QUAL, _MLB_OPP_LINEUP):
+        d.clear()
+
+
+def _line_players_cached(sport_code: str, target_date: date) -> dict:
+    if sport_code not in _LINE_PIDS:
+        _LINE_PIDS[sport_code] = _fresh_line_player_ids(sport_code, target_date)
+    return _LINE_PIDS[sport_code]
+
+
+def _batter_feats(pid: int, target_date: date, season: str) -> dict:
+    if pid not in _MLB_BATTER:
+        _MLB_BATTER[pid] = pt.batter_features(pid, target_date, season)
+    return dict(_MLB_BATTER[pid])  # copy — callers mutate via feats.update()
+
+
+def _pitch_qual(opp_pid: int, target_date: date) -> dict:
+    if opp_pid not in _MLB_PITCH_QUAL:
+        _MLB_PITCH_QUAL[opp_pid] = pt.pitcher_quality_features(opp_pid, target_date)
+    return _MLB_PITCH_QUAL[opp_pid]  # read-only (consumed by feats.update)
+
+
+def _opp_lineup(opp_team: int, target_date: date) -> dict:
+    if opp_team not in _MLB_OPP_LINEUP:
+        _MLB_OPP_LINEUP[opp_team] = pt._opposing_lineup_features(opp_team, target_date)
+    return _MLB_OPP_LINEUP[opp_team]
+
+
 def _augment_mlb_universe(features: pd.DataFrame, games, target_date, season,
                           feature_keys, role: str) -> pd.DataFrame:
     """Add feature rows for line-carrying MLB players the likely-player builder
@@ -119,7 +160,7 @@ def _augment_mlb_universe(features: pd.DataFrame, games, target_date, season,
             team_game[tid] = (g["game_id"], g.get(f"{opp}_pitcher_id"))
 
     have = set(zip(features["player_id"], features["game_id"])) if not features.empty else set()
-    line_players = _fresh_line_player_ids("mlb", target_date)
+    line_players = _line_players_cached("mlb", target_date)
     if not line_players:
         return features
 
@@ -140,7 +181,7 @@ def _augment_mlb_universe(features: pd.DataFrame, games, target_date, season,
         gid, opp_pid = team_game[int(tid)]
         if (pid, gid) in have:
             continue
-        feats = pt.batter_features(pid, target_date, season)
+        feats = _batter_feats(pid, target_date, season)
         if role == "pitcher":
             # A line-carrying pitcher: add opposing-lineup features like the
             # pitcher builder does. We don't know which side he's on, so use his
@@ -153,10 +194,10 @@ def _augment_mlb_universe(features: pd.DataFrame, games, target_date, season,
                     elif g.get("away_team_id") == int(tid):
                         opp_team = g.get("home_team_id")
             if opp_team:
-                feats.update(pt._opposing_lineup_features(opp_team, target_date))
+                feats.update(_opp_lineup(opp_team, target_date))
         else:
             if opp_pid is not None:
-                feats.update(pt.pitcher_quality_features(opp_pid, target_date))
+                feats.update(_pitch_qual(opp_pid, target_date))
         extra.append({
             "player_id": pid,
             "player_name": p["full_name"],
@@ -188,7 +229,7 @@ def _augment_nba_universe(features: pd.DataFrame, nba_games, target_date, season
             team_game[tid] = (g["game_id"], g.get(f"{opp}_team_id"))
 
     have = set(zip(features["player_id"], features["game_id"])) if not features.empty else set()
-    line_players = _fresh_line_player_ids("nba", target_date)
+    line_players = _line_players_cached("nba", target_date)
     if not line_players:
         return features
 
@@ -334,6 +375,7 @@ def run(target_date: date | None = None) -> pd.DataFrame:
     """Score every modeled prop on the current slate and upsert into scored_props."""
     configure_logging()
     run_migrations()                       # ensure scored_props exists
+    _clear_caches()                        # fresh per-run feature caches
     today = target_date or date.today()
     season = str(today.year)
     print(db_banner())
