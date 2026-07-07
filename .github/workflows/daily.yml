@@ -30,6 +30,9 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
+      # Dead-man's-switch: daily.sh pings this only on a clean run. Unset => no
+      # ping step (harmless). Set the HEALTHCHECK_PING_URL secret to activate.
+      HEALTHCHECK_PING_URL: ${{ secrets.HEALTHCHECK_PING_URL }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
