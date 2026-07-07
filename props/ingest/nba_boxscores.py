@@ -130,9 +130,13 @@ def find_unprocessed_games() -> list[dict]:
 def resolve_player(session, name: str, team_id: int) -> int:
     """Find the existing NBA player row this name refers to, or create one.
 
-    Mirrors PrizePicks' resolution order so a box-score row lands on the SAME
-    player_id a pick used: fuzzy name match (pg_trgm) -> last-name match ->
-    create with an espn_ external_id.
+    Resolution: fuzzy full-name match (pg_trgm > 0.8) -> create with an espn_
+    external_id. The old last-name-only fallback (``full_name LIKE '%Smith'``) was
+    DROPPED: it matched on surname alone, so it could attach this box score's
+    stats to a DIFFERENT same-surname player — silently corrupting settlement and
+    therefore the tracked win rate. A missed match just creates a new row (visible,
+    recoverable); a *wrong* match poisons the record. The full-name fuzzy match
+    already handles legitimate spelling variants, so we now fail safe to create.
     """
     res = session.execute(text("""
         SELECT player_id FROM players
@@ -140,15 +144,6 @@ def resolve_player(session, name: str, team_id: int) -> int:
         ORDER BY similarity(full_name, :name) DESC
         LIMIT 1
     """), {"name": name}).first()
-    if res:
-        return res[0]
-
-    last = name.rsplit(" ", 1)[-1]
-    res = session.execute(text("""
-        SELECT player_id FROM players
-        WHERE sport_code = 'nba' AND full_name LIKE '%%' || :last
-        LIMIT 1
-    """), {"last": last}).first()
     if res:
         return res[0]
 
@@ -257,7 +252,13 @@ def process_game(session, game: dict, sb_cache: dict) -> int:
                                               stats, derived)
                     VALUES (:pid, :gid, :tid, :oid, :home, :played, :min,
                             CAST(:stats AS JSONB), '{}')
-                    ON CONFLICT (player_id, game_id) DO NOTHING
+                    ON CONFLICT (player_id, game_id) DO UPDATE SET
+                        team_id = EXCLUDED.team_id,
+                        opponent_id = EXCLUDED.opponent_id,
+                        is_home = EXCLUDED.is_home,
+                        did_play = EXCLUDED.did_play,
+                        minutes_played = EXCLUDED.minutes_played,
+                        stats = EXCLUDED.stats
                 """), {"pid": player_id, "gid": game["game_id"], "tid": team_id,
                        "oid": opp_id, "home": is_home, "played": mins > 0,
                        "min": round(mins, 2), "stats": json.dumps(stat_dict)})
