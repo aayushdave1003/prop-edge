@@ -1,0 +1,114 @@
+name: actions-budget
+
+# GitHub Actions minutes watchdog (P1.9). The daily + backup crons bill real
+# minutes; a runaway (a hung job, an added workflow, a schedule that fires more
+# than expected) can silently eat the free tier and then start charging. This
+# checks usage weekly and pings Discord once it crosses ~80% of a threshold, so
+# it's caught before overage — not on the invoice.
+#
+# GRACEFUL DEGRADATION is the whole point here:
+#   • Billing endpoints are NOT readable by the default GITHUB_TOKEN. They need a
+#     PAT with billing/"Plan" read access, provided as the optional GH_BILLING_TOKEN
+#     secret. If it's unset, the job logs why and exits 0 — it never fails.
+#   • GitHub is mid-migration between two billing APIs. We try the classic per-user
+#     Actions endpoint first (gives total_minutes_used/included_minutes directly);
+#     if that 404s / returns nothing (enhanced-billing accounts), we fall back to
+#     the enhanced usage report and sum the Actions line items. If BOTH fail, we
+#     log and exit 0 rather than page a false alarm.
+#
+# Secrets:  GH_BILLING_TOKEN (optional PAT w/ billing read), DISCORD_WEBHOOK_URL.
+# Vars:     ACTIONS_MINUTES_THRESHOLD (optional; default 2000 = free-tier grant),
+#           ACTIONS_BUDGET_WARN_PCT   (optional; default 80).
+on:
+  schedule:
+    - cron: "0 15 * * 1"   # Mondays ~08:00 PT — once a week is plenty for a monthly cycle
+  workflow_dispatch: {}
+
+concurrency:
+  group: actions-budget
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_BILLING_TOKEN: ${{ secrets.GH_BILLING_TOKEN }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      THRESHOLD: ${{ vars.ACTIONS_MINUTES_THRESHOLD || '2000' }}
+      WARN_PCT: ${{ vars.ACTIONS_BUDGET_WARN_PCT || '80' }}
+      OWNER: ${{ github.repository_owner }}
+    steps:
+      - name: Check Actions minutes vs budget
+        run: |
+          set -uo pipefail
+
+          if [ -z "${GH_BILLING_TOKEN:-}" ]; then
+            echo "GH_BILLING_TOKEN unset — skipping (the default GITHUB_TOKEN can't read billing). Add a PAT with billing/Plan read to enable."
+            exit 0
+          fi
+
+          api() {  # $1 = path ; prints body, or nothing on failure
+            curl -fsS -m 20 \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Authorization: Bearer ${GH_BILLING_TOKEN}" \
+              "https://api.github.com$1" 2>/dev/null
+          }
+
+          USED=""; INCLUDED="$THRESHOLD"
+
+          # ── Attempt 1: classic per-user Actions billing (direct minutes) ──────
+          BODY="$(api "/users/${OWNER}/settings/billing/actions" || true)"
+          if [ -n "$BODY" ] && printf '%s' "$BODY" | jq -e 'has("total_minutes_used")' >/dev/null 2>&1; then
+            USED="$(printf '%s' "$BODY" | jq -r '.total_minutes_used // empty')"
+            INC="$(printf '%s' "$BODY" | jq -r '.included_minutes // empty')"
+            [ -n "$INC" ] && [ "$INC" != "0" ] && INCLUDED="$INC"
+            echo "source: classic per-user Actions billing endpoint"
+          fi
+
+          # ── Attempt 2: enhanced usage report (sum Actions minutes) ────────────
+          if [ -z "$USED" ]; then
+            echo "classic endpoint unavailable — trying enhanced billing usage report"
+            BODY="$(curl -fsS -m 20 \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "Authorization: Bearer ${GH_BILLING_TOKEN}" \
+              "https://api.github.com/users/${OWNER}/settings/billing/usage" 2>/dev/null || true)"
+            if [ -n "$BODY" ] && printf '%s' "$BODY" | jq -e '.usageItems' >/dev/null 2>&1; then
+              # Sum quantity for Actions items measured in minutes.
+              USED="$(printf '%s' "$BODY" | jq -r '
+                [ .usageItems[]
+                  | select((.product // "" | ascii_downcase) == "actions")
+                  | select((.unitType // "" | ascii_downcase) | test("minute"))
+                  | .quantity ] | add // 0 | floor')"
+              echo "source: enhanced billing usage report (summed Actions minutes)"
+            fi
+          fi
+
+          if [ -z "$USED" ]; then
+            echo "::warning::could not read Actions minutes from either billing API — skipping (no false alarm). Check GH_BILLING_TOKEN scope / billing platform."
+            exit 0
+          fi
+
+          # Integer-only math (minutes are whole). PCT = used*100/included.
+          [ -z "$INCLUDED" ] || [ "$INCLUDED" = "0" ] && INCLUDED="$THRESHOLD"
+          PCT=$(( USED * 100 / INCLUDED ))
+          LIMIT=$(( INCLUDED * WARN_PCT / 100 ))
+          echo "Actions minutes: used=${USED} of included=${INCLUDED} (${PCT}%); warn at ${WARN_PCT}% = ${LIMIT} min"
+
+          if [ "$USED" -ge "$LIMIT" ]; then
+            echo "over warn threshold"
+            if [ -n "${DISCORD_WEBHOOK_URL:-}" ]; then
+              MSG="⚠️ **GitHub Actions budget** — prop-edge has used ${USED}/${INCLUDED} min this cycle (${PCT}%, warn at ${WARN_PCT}%). Trim/skip a workflow before overage."
+              curl -s -m 10 -H "Content-Type: application/json" \
+                -d "{\"content\": \"$MSG\"}" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 || true
+            else
+              echo "DISCORD_WEBHOOK_URL unset — would have alerted; logging only."
+            fi
+          else
+            echo "under warn threshold — no alert"
+          fi

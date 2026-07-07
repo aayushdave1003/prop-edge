@@ -33,5 +33,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8000
 
+# Container-level liveness (P1.10). Railway's own healthcheck uses railway.json's
+# healthcheckPath=/api/health; this HEALTHCHECK is the Docker-level equivalent for
+# any runtime that reads it (and for local `docker run`). curl is installed above.
+# --start-period gives uvicorn + model-helper imports time to boot before failures
+# count. /api/health returns 200 {"status":"ok"} (props/api/server.py).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS "http://localhost:${PORT:-8000}/api/health" || exit 1
+
 # Railway injects $PORT. The API mounts web/dist at / (same-origin /api calls).
 CMD ["sh", "-c", "uvicorn props.api.server:app --host 0.0.0.0 --port ${PORT:-8000}"]

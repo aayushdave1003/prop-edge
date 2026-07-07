@@ -26,5 +26,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8501
 
+# Liveness for THIS (Streamlit dashboard) service. NOTE: /api/health is the FastAPI
+# BOARD service (Dockerfile.board), not this one — this container runs Streamlit,
+# whose own health endpoint is /_stcore/health. The /api/health healthcheck lives
+# in Dockerfile.board + railway.json. curl is installed above.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS "http://localhost:${PORT:-8501}/_stcore/health" || exit 1
+
 # Railway injects $PORT.
 CMD ["sh", "-c", "streamlit run ui/dashboard.py --server.port ${PORT:-8501} --server.address 0.0.0.0 --server.headless true"]

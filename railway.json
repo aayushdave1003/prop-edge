@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "//": "P1.10 healthcheck config for the pick-BOARD service (Dockerfile.board: FastAPI + React SPA). This is the service that serves GET /api/health -> {\"status\":\"ok\"} (props/api/server.py, mounted before the SPA static mount so it is not shadowed). NOT the Streamlit dashboard service (root Dockerfile, ui/dashboard.py) which has NO /api/health, and NOT the Discord bot (Dockerfile.bot) whose health path is /health. Railway reads railway.json from the repo root per service by default; if a service needs a different config, point it at another file via the RAILWAY_CONFIG_FILE service variable. The board already sets RAILWAY_DOCKERFILE_PATH=Dockerfile.board (see BOARD_DEPLOY.md), which is why build.dockerfilePath is pinned here too.",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.board"
+  },
+  "deploy": {
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}

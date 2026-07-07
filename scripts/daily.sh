@@ -328,6 +328,21 @@ python -m props.ops.digest || true
 # ── 9. Rotate old logs (keep 30 days) ────────────────────────────────────────
 find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
 
+# ── 10. Dead-man's-switch heartbeat (P1.9) ───────────────────────────────────
+# Ping a healthchecks.io-style URL ONLY on a genuinely clean run — no failed
+# steps AND picks actually landed (same "healthy" definition as the Discord
+# alert above, inverted). If a run silently stops firing (cron/Actions broke, DB
+# down, host asleep), the ping stops and the monitor pages us. Opt-in: skipped
+# unless HEALTHCHECK_PING_URL is set. Never fails the run (|| true).
+if [ -n "${HEALTHCHECK_PING_URL:-}" ]; then
+    if [ "$FAILURES" -eq 0 ] && [ "${PICKS_TODAY:-0}" -gt 0 ]; then
+        echo "Heartbeat: pinging dead-man's-switch (healthy run)"
+        curl -fsS -m 10 "$HEALTHCHECK_PING_URL" >/dev/null 2>&1 || true
+    else
+        echo "Heartbeat: skipped (step_failures=$FAILURES, picks_today=${PICKS_TODAY:-0}) — letting the switch lapse to alert"
+    fi
+fi
+
 echo ""
 echo "======================================================"
 echo "  Done: $(date)"

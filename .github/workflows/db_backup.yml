@@ -9,8 +9,19 @@ name: db-backup
 #
 # Restore:  gh release download db-backup-YYYY-MM-DD --repo aayushdave1003/prop-edge
 #           then scripts/restore_db.sh on the .dump  (pg_restore, guarded).
-# Truly-offsite upgrade (separate blast radius from GitHub): also push to S3/R2 —
-# left as a follow-up; a private release is a large improvement over the broken state.
+#
+# Offsite copy (P0.6): the release above lives entirely on GitHub — one blast
+# radius. The optional S3/R2 step below ALSO pushes the same dump to S3-compatible
+# object storage (AWS S3 or Cloudflare R2) for a genuinely separate blast radius.
+# It's gated on BACKUP_S3_BUCKET: unset ⇒ skipped with a log line, the release
+# path is unaffected. Secrets: BACKUP_S3_BUCKET, AWS_ACCESS_KEY_ID,
+# AWS_SECRET_ACCESS_KEY, and (for R2 only) AWS_ENDPOINT_URL.
+#
+# A genuinely TESTED restore is not something this workflow can prove on its own —
+# it needs the user to (1) add the secrets, (2) run scripts/restore_db.sh once
+# against a throwaway scratch DB, from either `gh release download` or S3, and
+# confirm pg_restore succeeds. Until that's done, treat the offsite copy as
+# "present but unverified".
 #
 # pg_dump runs from postgres:18 so the client matches the server (Railway = PG 18).
 # DATABASE_URL is the SQLAlchemy form (postgresql+psycopg://…); strip +psycopg for libpq.
@@ -34,6 +45,11 @@ jobs:
       RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       GH_TOKEN: ${{ github.token }}
+      # Optional offsite (S3/R2) copy — all blank unless configured; see header.
+      BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}   # set for Cloudflare R2
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +84,36 @@ jobs:
               --title "DB backup ${STAMP}" \
               --notes "pg_dump -Fc of prod Postgres · ${SIZE}" \
               --latest=false
+          fi
+
+      - name: Offsite copy → S3 / R2 (optional)
+        run: |
+          set -uo pipefail
+          if [ -z "${BACKUP_S3_BUCKET:-}" ]; then
+            echo "BACKUP_S3_BUCKET unset — skipping offsite S3/R2 upload (release copy still made)."
+            exit 0
+          fi
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::warning::BACKUP_S3_BUCKET set but AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY missing — skipping offsite upload."
+            exit 0
+          fi
+          # Same 'run the client in docker' pattern as pg_dump: no host aws install,
+          # pinned image. --endpoint-url is passed only when AWS_ENDPOINT_URL is set
+          # (R2); empty ⇒ real AWS S3. Key it by date under backups/ so it's easy to
+          # list and lifecycle-expire on the bucket side.
+          ENDPOINT_ARG=""
+          [ -n "${AWS_ENDPOINT_URL:-}" ] && ENDPOINT_ARG="--endpoint-url $AWS_ENDPOINT_URL"
+          echo "uploading $OUT → s3://$BACKUP_S3_BUCKET/backups/$OUT ${AWS_ENDPOINT_URL:+(endpoint $AWS_ENDPOINT_URL)}"
+          if docker run --rm \
+              -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+              -e AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}" \
+              -v "$PWD:/data" -w /data \
+              amazon/aws-cli:latest \
+              s3 cp "$OUT" "s3://$BACKUP_S3_BUCKET/backups/$OUT" $ENDPOINT_ARG; then
+            echo "offsite upload ok"
+          else
+            # Don't fail the job: the GitHub release copy already succeeded above.
+            echo "::warning::offsite S3/R2 upload failed — the GitHub release copy is intact; check bucket/creds/endpoint."
           fi
 
       - name: Prune old backup releases (keep last 14)
