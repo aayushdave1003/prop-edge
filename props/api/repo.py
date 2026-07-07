@@ -38,6 +38,19 @@ except Exception:
     rec_cutoff = None
     _CUTOFFS = {}
 
+# The Performance view's recommended-tier rate is the AUDITED number: point-in-time
+# (each cutoff sees only prior settlements) and forward-only (no lookahead). We
+# reuse the honest_oos harness verbatim so the UI can't drift from the truth. If
+# it can't import, fetch_performance refuses to run rather than fall back to the
+# in-sample headline it replaced.
+try:
+    from props.models.honest_oos import walk_forward_oos, wilson_ci
+    from props.models.category_cutoffs import BREAKEVEN
+    _HONEST_OK = True
+except Exception:
+    _HONEST_OK = False
+    BREAKEVEN = 0.577  # per-leg 2-pick parlay breakeven (1/√3)
+
 # every league we know about; calendar-gated ones show as "soon" in the UI
 KNOWN_LEAGUES = ["mlb", "wnba", "nba", "nhl", "nfl", "cfb", "cbb", "soccer"]
 
@@ -417,32 +430,73 @@ def fetch_games(league=None) -> list[dict]:
 _WINPAY = 1.0 / 0.577 - 1.0  # per-leg payout at the 2-pick breakeven (57.7%)
 
 
+def _perf_verdict(lo: float, hi: float, n: int) -> str:
+    """Honest label for a rate given its Wilson 95% CI (fractions) vs breakeven."""
+    if n == 0:
+        return "—"
+    if lo >= BREAKEVEN:
+        return "edge"                      # even the CI floor clears breakeven
+    if hi < BREAKEVEN:
+        return "below breakeven"           # even the CI ceiling misses it
+    return "not proven"                    # CI straddles breakeven
+
+
 def fetch_performance() -> dict:
-    """Track record from SETTLED picks (paper / hypothetical). Recommended tier =
-    picks that cleared their per-category cutoff. All numbers are real outcomes."""
+    """Track record from SETTLED picks (paper / hypothetical), measured HONESTLY.
+
+    The recommended-tier rate is NOT the old in-sample headline. It is the audited
+    number:
+      • forward-only — picks logged at/after game start (lookahead) are excluded
+        at the source, exactly as honest_oos does;
+      • point-in-time — the tier is selected by walk_forward_oos, where every pick
+        is judged by a cutoff table fit ONLY on strictly-prior settlements, so no
+        cutoff ever sees the window it is scored on.
+    Every rate ships with its Wilson 95% CI and an honest verdict; nothing here is
+    presented as a proven edge unless the CI floor actually clears breakeven.
+    """
+    if not _HONEST_OK:
+        raise RuntimeError("honest_oos harness unavailable — refusing to serve an "
+                           "in-sample track record")
+    from collections import defaultdict
+
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT sport_code, stat_type, direction, model_prob, leg_result,
-                   settled_at, market_prob, market_prob_close
-            FROM picks
-            WHERE leg_result IN ('win','loss') AND model_prob IS NOT NULL
+            SELECT g.sport_code AS sport, pk.stat_type, pk.direction,
+                   pk.model_prob, pk.leg_result,
+                   pk.market_prob, pk.market_prob_close,
+                   (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
+                   (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled
+            FROM picks pk JOIN games g USING (game_id)
+            WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
+              AND g.game_datetime IS NOT NULL
+              AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
         """)).mappings().all()
 
-    def rec_of(r):
-        return float(r["model_prob"]) >= _cut(r["sport_code"], r["stat_type"], r["direction"], r["model_prob"])
+    picks = [{
+        "sport": r["sport"], "stat_type": r["stat_type"], "direction": r["direction"],
+        "model_prob": float(r["model_prob"]),
+        "win": 1 if r["leg_result"] == "win" else 0,
+        "decided": r["decided"], "settled": r["settled"],
+        "market_prob": r["market_prob"], "market_prob_close": r["market_prob_close"],
+    } for r in rows]
 
-    def rate(rs):
-        w = sum(1 for r in rs if r["leg_result"] == "win")
+    # The honest recommended tier: point-in-time walk-forward selection.
+    recs = walk_forward_oos(picks)
+
+    def summ(rs: list[dict]) -> dict:
+        w = sum(r["win"] for r in rs)
         n = len(rs)
-        return w, n - w, (round(w / n * 100, 1) if n else 0.0)
+        lo, hi = wilson_ci(w, n)
+        return {"pct": round(w / n * 100, 1) if n else 0.0, "w": w, "l": n - w, "n": n,
+                "lo": round(lo * 100, 1), "hi": round(hi * 100, 1),
+                "verdict": _perf_verdict(lo, hi, n)}
 
-    recs = [r for r in rows if rec_of(r)]
-    rw, rl, rpct = rate(recs)
-    aw, al, apct = rate(rows)
+    rec = summ(recs)
+    allp = summ(picks)
 
-    # CLV: did our side's no-vig prob improve from open to close?
+    # CLV: did our side's no-vig prob improve from open to close? (all fwd picks)
     clv_vals = []
-    for r in rows:
+    for r in picks:
         mo, mc = r["market_prob"], r["market_prob_close"]
         if mo is None or mc is None:
             continue
@@ -452,10 +506,8 @@ def fetch_performance() -> dict:
         clv_vals.append(sc - so)
     clv = round(sum(clv_vals) / len(clv_vals) * 100, 1) if clv_vals else 0.0
 
-    # rolling rec-tier win-rate trend (~14 points, trailing window) — daily rec
-    # volume is too thin for a per-day series, so this is a moving average.
-    from collections import defaultdict
-    recs_sorted = sorted((r for r in recs if r["settled_at"] is not None), key=lambda r: r["settled_at"])
+    # rolling rec-tier win-rate trend (~14 pts, trailing window) over honest recs.
+    recs_sorted = sorted((r for r in recs if r["settled"] is not None), key=lambda r: r["settled"])
     trend = []
     if len(recs_sorted) >= 10:
         win = max(20, len(recs_sorted) // 8)
@@ -464,50 +516,55 @@ def fetch_performance() -> dict:
             end = round((i + 1) / pts * len(recs_sorted))
             window = recs_sorted[max(0, end - win):end]
             if len(window) >= 5:
-                w = sum(1 for r in window if r["leg_result"] == "win")
+                w = sum(r["win"] for r in window)
                 trend.append({"i": i, "pct": round(w / len(window) * 100, 1)})
 
-    # by sport (rec tier) + paper ROI (flat 1u at breakeven odds)
+    # by sport (honest rec tier) + paper ROI (flat 1u at breakeven odds), with CIs.
     bysport_map = defaultdict(list)
     for r in recs:
-        bysport_map[r["sport_code"]].append(r)
+        bysport_map[r["sport"]].append(r)
     by_sport, roi_by_sport = [], []
     for sp, rs in sorted(bysport_map.items(), key=lambda kv: -len(kv[1])):
-        w, loss, pct = rate(rs)
-        if w + loss < 5:
+        s = summ(rs)
+        if s["n"] < 5:
             continue
-        by_sport.append({"sport": league_label(sp), "w": w, "l": loss, "pct": pct})
-        roi = (w * _WINPAY - loss) / (w + loss) * 100
+        by_sport.append({"sport": league_label(sp), "w": s["w"], "l": s["l"],
+                         "pct": s["pct"], "lo": s["lo"], "hi": s["hi"], "verdict": s["verdict"]})
+        roi = (s["w"] * _WINPAY - s["l"]) / s["n"] * 100
         roi_by_sport.append({"sport": league_label(sp), "roi": round(roi, 1)})
 
-    # calibration bins + Brier
+    # calibration bins + Brier over all forward-only picks (model prob vs outcome).
     bins = [(0.50, 0.55), (0.55, 0.60), (0.60, 0.65), (0.65, 0.70), (0.70, 1.01)]
     calib = []
     for lo, hi in bins:
-        b = [r for r in rows if lo <= float(r["model_prob"]) < hi]
+        b = [r for r in picks if lo <= r["model_prob"] < hi]
         if len(b) < 10:
             continue
-        pred = sum(float(r["model_prob"]) for r in b) / len(b)
-        act = sum(1 for r in b if r["leg_result"] == "win") / len(b)
+        pred = sum(r["model_prob"] for r in b) / len(b)
+        act = sum(r["win"] for r in b) / len(b)
         calib.append({"pred": round(pred * 100, 1), "actual": round(act * 100, 1), "n": len(b)})
-    brier = round(sum((float(r["model_prob"]) - (1 if r["leg_result"] == "win" else 0)) ** 2 for r in rows) / len(rows), 3) if rows else None
+    brier = round(sum((r["model_prob"] - r["win"]) ** 2 for r in picks) / len(picks), 3) if picks else None
 
-    # by market × lean (rec tier), strongest first
+    # by market × lean (honest rec tier), each with its CI. Sorted by SAMPLE SIZE,
+    # never by win rate — so no lucky single bucket floats to the top as a headline
+    # (that framing is exactly how the killed mlb|hits|under mirage was surfaced).
     mk = defaultdict(list)
     for r in recs:
         mk[(r["stat_type"], r["direction"])].append(r)
     by_market = []
     for (stat, direction), rs in mk.items():
-        w, loss, pct = rate(rs)
-        if w + loss >= 8:
-            by_market.append({"market": stat_label(stat), "lean": direction, "pct": pct, "n": w + loss})
-    by_market.sort(key=lambda x: -x["pct"])
+        s = summ(rs)
+        if s["n"] >= 8:
+            by_market.append({"market": stat_label(stat), "lean": direction,
+                              "pct": s["pct"], "n": s["n"], "lo": s["lo"], "hi": s["hi"]})
+    by_market.sort(key=lambda x: -x["n"])
 
-    over_be = round(rpct - 57.7, 1)
     return {
-        "recommended": {"pct": rpct, "w": rw, "l": rl, "over_breakeven": over_be},
-        "all_picks": {"pct": apct, "w": aw, "l": al},
+        "recommended": rec,
+        "all_picks": {"pct": allp["pct"], "w": allp["w"], "l": allp["l"]},
         "clv_pct": clv,
+        "breakeven": round(BREAKEVEN * 100, 1),
+        "method": "point-in-time walk-forward · forward-only (no lookahead)",
         "trend": trend,
         "by_sport": by_sport,
         "roi_by_sport": roi_by_sport,

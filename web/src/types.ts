@@ -103,22 +103,31 @@ export interface Game {
 }
 
 // ── Performance ──────────────────────────────────────────────────────────────
+// Every rate is the AUDITED number: forward-only (no lookahead) + point-in-time
+// (each cutoff sees only prior settlements). `verdict` is honest vs breakeven —
+// "edge" only when the Wilson CI floor actually clears it.
+export type Verdict = "edge" | "not proven" | "below breakeven" | "—";
 export interface PerfRecord {
   pct: number;
   w: number;
   l: number;
-  over_breakeven?: number;
+  n?: number;
+  lo?: number; // Wilson 95% CI lower bound, %
+  hi?: number; // Wilson 95% CI upper bound, %
+  verdict?: Verdict;
 }
 export interface Performance {
   recommended: PerfRecord;
   all_picks: PerfRecord;
   clv_pct: number;
+  breakeven: number; // per-leg parlay breakeven, % (57.7)
+  method: string; // how the track record is measured
   trend: { i: number; pct: number }[];
-  by_sport: { sport: string; w: number; l: number; pct: number }[];
+  by_sport: { sport: string; w: number; l: number; pct: number; lo: number; hi: number; verdict: Verdict }[];
   roi_by_sport: { sport: string; roi: number }[];
   calibration: { pred: number; actual: number; n: number }[];
   brier: number | null;
-  by_market: { market: string; lean: Lean; pct: number; n: number }[];
+  by_market: { market: string; lean: Lean; pct: number; n: number; lo: number; hi: number }[];
 }
 
 // ── Soft Lines ───────────────────────────────────────────────────────────────
