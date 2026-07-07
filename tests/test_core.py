@@ -4,7 +4,6 @@ These cover the bug-prone, DB-independent functions: settle classification,
 the derived-writer coercion + prod-backfill guard, moneyline de-vig, and the
 Streamlit HTML sanitizer that the card-rendering bug hinged on.
 """
-import os
 import sys
 import types
 from pathlib import Path
@@ -554,14 +553,13 @@ def test_roi_2pick_breakeven():
     assert dbt.roi_2pick(0.50) < 0                       # coin flip loses
 
 
-class _R(types.SimpleNamespace):
-    """Stand-in for a settled-pick row (attribute access like the SQL Row)."""
-
-
 def _pick(sport, stat, prob, result, d=None):
-    return _R(sport_code=sport, stat_type=stat, model_prob=prob,
-              leg_result=result, direction="over",
-              d=d or date.today())
+    """A settled-pick row shaped like daily_backtest.load_settled() output
+    (gated dict rows: sport / stat_type / direction / model_prob / win / decided)."""
+    day = d or date.today()
+    return {"sport": sport, "stat_type": stat, "model_prob": prob,
+            "win": 1 if result == "win" else 0, "leg_result": result,
+            "direction": "over", "decided": day, "settled": day}
 
 
 def test_calibration_brier_and_perfect_split():
