@@ -25,14 +25,14 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 ## Results (late June 2026)
 
-| | Record | Win rate |
+| | Sample | Win rate |
 |---|--------|----------|
-| **Recommended tier** | **145W – 56L** | **72.1%** |
-| All logged picks | 613W – 479L | 56.1% |
+| **Recommended tier** (forward-only, valid-line) | n = 174 | **47.1%** · 95% CI [39.9%, 54.5%] |
+| All logged picks (same gates) | 1,148W – 1,167L | 49.6% |
 
-By sport (all picks): **MLB 56.0%** · NBA 55.0% · WNBA 57.8%.
+The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff auto-derived from settled history. It's measured **forward-only** (picks logged after game start are excluded) and **valid-line-only** (picks with no prop line — nothing to be right or wrong about — are dropped), with each cutoff selected **point-in-time** (it sees only picks that settled *before* the pick it judges). A 2-pick PrizePicks parlay breaks even at **57.7%**; the recommended tier sits **below** breakeven and **no sport or category clears it** (WNBA 48.6%, MLB 39.3%) — so this is **not a proven edge**.
 
-1,092 picks settled. The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff that's auto-derived from settled history. A 2-pick PrizePicks parlay breaks even at **57.7%**; the recommended tier sits comfortably above it.
+An earlier "72.1%" headline was an in-sample measurement artifact: the cutoff had been selected on the same outcomes it was then scored against. The full trail — 72.0% → 56.4% → 50.3% → ~47%, as lookahead and no-line picks were removed — is reproduced in [`props/models/mirage_analysis_mlb_hits_under.py`](props/models/mirage_analysis_mlb_hits_under.py).
 
 ---
 
