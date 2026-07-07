@@ -46,3 +46,39 @@ jobs:
         run: python -m mypy
       - name: Run tests
         run: python -m pytest tests/ -q
+
+  web:
+    # Frontend gate: typecheck (tsc), lint (eslint), unit tests (vitest), and a
+    # production build — so the board can't ship a type error, a lint break, or a
+    # broken bundle. Mirrors the local `npm run lint / test / build`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Lint (eslint)
+        run: npm run lint
+      - name: Unit tests (vitest)
+        run: npm test
+      - name: Build (tsc + vite)
+        run: npm run build
+
+  docker:
+    # Build the board image so a broken Dockerfile.board is caught before a
+    # deploy. PR / manual only — a direct push to main is built by Railway on
+    # deploy anyway, so building it here too would just burn Actions minutes.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build board image (no push)
+        run: docker build -f Dockerfile.board -t prop-edge-board:ci .

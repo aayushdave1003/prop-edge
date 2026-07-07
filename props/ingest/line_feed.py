@@ -59,14 +59,11 @@ class LicensedFeed:
         )
 
 
-_FEEDS = {"prizepicks": PrizePicksFeed, "licensed": LicensedFeed}
-
-
 def get_line_feed() -> LineFeed:
     """Return the configured line feed (env ``LINE_FEED``, default prizepicks)."""
     name = os.getenv("LINE_FEED", "prizepicks").strip().lower()
-    feed_cls = _FEEDS.get(name)
-    if feed_cls is None:
+    if name == "licensed":
+        return LicensedFeed()
+    if name != "prizepicks":
         log.warning("unknown_line_feed", requested=name, using="prizepicks")
-        feed_cls = PrizePicksFeed
-    return feed_cls()
+    return PrizePicksFeed()

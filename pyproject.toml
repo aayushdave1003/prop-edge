@@ -42,7 +42,7 @@ exclude = ["sql*", "notebooks*", "scripts*"]
 # (which a 10-day outage proved is worth having): type-check the core utils + the
 # ops modules so new/maintained code stays type-correct, without dumping a wall of
 # errors from the legacy untyped tree. Add packages to `files` as they're cleaned.
-files = ["props/utils", "props/ops"]
+files = ["props/utils", "props/ops", "props/models/honest_oos.py"]
 plugins = ["pydantic.mypy"]
 python_version = "3.11"
 ignore_missing_imports = true   # third-party libs (lightgbm, sqlalchemy rows…) lack stubs
