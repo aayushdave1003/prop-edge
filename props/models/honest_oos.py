@@ -246,14 +246,23 @@ def selftest() -> int:
 def load_prod_picks() -> list[dict]:
     """Settled picks eligible for an honest forward evaluation.
 
-    FORWARD-ONLY at the source: we exclude every pick logged at/after its game
-    started (``picked_at >= game_datetime``). Those are lookahead — the outcome
-    was already partly/fully known when the pick was written (a bulk backfill of
-    already-played games did this to ~11% of the ledger, and it single-handedly
-    manufactured the mlb|hits|under "85.9%"). Filtering here — before the
-    walk-forward selects anything — means a lookahead pick can never enter the
-    pool a cutoff is fit on OR the tier it is scored in. This is what moves the
-    honest blended rate from 56.4% (lookahead-inflated) to ~50.3% (clean).
+    Two source-level validity gates, applied BEFORE the walk-forward selects
+    anything, so a bad observation can never enter the pool a cutoff is fit on
+    OR the tier it is scored in:
+
+    1. FORWARD-ONLY (``picked_at < game_datetime``). Picks logged at/after the
+       game started are lookahead — the outcome was already partly/fully known
+       when the pick was written (a bulk backfill of already-played games did
+       this to ~11% of the ledger, and it single-handedly manufactured the
+       mlb|hits|under "85.9%"). This moved the blended rate 56.4% → 50.3%.
+
+    2. VALID-LINE-ONLY (``prop_lines.line_value IS NOT NULL``). A prop pick
+       requires a prop line: if no over/under line existed there was nothing to
+       be right or wrong about, so a "win" against a non-existent line is not a
+       real observation. 24 such no-line picks (mostly the same backfill batch)
+       survived gate 1 with a spurious 87.5% hit rate; removing them is a
+       categorical validity rule, not a tuning choice. This moves 50.3% → ~47%,
+       the final honest number. The INNER JOIN also drops any null-``line_id``.
     """
     from sqlalchemy import text
     from props.utils.db import engine, db_banner
@@ -264,10 +273,13 @@ def load_prod_picks() -> list[dict]:
                    pk.model_prob, pk.leg_result,
                    (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
                    (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled
-            FROM picks pk JOIN games g USING (game_id)
+            FROM picks pk
+            JOIN games g USING (game_id)
+            JOIN prop_lines pl ON pl.line_id = pk.line_id
             WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
               AND g.game_datetime IS NOT NULL
-              AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
+              AND pk.picked_at < g.game_datetime   -- gate 1: forward-only, no lookahead
+              AND pl.line_value IS NOT NULL         -- gate 2: a real prop line existed
         """)).mappings().all()
     out = []
     for r in rows:

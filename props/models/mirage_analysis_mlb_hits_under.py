@@ -1,7 +1,8 @@
 # prop-edge track-record provenance — why the headline moved:
 #   72.0%  in-sample cutoff leak (backtest saw the test window)
 #   56.4%  cutoffs fixed, but still included 330 lookahead picks
-#   50.3%  forward-only, point-in-time, clean  <- the real number
+#   50.3%  forward-only, but still included 24 null-line (no-line) picks
+#   ~47%   forward-only + valid-line-only  <- the final honest number
 # The one bucket that looked real (mlb|hits|under 85.9%) was a single
 # backfill batch of already-played games. Not a forward edge.
 """Reproduce, from the prod DB, the five findings that killed the mlb|hits|under

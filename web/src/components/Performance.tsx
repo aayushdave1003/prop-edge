@@ -46,11 +46,13 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
         style={{ borderColor: "rgba(245,181,68,0.28)", background: "rgba(245,181,68,0.06)" }}
       >
         <b className="text-ink">How to read this.</b> The recommended-tier rate is measured{" "}
-        <b>point-in-time</b> (every cutoff sees only picks settled before it) and <b>forward-only</b>{" "}
-        (picks logged after game start are excluded). At <b className="tnum text-ink">{rec.pct}%</b>{" "}
-        [{rec.lo}–{rec.hi}%] it sits {relation} the <b>{be}%</b> parlay breakeven —{" "}
-        <b className="text-ink">not a proven edge</b>. An earlier "~72%" headline was an in-sample
-        measurement artifact (the cutoff had seen the outcomes it was scored on), not a forward result.
+        <b>point-in-time</b> (every cutoff sees only picks settled before it), <b>forward-only</b>{" "}
+        (picks logged after game start are excluded), and <b>valid-line-only</b> (picks with no prop
+        line — nothing to be right or wrong about — are dropped). At{" "}
+        <b className="tnum text-ink">{rec.pct}%</b> [{rec.lo}–{rec.hi}%] it sits {relation} the{" "}
+        <b>{be}%</b> parlay breakeven — <b className="text-ink">not a proven edge</b>. An earlier
+        "~72%" headline was an in-sample measurement artifact (the cutoff had seen the outcomes it was
+        scored on), not a forward result.
       </div>
 
       {/* headline cards */}
@@ -66,7 +68,7 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
           label="All Logged Picks"
           value={`${perf.all_picks.pct}%`}
           color="#ECECF2"
-          sub={`${perf.all_picks.w}W–${perf.all_picks.l}L · forward-only`}
+          sub={`${perf.all_picks.w}W–${perf.all_picks.l}L · forward-only · valid-line`}
         />
         <Headline
           label="Closing Line Value"

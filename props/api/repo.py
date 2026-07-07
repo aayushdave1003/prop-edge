@@ -466,10 +466,13 @@ def fetch_performance() -> dict:
                    pk.market_prob, pk.market_prob_close,
                    (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
                    (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled
-            FROM picks pk JOIN games g USING (game_id)
+            FROM picks pk
+            JOIN games g USING (game_id)
+            JOIN prop_lines pl ON pl.line_id = pk.line_id
             WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
               AND g.game_datetime IS NOT NULL
-              AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
+              AND pk.picked_at < g.game_datetime   -- gate 1: forward-only, no lookahead
+              AND pl.line_value IS NOT NULL         -- gate 2: a real prop line existed
         """)).mappings().all()
 
     picks = [{
@@ -564,7 +567,7 @@ def fetch_performance() -> dict:
         "all_picks": {"pct": allp["pct"], "w": allp["w"], "l": allp["l"]},
         "clv_pct": clv,
         "breakeven": round(BREAKEVEN * 100, 1),
-        "method": "point-in-time walk-forward · forward-only (no lookahead)",
+        "method": "point-in-time walk-forward · forward-only + valid-line-only",
         "trend": trend,
         "by_sport": by_sport,
         "roi_by_sport": roi_by_sport,
