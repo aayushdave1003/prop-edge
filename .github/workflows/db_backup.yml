@@ -1,14 +1,19 @@
 name: db-backup
 
 # Scheduled prod-DB snapshot. pg_dump (custom format, compressed) of the Railway
-# Postgres, uploaded as a retained workflow artifact — so a bad migration, an
-# accidental DELETE, or a Railway incident is recoverable. Restore path is
-# scripts/restore_db.sh (documented + guarded). Daily at ~3 AM PT; manual dispatch
-# any time.
+# Postgres, published as a private GitHub RELEASE asset — durable, no expiry, and
+# (unlike Actions artifacts) NOT counted against the ~500 MB free artifact quota.
+# The old 30-day-retention artifact path filled that quota (~3.2 GB of ~196 MB
+# daily dumps) and silently started failing every upload — so there was no working
+# backup. Releases fix that; we keep the last 14 and prune the rest.
 #
-# pg_dump runs from the postgres:18 image so the client version matches the server
-# (Railway runs PG 18; a 16 client refuses a newer server). DATABASE_URL is the SQLAlchemy
-# form (postgresql+psycopg://…); we strip the +psycopg driver tag for libpq.
+# Restore:  gh release download db-backup-YYYY-MM-DD --repo aayushdave1003/prop-edge
+#           then scripts/restore_db.sh on the .dump  (pg_restore, guarded).
+# Truly-offsite upgrade (separate blast radius from GitHub): also push to S3/R2 —
+# left as a follow-up; a private release is a large improvement over the broken state.
+#
+# pg_dump runs from postgres:18 so the client matches the server (Railway = PG 18).
+# DATABASE_URL is the SQLAlchemy form (postgresql+psycopg://…); strip +psycopg for libpq.
 on:
   schedule:
     - cron: "0 10 * * *"   # ~3 AM PT (10:00 UTC; a single daily snapshot, DST-agnostic)
@@ -18,6 +23,9 @@ concurrency:
   group: db-backup
   cancel-in-progress: false
 
+permissions:
+  contents: write   # create/delete backup releases + tags
+
 jobs:
   backup:
     runs-on: ubuntu-latest
@@ -25,7 +33,10 @@ jobs:
     env:
       RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: pg_dump → custom-format archive
         run: |
           set -euo pipefail
@@ -42,18 +53,36 @@ jobs:
             echo "::error::dump suspiciously small ($BYTES bytes) — failing"; exit 1
           fi
           echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
           echo "SIZE=$SIZE" >> "$GITHUB_ENV"
 
-      - name: Upload snapshot artifact (30-day retention)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.OUT }}
-          path: ${{ env.OUT }}
-          retention-days: 30
+      - name: Publish snapshot as a release asset
+        run: |
+          set -euo pipefail
+          TAG="db-backup-${STAMP}"
+          # Idempotent for same-day re-runs: replace an existing asset, else create.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$OUT" --clobber
+          else
+            gh release create "$TAG" "$OUT" \
+              --title "DB backup ${STAMP}" \
+              --notes "pg_dump -Fc of prod Postgres · ${SIZE}" \
+              --latest=false
+          fi
+
+      - name: Prune old backup releases (keep last 14)
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | grep '^db-backup-' | sort -r | tail -n +15 \
+            | while read -r tag; do
+                echo "pruning $tag"
+                gh release delete "$tag" --yes --cleanup-tag || true
+              done
 
       - name: Alert on failure
         if: failure() && env.DISCORD_WEBHOOK_URL != ''
         run: |
           curl -s -H "Content-Type: application/json" \
-            -d '{"content":"⚠️ **db-backup failed** — prop-edge nightly pg_dump did not complete. Check the Actions run."}' \
+            -d '{"content":"⚠️ **db-backup failed** — prop-edge nightly pg_dump/release did not complete. Check the Actions run."}' \
             "$DISCORD_WEBHOOK_URL" || true
