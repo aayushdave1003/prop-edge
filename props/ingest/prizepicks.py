@@ -361,7 +361,13 @@ def run():
         """), {"s": started}).scalar()
 
     try:
-        payload = fetch_projections()
+        # Fetch through the LineFeed seam (default = PrizePicksFeed, i.e. the
+        # scrape). Swap to a licensed feed with LINE_FEED=licensed. See
+        # props/ingest/line_feed.py + PROVENANCE.md.
+        from props.ingest.line_feed import get_line_feed
+        feed = get_line_feed()
+        payload = feed.fetch_raw()
+        log.info("line_feed", source=feed.source_name)
     except Exception as e:
         log.error("fetch_failed", error=str(e))
         with session_scope() as session:

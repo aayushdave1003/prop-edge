@@ -1,9 +1,9 @@
 """Per-category recommended-confidence cutoffs.
 
-A single global `model_prob` cutoff is wrong for two reasons at once: the MLB
-model is broadly +EV (it clears the 2-pick breakeven even at the pick-generation
-floor), while the NBA model is a coin-flip until very high confidence. A flat
-0.70 therefore *under-uses* MLB and *over-recommends* NBA.
+A single global `model_prob` cutoff is wrong because model quality varies by
+category — some sport×stats hold up at a low confidence floor while others are a
+coin-flip until very high confidence — so a flat 0.70 both under-uses the good
+buckets and over-recommends the weak ones.
 
 This module derives a cutoff per **sport** (and, where there's enough data, per
 **sport×stat**) straight from settled pick history, picking the lowest
@@ -12,6 +12,17 @@ breakeven. The result is written to ``category_cutoffs.json`` (committed) so the
 dashboard reads a static artifact instead of recomputing against the DB on every
 render. Re-run ``python -m props.models.category_cutoffs`` to refresh it as more
 picks settle (it's safe to wire into the daily job).
+
+⚠️ SELECTION IS IN-SAMPLE — measurement is not. This selects each cutoff to
+maximise a Wilson lower-bound on ALL settled history, and any ``win_rate`` it
+reports is measured on that SAME history. That number is therefore *in-sample*
+and is NOT a forward expectation — do not surface it as a track record. Setting a
+forward cutoff from all prior history is legitimate (it's today's best bar), but
+whether the resulting tier actually beats breakeven going forward is answered
+ONLY by the point-in-time, forward-only, valid-line harness in
+``props.models.honest_oos`` — which currently reports the recommended tier at
+~47%, below breakeven. Trust honest_oos for "does it work"; trust this only for
+"where to set today's bar." See also ``mirage_analysis_mlb_hits_under``.
 """
 from __future__ import annotations
 
