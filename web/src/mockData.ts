@@ -72,7 +72,7 @@ export const MOCK_PICKS: PicksResponse = {
       kelly_pct: 6.8,
       weather: null,
       form: [true, false, true, true, true], l5: "4/5", l10: "8/10",
-      insight: "hit OVER 4/5 last 5 · line moving your way",
+      insight: "hit OVER 4/5 last 5 · line moving toward the model",
     },
     {
       id: "p4", league: "wnba",

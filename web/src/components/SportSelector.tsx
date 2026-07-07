@@ -23,7 +23,7 @@ export function SportSelector({
             key={lg.code}
             onClick={() => (disabled ? onUnavailable(lg.label) : onSelect(lg.code))}
             className={[
-              "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-[10px] border px-3.5 py-2 text-[13px] font-semibold transition",
+              "tap-target flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] border px-3.5 py-2 text-[13px] font-semibold transition",
               disabled
                 ? "cursor-not-allowed border-hair bg-transparent text-ink-3 opacity-55"
                 : isActive

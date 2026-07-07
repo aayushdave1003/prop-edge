@@ -22,12 +22,14 @@ export default {
         pos: "#34D399", // over / positive edge / win
         neg: "#F87171", // under / negative edge / loss
         warn: "#F5B544", // breakeven / disclaimer
-        // text ramp
+        // text ramp — ink-4/ink-5 luminance raised so readable body copy on the
+        // dark panels clears WCAG AA (ink-4 ~4.3–4.5:1) / AA large-text (ink-5 ≥3:1)
+        // while staying visibly below ink-3 for genuine de-emphasis.
         ink: "#ECECF2",
         "ink-2": "#9A9AA8",
         "ink-3": "#7A7A88",
-        "ink-4": "#565663",
-        "ink-5": "#4F4F5C",
+        "ink-4": "#787886",
+        "ink-5": "#66667A",
         // hairline
         hair: "rgba(255,255,255,0.06)",
       },

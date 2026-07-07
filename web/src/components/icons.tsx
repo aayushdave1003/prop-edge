@@ -37,6 +37,16 @@ export function WindIcon({ className }: P) {
   );
 }
 
+export function InfoIcon({ className }: P) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" strokeLinecap="round" />
+      <path d="M12 7.5h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // the 5-point burst used for the Edge badge + watch star
 export function BurstStar({ className, filled }: P & { filled?: boolean }) {
   return (

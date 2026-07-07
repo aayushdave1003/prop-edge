@@ -11,12 +11,17 @@ import { PickBoard } from "./components/PickBoard";
 import { GamePredictions } from "./components/GamePredictions";
 import { PerformanceView } from "./components/Performance";
 import { SoftLinesView } from "./components/SoftLines";
+import { MethodologyModal } from "./components/MethodologyModal";
 import { Footer } from "./components/Footer";
 import { SearchIcon } from "./components/icons";
 import { EmptyState, ErrorState, SkeletonBoard } from "./components/states";
 
 type Status = "loading" | "ok" | "error";
 const SORT_LABEL: Record<SortKey, string> = { edge: "edge", confidence: "confidence", start: "start time" };
+
+// A fetch aborted by a superseded request throws AbortError — ignore it so a
+// stale in-flight response never overwrites fresh state or flips us to "error".
+const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => {
@@ -33,6 +38,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [asOf, setAsOf] = useState("—");
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const [data, setData] = useState<PicksResponse | null>(null);
   const [status, setStatus] = useState<Status>("loading");
@@ -49,75 +55,104 @@ export default function App() {
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 2000);
   }
 
-  const loadLeagues = useCallback(async () => {
-    const lg = await fetchLeagues();
-    setLeagues(lg);
-    // Default to the cross-sport "All" view so the landing shows the best 4-leg
-    // slate across every sport.
-    setLeague((cur) => cur ?? "all");
+  const loadLeagues = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const lg = await fetchLeagues(signal);
+      setLeagues(lg);
+      // Default to the cross-sport "All" view so the landing shows the best 4-leg
+      // slate across every sport.
+      setLeague((cur) => cur ?? "all");
+    } catch (e) {
+      if (!isAbort(e)) setStatus("error");
+    }
   }, []);
 
-  const loadPicks = useCallback(async () => {
-    setStatus("loading");
-    try {
-      const resp = await fetchPicks({
-        league: league && league !== "all" ? league : undefined, // "all" = no league filter
-        stats,
-        direction,
-        recommendedOnly,
-      });
-      setData(resp);
-      setStatus("ok");
-      setAsOf(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
-    } catch {
-      setStatus("error");
-    }
-  }, [league, stats, direction, recommendedOnly]);
+  const loadPicks = useCallback(
+    async (signal?: AbortSignal) => {
+      setStatus("loading");
+      try {
+        const resp = await fetchPicks(
+          {
+            league: league && league !== "all" ? league : undefined, // "all" = no league filter
+            stats,
+            direction,
+            recommendedOnly,
+          },
+          signal,
+        );
+        setData(resp);
+        setStatus("ok");
+        setAsOf(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+      } catch (e) {
+        if (!isAbort(e)) setStatus("error");
+      }
+    },
+    [league, stats, direction, recommendedOnly],
+  );
 
-  const loadGames = useCallback(async () => {
-    setGamesStatus("loading");
-    try {
-      const avail = leagues.filter((l) => l.available);
-      const res = await Promise.all(avail.map((l) => fetchGames(l.code).then((g) => [l.code, g] as const)));
-      setGames(Object.fromEntries(res));
-      setGamesStatus("ok");
-    } catch {
-      setGamesStatus("error");
-    }
-  }, [leagues]);
-  const loadPerf = useCallback(async () => {
+  const loadGames = useCallback(
+    async (signal?: AbortSignal) => {
+      setGamesStatus("loading");
+      try {
+        const avail = leagues.filter((l) => l.available);
+        const res = await Promise.all(
+          avail.map((l) => fetchGames(l.code, signal).then((g) => [l.code, g] as const)),
+        );
+        setGames(Object.fromEntries(res));
+        setGamesStatus("ok");
+      } catch (e) {
+        if (!isAbort(e)) setGamesStatus("error");
+      }
+    },
+    [leagues],
+  );
+  const loadPerf = useCallback(async (signal?: AbortSignal) => {
     setPerfStatus("loading");
     try {
-      setPerf(await fetchPerformance());
+      setPerf(await fetchPerformance(signal));
       setPerfStatus("ok");
-    } catch {
-      setPerfStatus("error");
+    } catch (e) {
+      if (!isAbort(e)) setPerfStatus("error");
     }
   }, []);
-  const loadSoft = useCallback(async () => {
+  const loadSoft = useCallback(async (signal?: AbortSignal) => {
     setSoftStatus("loading");
     try {
-      setSoft(await fetchSoftLines()); // market-wide list (not tied to the picks league)
+      setSoft(await fetchSoftLines(undefined, signal)); // market-wide list (not tied to the picks league)
       setSoftStatus("ok");
-    } catch {
-      setSoftStatus("error");
+    } catch (e) {
+      if (!isAbort(e)) setSoftStatus("error");
     }
   }, []);
 
   useEffect(() => {
-    loadLeagues().catch(() => setStatus("error"));
+    const ac = new AbortController();
+    void loadLeagues(ac.signal);
+    return () => ac.abort();
   }, [loadLeagues]);
   useEffect(() => {
-    if (tab === "Today's Picks") void loadPicks();
+    if (tab !== "Today's Picks") return;
+    const ac = new AbortController();
+    void loadPicks(ac.signal);
+    return () => ac.abort();
   }, [tab, loadPicks]);
   useEffect(() => {
-    if (tab === "Game Predictions" && leagues.length) void loadGames();
+    if (tab !== "Game Predictions" || !leagues.length) return;
+    const ac = new AbortController();
+    void loadGames(ac.signal);
+    return () => ac.abort();
   }, [tab, leagues, loadGames]);
   useEffect(() => {
-    if (tab === "Performance") void loadPerf();
+    if (tab !== "Performance") return;
+    const ac = new AbortController();
+    void loadPerf(ac.signal);
+    return () => ac.abort();
   }, [tab, loadPerf]);
   useEffect(() => {
-    if (tab === "Soft Lines") void loadSoft();
+    if (tab !== "Soft Lines") return;
+    const ac = new AbortController();
+    void loadSoft(ac.signal);
+    return () => ac.abort();
   }, [tab, loadSoft]);
 
   // Prepend a synthetic "All" league (cross-sport): merged market chips + total
@@ -169,7 +204,8 @@ export default function App() {
   return (
     <div className="app-grid min-h-screen bg-app-glow">
       <DisclaimerBanner />
-      <TopNav tab={tab} onTab={setTab} asOf={asOf} onRefresh={refresh} />
+      <TopNav tab={tab} onTab={setTab} asOf={asOf} onRefresh={refresh} onHelp={() => setHelpOpen(true)} />
+      <MethodologyModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       <main className="mx-auto max-w-[1400px] px-5 pb-[70px] pt-[26px]">
         {tab === "Today's Picks" && (
@@ -208,7 +244,7 @@ export default function App() {
                 {visiblePicks.length === 1 ? "" : "s"}
                 {activeLeague ? ` · ${activeLeague.label}` : ""} · ranked by {SORT_LABEL[sort]}
               </div>
-              <div className="flex items-center gap-2 rounded-[10px] border border-hair bg-white/[0.02] px-3 py-2">
+              <div className="tap-target flex items-center gap-2 rounded-[10px] border border-hair bg-white/[0.02] px-3 py-2">
                 <SearchIcon className="h-4 w-4 text-ink-3" />
                 <input
                   value={query}
@@ -237,7 +273,7 @@ export default function App() {
               onUnavailable={(lbl) => flash(`${lbl} — not in season yet`)}
             />
             {gamesStatus === "error" ? (
-              <ErrorState onRetry={loadGames} />
+              <ErrorState onRetry={() => void loadGames()} />
             ) : (
               <GamePredictions leagues={leagues} gamesByLeague={games} loading={gamesStatus === "loading"} />
             )}
@@ -246,14 +282,14 @@ export default function App() {
 
         {tab === "Performance" &&
           (perfStatus === "error" ? (
-            <ErrorState onRetry={loadPerf} />
+            <ErrorState onRetry={() => void loadPerf()} />
           ) : (
             <PerformanceView perf={perf} loading={perfStatus === "loading"} />
           ))}
 
         {tab === "Soft Lines" &&
           (softStatus === "error" ? (
-            <ErrorState onRetry={loadSoft} />
+            <ErrorState onRetry={() => void loadSoft()} />
           ) : (
             <SoftLinesView lines={soft} loading={softStatus === "loading"} />
           ))}

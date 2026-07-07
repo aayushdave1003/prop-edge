@@ -111,12 +111,12 @@ export function PickCard({
         </div>
       </div>
 
-      {/* watch star */}
+      {/* watch star — larger hit area on mobile (tap-target), icon stays small */}
       <button
         onClick={onToggleWatch}
         aria-label={watched ? "Unwatch" : "Watch"}
-        className="absolute bottom-4 right-4"
-        style={{ color: watched ? "#7C5CFF" : "#565663" }}
+        className="tap-target absolute bottom-[9px] right-[9px] flex items-center justify-center p-1.5 sm:bottom-4 sm:right-4 sm:p-0"
+        style={{ color: watched ? "#7C5CFF" : "#787886" }}
       >
         <BurstStar className="h-[17px] w-[17px]" filled={watched} />
       </button>

@@ -1,4 +1,4 @@
-import { BoltMark, RefreshIcon } from "./icons";
+import { BoltMark, InfoIcon, RefreshIcon } from "./icons";
 
 export const TABS = ["Today's Picks", "Game Predictions", "Performance", "Soft Lines"] as const;
 export type Tab = (typeof TABS)[number];
@@ -10,11 +10,13 @@ export function TopNav({
   onTab,
   asOf,
   onRefresh,
+  onHelp,
 }: {
   tab: Tab;
   onTab: (t: Tab) => void;
   asOf: string;
   onRefresh: () => void;
+  onHelp: () => void;
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-hair bg-[rgba(9,9,15,0.82)] backdrop-blur-[14px]">
@@ -37,7 +39,7 @@ export function TopNav({
               key={t}
               onClick={() => onTab(t)}
               className={[
-                "shrink-0 rounded-lg px-3.5 py-1.5 text-[13px] font-semibold transition",
+                "tap-target inline-flex shrink-0 items-center justify-center rounded-lg px-3.5 py-1.5 text-[13px] font-semibold transition",
                 t === tab ? "bg-brand text-[#0A0A11]" : "text-ink-3 hover:text-ink",
               ].join(" ")}
             >
@@ -48,16 +50,24 @@ export function TopNav({
 
         <div className="flex-1" />
 
-        {/* as-of + refresh */}
-        <div className="flex items-center gap-3.5">
+        {/* as-of + help + refresh */}
+        <div className="flex items-center gap-2.5 sm:gap-3.5">
           <span className="hidden text-right text-[11px] leading-tight text-ink-4 sm:block">
             as of <b className="tnum text-ink-2">{asOf}</b>
             <br />
             new slate each morning
           </span>
           <button
+            onClick={onHelp}
+            aria-label="How this works"
+            className="tap-target flex items-center justify-center gap-1.5 rounded-[11px] border border-hair bg-white/[0.03] px-3 py-2 text-[13px] font-semibold text-ink-2 transition hover:text-ink"
+          >
+            <InfoIcon className="h-4 w-4" />
+            <span className="hidden sm:inline">How this works</span>
+          </button>
+          <button
             onClick={onRefresh}
-            className="flex items-center gap-1.5 rounded-[11px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-[#0A0A11] shadow-btn transition hover:brightness-105"
+            className="tap-target flex items-center justify-center gap-1.5 rounded-[11px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-[#0A0A11] shadow-btn transition hover:brightness-105"
           >
             <RefreshIcon className="h-4 w-4" />
             <span className="hidden sm:inline">Refresh</span>

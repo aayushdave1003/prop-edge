@@ -3,8 +3,8 @@ import type { TopSlate as TopSlateT } from "../types";
 import { Avatar } from "./Avatar";
 import { BoltMark } from "./icons";
 
-// Correlation-aware Top-N slate. Money sizing is paper / hypothetical. "Tail
-// slate · copy" writes a text summary to the clipboard (no bet action).
+// Correlation-aware Top-N slate. Money sizing is paper / hypothetical. "Copy
+// slate" writes a text summary to the clipboard (no bet action).
 export function TopSlate({ slate }: { slate: TopSlateT }) {
   const [copied, setCopied] = useState(false);
 
@@ -46,9 +46,9 @@ export function TopSlate({ slate }: { slate: TopSlateT }) {
         </div>
         <button
           onClick={copy}
-          className="rounded-[11px] border border-accent-border bg-accent-soft px-3.5 py-2 text-[12.5px] font-semibold text-accent transition hover:brightness-110"
+          className="tap-target flex items-center justify-center rounded-[11px] border border-accent-border bg-accent-soft px-3.5 py-2 text-[12.5px] font-semibold text-accent transition hover:brightness-110"
         >
-          {copied ? "Copied ✓" : "Tail slate · copy"}
+          {copied ? "Copied ✓" : "Copy slate"}
         </button>
       </div>
 

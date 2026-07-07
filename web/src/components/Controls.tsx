@@ -56,7 +56,7 @@ export function Controls({
         <button
           onClick={() => onRecommendedOnly(!recommendedOnly)}
           className={[
-            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition",
+            "tap-target flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold transition",
             recommendedOnly
               ? "border-accent-border bg-accent-soft text-accent"
               : "border-hair text-ink-3 hover:text-ink",
@@ -94,7 +94,7 @@ function Chip({
     <button
       onClick={onClick}
       className={[
-        "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold transition",
+        "tap-target flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold transition",
         active
           ? "border-accent-border bg-accent-soft text-accent"
           : "border-hair bg-white/[0.02] text-ink-3 hover:text-ink",
@@ -122,7 +122,7 @@ function Segmented({
           key={o.key}
           onClick={() => onChange(o.key)}
           className={[
-            "rounded-[7px] px-2.5 py-1 text-[12px] font-semibold transition",
+            "tap-target inline-flex items-center justify-center rounded-[7px] px-2.5 py-1 text-[12px] font-semibold transition",
             value === o.key ? "bg-accent text-[#0A0A11]" : "text-ink-3 hover:text-ink",
           ].join(" ")}
         >

@@ -40,6 +40,15 @@ body {
   color: #7a7a88;
 }
 
+/* WCAG 2.5.5 touch target: interactive controls stay ≥44px on touch/mobile.
+   Above the sm breakpoint the compact desktop density is restored. */
+@media (max-width: 639px) {
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
 /* faint 44px background grid, radial-masked near the top (behind everything) */
 .app-grid::before {
   content: "";
