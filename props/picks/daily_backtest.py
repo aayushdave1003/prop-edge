@@ -16,6 +16,16 @@ new to say each morning. Three views, all off settled picks + box scores:
      maximised 2-pick EV vs the cutoff that's actually live, flagging material
      gaps (a sanity check on the auto-tuner).
 
+MEASUREMENT INTEGRITY (fixed 2026-07-07). The recommended tier is selected
+**point-in-time** by ``honest_oos.walk_forward_oos`` — every pick is judged by a
+cutoff table fit ONLY on picks that settled *before* it, so no cutoff ever sees
+the outcome it is scored against. It previously graded history against
+``load_cutoffs()`` (the current table, fit on those same picks) → an in-sample
+leak that inflated the number, the exact bug the API/UI were de-leaked for. The
+input pool is also gated at the source (forward-only: no lookahead; valid-line:
+a real prop line existed), identical to the board. This module now reports the
+same honest ~47% the live board does, on a rolling window.
+
 Each run persists one row to ``backtest_daily`` (migration 0007) so the trends
 accumulate, and posts a concise Discord digest.
 
@@ -34,6 +44,7 @@ from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 from props.utils.config import settings
 from props.models.category_cutoffs import load_cutoffs, rec_cutoff, wilson_lower_bound
+from props.models.honest_oos import walk_forward_oos
 from props.models.prob_calibration import calibrate
 
 BREAKEVEN = 0.577          # per-leg win prob where a 2-pick power play breaks even
@@ -52,39 +63,64 @@ def _winrate(w: int, l: int) -> float:
     return w / (w + l) if (w + l) else 0.0
 
 
-def load_settled(session, window_days: int):
-    """Settled win/loss picks within the window (pushes/voids excluded — they
-    don't inform win rate)."""
+def load_settled(session):
+    """ALL settled win/loss picks eligible for an honest evaluation, over the
+    FULL history (not just the reporting window) so the point-in-time replay sees
+    the same training frontier production did on each day.
+
+    Two source-level gates, identical to ``honest_oos.load_prod_picks`` and the
+    live board, so this backtest can't drift from what the product reports:
+      - forward-only  (``picked_at < game_datetime``) — no lookahead;
+      - valid-line-only (``prop_lines.line_value IS NOT NULL``) — a real prop
+        line existed, so a "win" is a real observation.
+    Pushes/voids are excluded (they don't inform win rate). Rows are dicts shaped
+    for ``walk_forward_oos``: sport / stat_type / direction / model_prob / win /
+    decided / settled (plus leg_result for the calibration + sweep views).
+    """
     rows = session.execute(text("""
-        SELECT (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date AS d,
-               pk.sport_code, pk.stat_type, pk.direction,
+        SELECT (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
+               (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled,
+               g.sport_code AS sport, pk.stat_type, pk.direction,
                pk.model_prob::float AS model_prob, pk.leg_result
         FROM picks pk
-        WHERE pk.leg_result IN ('win', 'loss')
-          AND pk.model_prob IS NOT NULL
-          AND (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
-              >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - :w
-        ORDER BY d
-    """), {"w": window_days}).all()
-    return rows
+        JOIN games g USING (game_id)
+        JOIN prop_lines pl ON pl.line_id = pk.line_id
+        WHERE pk.leg_result IN ('win', 'loss') AND pk.model_prob IS NOT NULL
+          AND g.game_datetime IS NOT NULL
+          AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
+          AND pl.line_value IS NOT NULL         -- valid-line-only: a real line existed
+        ORDER BY decided
+    """)).mappings().all()
+    return [{"sport": r["sport"], "stat_type": r["stat_type"],
+             "direction": r["direction"], "model_prob": r["model_prob"],
+             "win": 1 if r["leg_result"] == "win" else 0,
+             "leg_result": r["leg_result"],
+             "decided": r["decided"], "settled": r["settled"]} for r in rows]
 
 
-def walk_forward(rows, table):
-    """Recommended-tier strategy over the window + recent-vs-prior trend."""
-    rec = [r for r in rows
-           if r.model_prob >= rec_cutoff(r.sport_code, r.stat_type, table,
-                                         direction=r.direction)]
-    rw = sum(r.leg_result == "win" for r in rec)
-    rl = sum(r.leg_result == "loss" for r in rec)
-    aw = sum(r.leg_result == "win" for r in rows)
-    al = sum(r.leg_result == "loss" for r in rows)
+def walk_forward(all_rows, window_days):
+    """Recommended-tier strategy over the reporting window + recent-vs-prior trend.
 
+    Selection is **point-in-time**: ``walk_forward_oos`` replays the FULL history
+    (each pick judged by a cutoff fit only on strictly-prior settlements), then we
+    report on the trailing ``window_days`` slice. No cutoff sees the window it is
+    scored on — this is the same honest number the board shows.
+    """
+    recommended = walk_forward_oos(all_rows)
     today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
+    lo = today - timedelta(days=window_days)
 
-    def _rec_wr(lo, hi):
-        sub = [r for r in rec if lo <= r.d <= hi]
-        w = sum(r.leg_result == "win" for r in sub)
-        n = sum(r.leg_result in ("win", "loss") for r in sub)
+    rec = [r for r in recommended if r["decided"] >= lo]
+    allw = [r for r in all_rows if r["decided"] >= lo]
+    rw = sum(r["win"] for r in rec)
+    rl = len(rec) - rw
+    aw = sum(r["win"] for r in allw)
+    al = len(allw) - aw
+
+    def _rec_wr(d_lo, d_hi):
+        sub = [r for r in rec if d_lo <= r["decided"] <= d_hi]
+        w = sum(r["win"] for r in sub)
+        n = len(sub)
         return (w / n if n else None), n
 
     last7_wr, last7_n = _rec_wr(today - timedelta(days=7), today)
@@ -113,39 +149,37 @@ def calibration(rows):
     n = len(rows)
     if n == 0:
         return {"brier": None, "brier_cal": None, "buckets": [], "drift": {}}
-    def _y(r):
-        return 1.0 if r.leg_result == "win" else 0.0
-    brier = sum((r.model_prob - _y(r)) ** 2 for r in rows) / n
+    brier = sum((r["model_prob"] - r["win"]) ** 2 for r in rows) / n
     # Brier after the live Platt recalibration — confirms the correction helps.
-    brier_cal = sum((calibrate(r.model_prob) - _y(r)) ** 2 for r in rows) / n
+    brier_cal = sum((calibrate(r["model_prob"]) - r["win"]) ** 2 for r in rows) / n
 
     # decile calibration
     buckets = []
     for i in range(5):                       # 5 buckets of 0.10 from 0.50–1.00
         lo, hi = 0.50 + 0.10 * i, 0.50 + 0.10 * (i + 1)
-        sub = [r for r in rows if lo <= r.model_prob < hi or (i == 4 and r.model_prob >= hi)]
+        sub = [r for r in rows if lo <= r["model_prob"] < hi or (i == 4 and r["model_prob"] >= hi)]
         if not sub:
             continue
-        w = sum(r.leg_result == "win" for r in sub)
+        w = sum(r["win"] for r in sub)
         buckets.append({"lo": round(lo, 2), "hi": round(hi, 2), "n": len(sub),
-                        "pred": sum(r.model_prob for r in sub) / len(sub),
+                        "pred": sum(r["model_prob"] for r in sub) / len(sub),
                         "actual": w / len(sub)})
 
     # per-sport drift: recent half vs earlier half mean (predicted-actual) gap
     today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
     mid = today - timedelta(days=7)
     drift = {}
-    sports = sorted({r.sport_code for r in rows})
+    sports = sorted({r["sport"] for r in rows})
     for sp in sports:
-        srows = [r for r in rows if r.sport_code == sp]
+        srows = [r for r in rows if r["sport"] == sp]
         def _gap(sub):
             if len(sub) < 8:
                 return None
-            pred = sum(r.model_prob for r in sub) / len(sub)
-            act = sum(r.leg_result == "win" for r in sub) / len(sub)
+            pred = sum(r["model_prob"] for r in sub) / len(sub)
+            act = sum(r["win"] for r in sub) / len(sub)
             return pred - act
-        recent = _gap([r for r in srows if r.d >= mid])
-        earlier = _gap([r for r in srows if r.d < mid])
+        recent = _gap([r for r in srows if r["decided"] >= mid])
+        earlier = _gap([r for r in srows if r["decided"] < mid])
         if recent is not None or earlier is not None:
             drift[sp] = {"recent_gap": recent, "earlier_gap": earlier}
     return {"brier": brier, "brier_cal": brier_cal, "buckets": buckets, "drift": drift}
@@ -155,7 +189,7 @@ def cutoff_sweep(rows, table):
     """Per sport×stat: the cutoff maximising 2-pick EV vs the live cutoff."""
     keyed = {}
     for r in rows:
-        keyed.setdefault((r.sport_code, r.stat_type), []).append(r)
+        keyed.setdefault((r["sport"], r["stat_type"]), []).append(r)
 
     findings = []
     for (sp, stat), sub in keyed.items():
@@ -170,8 +204,8 @@ def cutoff_sweep(rows, table):
         # backtest never recommends a cutoff the tuner would (correctly) reject.
         best = None
         for c in SWEEP:
-            qual = [r for r in sub if r.model_prob >= c]
-            w = sum(r.leg_result == "win" for r in qual)
+            qual = [r for r in sub if r["model_prob"] >= c]
+            w = sum(r["win"] for r in qual)
             n = len(qual)
             if n < MIN_N_SWEEP:
                 continue
@@ -183,8 +217,8 @@ def cutoff_sweep(rows, table):
                         "lb": lb, "ev": roi_2pick(wr), "lb_ev": lb_ev}
         if best is None:
             continue
-        live_qual = [r for r in sub if r.model_prob >= live]
-        live_w = sum(r.leg_result == "win" for r in live_qual)
+        live_qual = [r for r in sub if r["model_prob"] >= live]
+        live_w = sum(r["win"] for r in live_qual)
         live_n = len(live_qual)
         live_wr = (live_w / live_n) if live_n else None
         # "material" only when acting on it is statistically justified:
@@ -297,7 +331,7 @@ def build_payload(run_date, window_days, wf, cal, sweep):
         "description": desc,
         "color": 0x3498db if ok else 0xe67e22,
         "fields": fields,
-        "footer": {"text": "walk-forward on settled picks · paper-tracking only"},
+        "footer": {"text": "point-in-time walk-forward on settled picks · paper-tracking only"},
     }]}
 
 
@@ -306,13 +340,15 @@ def run(window_days: int = 45, post: bool = True):
     run_date = datetime.now(ZoneInfo("America/Los_Angeles")).date()
     table = load_cutoffs()
     with session_scope() as s:
-        rows = load_settled(s, window_days)
-        if not rows:
+        all_rows = load_settled(s)          # full gated history for point-in-time replay
+        if not all_rows:
             log.info("daily_backtest_skipped", reason="no_settled_picks")
             return
-        wf = walk_forward(rows, table)
-        cal = calibration(rows)
-        sweep = cutoff_sweep(rows, table)
+        today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
+        window_rows = [r for r in all_rows if r["decided"] >= today - timedelta(days=window_days)]
+        wf = walk_forward(all_rows, window_days)
+        cal = calibration(window_rows)
+        sweep = cutoff_sweep(window_rows, table)
         persist(s, run_date, window_days, wf, cal, sweep)
     log.info("daily_backtest_done", rec=f"{wf['rec_w']}-{wf['rec_l']}",
              rec_winrate=round(wf["rec_winrate"], 3), brier=cal["brier"],
