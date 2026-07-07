@@ -10,6 +10,8 @@ RESEARCH / PAPER-TRACKING: money sizing is hypothetical, never betting advice.
 """
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import text
 
 from props.utils.db import engine
@@ -204,6 +206,87 @@ def _insight(l5: str, badge: str, edge_frac, line_mv, direction, prob) -> str:
     return " · ".join(bits[:3])
 
 
+# ── honest paper-Kelly gate ──────────────────────────────────────────────────
+# Paper sizing (per-pick Kelly + slate stakes) is shown ONLY for categories with
+# a demonstrated out-of-sample edge — the point-in-time recommended-tier Wilson
+# 95% CI floor clears the 57.7% breakeven at a credible sample size. Today that
+# set is EMPTY (no sport or category clears it), so every paper stake is 0. This
+# is deliberate: a positive Kelly stake asserts a positive-EV bet, and we have
+# not earned that claim. It lifts itself automatically if a category ever proves
+# out. Reuses the audited honest_oos harness so it can't drift from the track
+# record /api/performance reports.
+_GATED_SETTLED_SQL = text("""
+    SELECT g.sport_code AS sport, pk.stat_type, pk.direction,
+           pk.model_prob, pk.leg_result,
+           pk.market_prob, pk.market_prob_close,
+           (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
+           (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled
+    FROM picks pk
+    JOIN games g USING (game_id)
+    JOIN prop_lines pl ON pl.line_id = pk.line_id
+    WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
+      AND g.game_datetime IS NOT NULL
+      AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
+      AND pl.line_value IS NOT NULL         -- valid-line-only: a real line existed
+""")
+
+
+def _load_gated_settled(conn) -> list[dict]:
+    """Settled picks under the two source gates (forward-only + valid-line),
+    shaped for honest_oos.walk_forward_oos. Shared by the honest track record and
+    the paper-Kelly gate so the two can never disagree."""
+    rows = conn.execute(_GATED_SETTLED_SQL).mappings().all()
+    return [{
+        "sport": r["sport"], "stat_type": r["stat_type"], "direction": r["direction"],
+        "model_prob": float(r["model_prob"]),
+        "win": 1 if r["leg_result"] == "win" else 0,
+        "decided": r["decided"], "settled": r["settled"],
+        "market_prob": r["market_prob"], "market_prob_close": r["market_prob_close"],
+    } for r in rows]
+
+
+_PROVEN_CACHE: dict = {"t": 0.0, "keys": None}
+_PROVEN_TTL = 6 * 3600
+
+
+def _proven_edge_keys() -> set:
+    """Category keys with a demonstrated out-of-sample edge: the point-in-time
+    recommended-tier Wilson 95% CI floor >= breakeven at a credible sample size.
+    Keys are ``sport:<code>`` and ``cat:<sport>|<stat>|<dir>``. Cached 6h; empty
+    today. Fail-closed (empty) on any error — the safe default is "no sizing"."""
+    now = time.time()
+    if _PROVEN_CACHE["keys"] is not None and now - _PROVEN_CACHE["t"] < _PROVEN_TTL:
+        return _PROVEN_CACHE["keys"]
+    keys: set = set()
+    try:
+        from collections import defaultdict
+        from props.models.honest_oos import walk_forward_oos, wilson_ci
+        from props.models.category_cutoffs import MIN_N_SPORT, MIN_N_STAT
+        with engine.connect() as conn:
+            rec = walk_forward_oos(_load_gated_settled(conn))
+        bys: dict = defaultdict(list)
+        bycat: dict = defaultdict(list)
+        for r in rec:
+            bys[r["sport"]].append(r)
+            bycat[(r["sport"], r["stat_type"], r["direction"])].append(r)
+        for sp, rs in bys.items():
+            if len(rs) >= MIN_N_SPORT and wilson_ci(sum(x["win"] for x in rs), len(rs))[0] >= BREAKEVEN:
+                keys.add(f"sport:{sp}")
+        for (sp, st, dr), rs in bycat.items():
+            if len(rs) >= MIN_N_STAT and wilson_ci(sum(x["win"] for x in rs), len(rs))[0] >= BREAKEVEN:
+                keys.add(f"cat:{sp}|{st}|{dr}")
+    except Exception:
+        keys = set()
+    _PROVEN_CACHE.update(t=now, keys=keys)
+    return keys
+
+
+def _is_proven(sport: str, stat: str, direction: str) -> bool:
+    """True only if this pick's category has a demonstrated out-of-sample edge."""
+    keys = _proven_edge_keys()
+    return f"cat:{sport}|{stat}|{direction}" in keys or f"sport:{sport}" in keys
+
+
 def fetch_picks(league=None, stats=None, direction=None, recommended_only=False) -> dict:
     params: dict = {}
     lf = sf = df = ""
@@ -239,6 +322,10 @@ def fetch_picks(league=None, stats=None, direction=None, recommended_only=False)
         lean = "over" if direction_v == "over" else "under"
         badge = lean.upper()
         kelly = float(r["kelly"]) if r["kelly"] is not None else 0.0
+        # No proven edge in this category → no paper sizing (honest: a positive
+        # stake would assert a positive-EV bet we haven't earned).
+        if not _is_proven(r["sport_code"], r["stat_type"], direction_v):
+            kelly = 0.0
         picks.append({
             "id": str(r["pick_id"]),
             "league": r["sport_code"],
@@ -334,7 +421,11 @@ def _top_slate(conn) -> dict | None:
                     "game_id": r["game_id"], "team_id": r["team_id"],
                     "direction": r["direction"], "stat_type": r["stat_type"]} for r in chosen]
         stakes = [round(float(s) * 100, 1) for s in slate_kelly_stakes(legs_in)]
-        max_stake = round(MAX_STAKE_PER_PICK * 100)
+        # Gate: paper sizing only for proven-edge categories (none today → all
+        # None). Same honest rule as per-pick Kelly.
+        proven_mask = [_is_proven(r["sport_code"], r["stat_type"], r["direction"]) for r in chosen]
+        stakes = [s if proven_mask[i] else None for i, s in enumerate(stakes)]
+        max_stake = round(MAX_STAKE_PER_PICK * 100) if any(proven_mask) else None
     except Exception:
         max_stake = None
 
@@ -460,28 +551,7 @@ def fetch_performance() -> dict:
     from collections import defaultdict
 
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT g.sport_code AS sport, pk.stat_type, pk.direction,
-                   pk.model_prob, pk.leg_result,
-                   pk.market_prob, pk.market_prob_close,
-                   (pk.picked_at  AT TIME ZONE 'America/Los_Angeles')::date AS decided,
-                   (pk.settled_at AT TIME ZONE 'America/Los_Angeles')::date AS settled
-            FROM picks pk
-            JOIN games g USING (game_id)
-            JOIN prop_lines pl ON pl.line_id = pk.line_id
-            WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
-              AND g.game_datetime IS NOT NULL
-              AND pk.picked_at < g.game_datetime   -- gate 1: forward-only, no lookahead
-              AND pl.line_value IS NOT NULL         -- gate 2: a real prop line existed
-        """)).mappings().all()
-
-    picks = [{
-        "sport": r["sport"], "stat_type": r["stat_type"], "direction": r["direction"],
-        "model_prob": float(r["model_prob"]),
-        "win": 1 if r["leg_result"] == "win" else 0,
-        "decided": r["decided"], "settled": r["settled"],
-        "market_prob": r["market_prob"], "market_prob_close": r["market_prob_close"],
-    } for r in rows]
+        picks = _load_gated_settled(conn)   # forward-only + valid-line, shared loader
 
     # The honest recommended tier: point-in-time walk-forward selection.
     recs = walk_forward_oos(picks)
