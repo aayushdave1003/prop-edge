@@ -95,8 +95,16 @@ STAT_TYPE_MAP = {
 
 # Retry generously: a rotating residential proxy draws a fresh IP each attempt,
 # and Cloudflare flags a chunk of the pool (~⅔ of IPs 403), so we cycle through
-# IPs until one is clean. ~10 attempts at ~⅓ success ≈ 98% overall. Direct (no
-# proxy) requests succeed on the first attempt, so this costs them nothing.
+# IPs until one is clean. ~10 attempts at ~⅓ success ≈ 98% overall.
+#
+# ⚠️ 2026-07-08: PrizePicks put a Cloudflare JS CHALLENGE on /projections — every
+# request now returns a 403 challenge page ("Please enable JS…") regardless of IP
+# OR curl_cffi fingerprint (verified direct-residential + chrome120/131/136). An
+# HTTP client can't execute the JS challenge, so retries can't help. This is the
+# fragility PROVENANCE.md warned about, fully realized. Getting past it needs a
+# headless-browser challenge solver (cat-and-mouse, discouraged) or the licensed
+# feed seam (LINE_FEED=licensed). Until then the scrape is down and produces 0
+# lines (the digest correctly alerts prop_lines_stale / slate_thin).
 @retry(stop=stop_after_attempt(10), wait=wait_exponential(min=1, max=6))
 def fetch_projections() -> dict:
     from props.utils.config import settings

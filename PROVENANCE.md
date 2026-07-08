@@ -31,6 +31,12 @@ visible and isolated, not buried.
   - **Fragility:** an unofficial endpoint can change shape, rate-limit, or block at
     any time and silently zero out the slate. The proxy can also fail.
   - **Single point of failure:** no live lines → no picks that day.
+  - **⚠️ REALIZED 2026-07-08:** PrizePicks enabled a **Cloudflare JS challenge** on
+    `/projections`. Every request now returns a 403 challenge page regardless of IP
+    or curl_cffi fingerprint — an HTTP client can't solve a JS challenge, so the
+    scrape is hard-down. Options: a headless-browser challenge solver (cat-and-mouse
+    maintenance, discouraged for a no-edge research tool), or the `LicensedFeed`
+    seam below. This is the risk in this file materializing, not a bug to patch.
 
 ### How it's isolated (the seam)
 

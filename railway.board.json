@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "//": "BOARD-SCOPED healthcheck config — NOT auto-read. It is deliberately NOT named railway.json: Railway auto-reads root railway.json/railway.toml for EVERY service in the repo, so a root railway.json pinning Dockerfile.board hijacked the Streamlit dashboard service into building the board (health_down 2026-07-08). To use this, set RAILWAY_CONFIG_FILE=railway.board.json on the BOARD service ONLY. The board already builds via its RAILWAY_DOCKERFILE_PATH=Dockerfile.board service var (see BOARD_DEPLOY.md), so this file is optional — it only adds the Railway-level healthcheckPath=/api/health (the Dockerfile.board HEALTHCHECK already covers container liveness). The Streamlit service uses the root Dockerfile; the Discord bot uses Dockerfile.bot (health /health).",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile.board"
+  },
+  "deploy": {
+    "healthcheckPath": "/api/health",
+    "healthcheckTimeout": 120,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
