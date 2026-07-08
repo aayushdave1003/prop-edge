@@ -32,6 +32,7 @@ jobs:
       ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       PRIZEPICKS_PROXY: ${{ secrets.PRIZEPICKS_PROXY }}
+      LINES_PAUSED: ${{ vars.LINES_PAUSED || '0' }}   # 1 = skip scrape (source blocked)
       LOG_LEVEL: INFO
     steps:
       - uses: actions/checkout@v4

@@ -70,6 +70,7 @@ export interface Summary {
   w: number;
   l: number;
   win_rate_pct: number;
+  lines_paused?: boolean; // scrape source blocked → no new slates
 }
 
 export interface StatOption {

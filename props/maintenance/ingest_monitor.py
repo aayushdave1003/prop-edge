@@ -73,36 +73,45 @@ def run_checks() -> list[dict]:
     findings: list[dict] = []
     with engine.connect() as c:
         # ── prop_lines: freshness + slate volume ─────────────────────────────
-        hrs = _scalar(c, "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(snapshot_at)))/3600 "
-                         "FROM prop_lines")
-        if hrs is None:
-            findings.append({"level": "warn", "name": "prop_lines",
-                             "detail": "no prop_lines at all"})
-        elif hrs > LINES_STALE_HOURS:
-            findings.append({"level": "warn", "name": "prop_lines_stale",
-                             "detail": f"newest line is {hrs:.1f}h old (>{LINES_STALE_HOURS}h) — scrape may be broken"})
+        # When LINES_PAUSED, an empty/stale slate is EXPECTED — suppress the
+        # freshness + volume warnings so they don't false-alarm. (The flag is
+        # explicit on purpose: the monitor stays sharp for every OTHER failure,
+        # and a future real scrape break would still surface once resumed.)
+        if settings.lines_paused:
+            findings.append({"level": "ok", "name": "lines_paused",
+                             "detail": "LINES_PAUSED — no new lines expected (scrape source blocked); "
+                                       "freshness/slate checks suppressed"})
         else:
-            findings.append({"level": "ok", "name": "prop_lines_fresh",
-                             "detail": f"newest line {hrs:.1f}h old"})
+            hrs = _scalar(c, "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(snapshot_at)))/3600 "
+                             "FROM prop_lines")
+            if hrs is None:
+                findings.append({"level": "warn", "name": "prop_lines",
+                                 "detail": "no prop_lines at all"})
+            elif hrs > LINES_STALE_HOURS:
+                findings.append({"level": "warn", "name": "prop_lines_stale",
+                                 "detail": f"newest line is {hrs:.1f}h old (>{LINES_STALE_HOURS}h) — scrape may be broken"})
+            else:
+                findings.append({"level": "ok", "name": "prop_lines_fresh",
+                                 "detail": f"newest line {hrs:.1f}h old"})
 
-        daily = c.execute(text("""
-            SELECT (snapshot_at AT TIME ZONE 'America/Los_Angeles')::date AS d,
-                   COUNT(DISTINCT (player_id, stat_type)) AS n
-            FROM prop_lines
-            WHERE snapshot_at > NOW() - INTERVAL '8 days'
-            GROUP BY 1 ORDER BY 1
-        """)).all()
-        by_day = {str(r[0]): int(r[1]) for r in daily}
-        today = _scalar(c, "SELECT (NOW() AT TIME ZONE 'America/Los_Angeles')::date::text")
-        today_n = by_day.get(today, 0)
-        prior = [n for d, n in by_day.items() if d != today]
-        avg_prior = sum(prior) / len(prior) if prior else 0
-        if avg_prior >= LINES_MIN_BASELINE and today_n < LINES_THIN_FRAC * avg_prior:
-            findings.append({"level": "warn", "name": "slate_thin",
-                             "detail": f"today {today_n} distinct lines vs {avg_prior:.0f} avg — thin/missing slate"})
-        else:
-            findings.append({"level": "ok", "name": "slate_volume",
-                             "detail": f"today {today_n} lines (7d avg {avg_prior:.0f})"})
+            daily = c.execute(text("""
+                SELECT (snapshot_at AT TIME ZONE 'America/Los_Angeles')::date AS d,
+                       COUNT(DISTINCT (player_id, stat_type)) AS n
+                FROM prop_lines
+                WHERE snapshot_at > NOW() - INTERVAL '8 days'
+                GROUP BY 1 ORDER BY 1
+            """)).all()
+            by_day = {str(r[0]): int(r[1]) for r in daily}
+            today = _scalar(c, "SELECT (NOW() AT TIME ZONE 'America/Los_Angeles')::date::text")
+            today_n = by_day.get(today, 0)
+            prior = [n for d, n in by_day.items() if d != today]
+            avg_prior = sum(prior) / len(prior) if prior else 0
+            if avg_prior >= LINES_MIN_BASELINE and today_n < LINES_THIN_FRAC * avg_prior:
+                findings.append({"level": "warn", "name": "slate_thin",
+                                 "detail": f"today {today_n} distinct lines vs {avg_prior:.0f} avg — thin/missing slate"})
+            else:
+                findings.append({"level": "ok", "name": "slate_volume",
+                                 "detail": f"today {today_n} lines (7d avg {avg_prior:.0f})"})
 
         # ── box scores: recent FINAL games must have player_games ────────────
         missing = c.execute(text("""

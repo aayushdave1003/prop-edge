@@ -210,6 +210,17 @@ export default function App() {
       <main className="mx-auto max-w-[1400px] px-5 pb-[70px] pt-[26px]">
         {tab === "Today's Picks" && (
           <div className="space-y-[22px]">
+            {data?.summary?.lines_paused && (
+              <div
+                className="rounded-[14px] border px-4 py-3 text-[13px] leading-relaxed text-ink-2"
+                style={{ borderColor: "rgba(245,181,68,0.3)", background: "rgba(245,181,68,0.07)" }}
+              >
+                <b className="text-ink">Model lines paused.</b> The line source (PrizePicks) is
+                blocked, so there are <b>no new slates</b> right now. Past picks and the honest track
+                record on the <b>Performance</b> tab remain available — this is research / paper-tracking,
+                never betting advice.
+              </div>
+            )}
             <SummaryRow summary={data?.summary ?? null} />
             <SportSelector
               leagues={displayLeagues}

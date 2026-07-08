@@ -375,7 +375,16 @@ def _summary(conn) -> dict:
     loss = next((int(x["n"]) for x in wl if x["leg_result"] == "loss"), 0)
     wr = round(w / (w + loss) * 100) if (w + loss) else 0
     return {"today": today, "recommended": rec, "avg_edge_pct": avg_edge,
-            "w": w, "l": loss, "win_rate_pct": wr}
+            "w": w, "l": loss, "win_rate_pct": wr,
+            "lines_paused": _lines_paused()}
+
+
+def _lines_paused() -> bool:
+    """True when line ingestion is intentionally paused (scrape source blocked).
+    Read fresh from the env each call so toggling LINES_PAUSED takes effect
+    without a redeploy."""
+    import os
+    return os.getenv("LINES_PAUSED", "").strip().lower() in ("1", "true", "yes")
 
 
 def _top_slate(conn) -> dict | None:

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # (PrizePicks blocks datacenter IPs). Format: http://user:pass@host:port.
     # Empty = scrape direct (works only from a residential IP, e.g. the Mac).
     prizepicks_proxy: str = ""
+    # Lines paused: PrizePicks put a Cloudflare JS challenge on the scrape
+    # (2026-07-08, see PROVENANCE.md), so there are no new lines. Set LINES_PAUSED=1
+    # to make the pipeline SKIP the scrape gracefully (no nightly errors), tell the
+    # monitor the empty slate is expected (no false alarms), and show the board a
+    # "lines paused" banner. Settlement/backtest still run. Unset to resume.
+    lines_paused: bool = False
     # Email push for the morning recommended slate (free, optional). For Gmail use
     # an App Password as smtp_password. Empty smtp_user/password = no email sent.
     smtp_host: str = "smtp.gmail.com"

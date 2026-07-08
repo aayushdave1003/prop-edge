@@ -304,8 +304,13 @@ except Exception:
     print(-1)
 PY
 )
-echo "Health: picks_today=$PICKS_TODAY  step_failures=$FAILURES"
-if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && { [ "${PICKS_TODAY:-0}" -le 0 ] || [ "$FAILURES" -gt 0 ]; }; then
+# LINES_PAUSED: the scrape source is intentionally off, so 0 picks is EXPECTED —
+# a clean 0-pick run is healthy. Only a step FAILURE is worth alerting/lapsing on.
+PAUSED=0
+case "$(printf '%s' "${LINES_PAUSED:-}" | tr '[:upper:]' '[:lower:]')" in 1|true|yes) PAUSED=1;; esac
+echo "Health: picks_today=$PICKS_TODAY  step_failures=$FAILURES  lines_paused=$PAUSED"
+# Alert on real trouble only: a step failure always; 0 picks only when NOT paused.
+if [ -n "${DISCORD_WEBHOOK_URL:-}" ] && { [ "$FAILURES" -gt 0 ] || { [ "$PAUSED" -eq 0 ] && [ "${PICKS_TODAY:-0}" -le 0 ]; }; }; then
     MSG="⚠️ prop-edge daily $TODAY — picks=$PICKS_TODAY, step_failures=$FAILURES. Check logs/daily_$TODAY.log"
     curl -s -m 10 -H "Content-Type: application/json" \
          -d "{\"content\": \"$MSG\"}" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1 || true
@@ -334,12 +339,14 @@ find "$LOG_DIR" -name "daily_*.log" -mtime +30 -delete 2>/dev/null || true
 # alert above, inverted). If a run silently stops firing (cron/Actions broke, DB
 # down, host asleep), the ping stops and the monitor pages us. Opt-in: skipped
 # unless HEALTHCHECK_PING_URL is set. Never fails the run (|| true).
+# Healthy = no failed steps AND (picks landed OR lines are intentionally paused).
+# Without the paused clause a paused run would ping 0 picks -> lapse -> false page.
 if [ -n "${HEALTHCHECK_PING_URL:-}" ]; then
-    if [ "$FAILURES" -eq 0 ] && [ "${PICKS_TODAY:-0}" -gt 0 ]; then
+    if [ "$FAILURES" -eq 0 ] && { [ "${PICKS_TODAY:-0}" -gt 0 ] || [ "$PAUSED" -eq 1 ]; }; then
         echo "Heartbeat: pinging dead-man's-switch (healthy run)"
         curl -fsS -m 10 "$HEALTHCHECK_PING_URL" >/dev/null 2>&1 || true
     else
-        echo "Heartbeat: skipped (step_failures=$FAILURES, picks_today=${PICKS_TODAY:-0}) — letting the switch lapse to alert"
+        echo "Heartbeat: skipped (step_failures=$FAILURES, picks_today=${PICKS_TODAY:-0}, paused=$PAUSED) — letting the switch lapse to alert"
     fi
 fi
 

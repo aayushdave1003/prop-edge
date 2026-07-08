@@ -359,6 +359,18 @@ def resolve_game_id(session, rec, m) -> int | None:
 
 def run():
     configure_logging()
+    from props.utils.config import settings
+    if settings.lines_paused:
+        # LINES_PAUSED set — the scrape source is blocked (CF challenge). Skip
+        # gracefully so the pipeline doesn't error nightly. Record a 'skipped' run
+        # for the audit trail; settlement/backtest still run downstream.
+        log.info("lines_paused", detail="LINES_PAUSED set — skipping scrape")
+        with session_scope() as session:
+            session.execute(text("""
+                INSERT INTO ingestion_runs (source, started_at, completed_at, status, error_message)
+                VALUES ('prizepicks_projections', NOW(), NOW(), 'skipped', 'lines_paused')
+            """))
+        return
     started = datetime.now(timezone.utc)
 
     with session_scope() as session:
