@@ -37,7 +37,7 @@ def find_unsettled_picks():
         rows = session.execute(text("""
             SELECT pk.pick_id, pk.stat_type, pk.direction,
                    pl.line_value,
-                   pg.player_game_id, pg.stats,
+                   pg.player_game_id, pg.stats, pg.did_play,
                    g.status, g.game_date,
                    pl_player.full_name AS player_name,
                    EXISTS(SELECT 1 FROM player_games pg2
@@ -128,7 +128,7 @@ def run():
     with session_scope() as session:
         for r in rows:
             (pick_id, stat_type, direction, line_value,
-             player_game_id, stats_json, game_status, game_date, player_name,
+             player_game_id, stats_json, did_play, game_status, game_date, player_name,
              game_has_box) = r
 
             if game_status is None:
@@ -206,6 +206,20 @@ def run():
                     WHERE pick_id=:pid
                 """), {"pid": pick_id})
                 log.info("voided_dnp", pick_id=pick_id, player=player_name,
+                         game_date=str(game_date))
+                settled += 1
+                continue
+
+            # Player HAS a box row but logged did_play=false (0 min): a DNP / late
+            # scratch. PrizePicks refunds these — a non-event, not a settled prop.
+            # Without this the stat resolves to 0 and grades as a win/loss (an
+            # under "wins" against a player who never took the court). Void it.
+            if did_play is False:
+                session.execute(text("""
+                    UPDATE picks SET leg_result='void', settled_at=NOW()
+                    WHERE pick_id=:pid
+                """), {"pid": pick_id})
+                log.info("voided_dnp_played_false", pick_id=pick_id, player=player_name,
                          game_date=str(game_date))
                 settled += 1
                 continue

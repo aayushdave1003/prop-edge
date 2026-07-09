@@ -224,10 +224,12 @@ _GATED_SETTLED_SQL = text("""
     FROM picks pk
     JOIN games g USING (game_id)
     JOIN prop_lines pl ON pl.line_id = pk.line_id
+    LEFT JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
     WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
       AND g.game_datetime IS NOT NULL
       AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
       AND pl.line_value IS NOT NULL         -- valid-line-only: a real line existed
+      AND COALESCE(pg.did_play, true)       -- played-only: a DNP is a void, not win/loss
 """)
 
 

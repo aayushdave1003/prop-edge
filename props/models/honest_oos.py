@@ -263,6 +263,16 @@ def load_prod_picks() -> list[dict]:
        survived gate 1 with a spurious 87.5% hit rate; removing them is a
        categorical validity rule, not a tuning choice. This moves 50.3% → ~47%,
        the final honest number. The INNER JOIN also drops any null-``line_id``.
+
+    3. PLAYED-ONLY (``COALESCE(player_games.did_play, true)``). A leg on a player
+       who did NOT play (a DNP / late scratch) is a non-event PrizePicks refunds,
+       not a settled prop — but the ledger graded it win/loss anyway (actual 0 vs
+       the line). 52 such DNP legs, and the asymmetry is the tell: 44 were cheap
+       under-WINS (0 < line) vs only 8 over-losses. Same validity principle as the
+       line gate — a leg with no real opportunity is not an observation. Voiding
+       them (symmetric) nudges the rec tier 47.1% → 47.3% and all-picks 49.4% →
+       48.7% (both still below breakeven). ``did_play IS NULL`` (no box row) is
+       KEPT — that's a data gap, not a confirmed DNP.
     """
     from sqlalchemy import text
     from props.utils.db import engine, db_banner
@@ -276,10 +286,12 @@ def load_prod_picks() -> list[dict]:
             FROM picks pk
             JOIN games g USING (game_id)
             JOIN prop_lines pl ON pl.line_id = pk.line_id
+            LEFT JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
             WHERE pk.leg_result IN ('win','loss') AND pk.model_prob IS NOT NULL
               AND g.game_datetime IS NOT NULL
               AND pk.picked_at < g.game_datetime   -- gate 1: forward-only, no lookahead
               AND pl.line_value IS NOT NULL         -- gate 2: a real prop line existed
+              AND COALESCE(pg.did_play, true)       -- gate 3: player played (a DNP is a void)
         """)).mappings().all()
     out = []
     for r in rows:

@@ -2,7 +2,8 @@
 #   72.0%  in-sample cutoff leak (backtest saw the test window)
 #   56.4%  cutoffs fixed, but still included 330 lookahead picks
 #   50.3%  forward-only, but still included 24 null-line (no-line) picks
-#   ~47%   forward-only + valid-line-only  <- the final honest number
+#   ~47%   forward-only + valid-line + played-only  <- the final honest number
+#          (played-only voids DNP legs — 44 cheap under-wins vs 8 losses)
 # The one bucket that looked real (mlb|hits|under 85.9%) was a single
 # backfill batch of already-played games. Not a forward edge.
 """Reproduce, from the prod DB, the five findings that killed the mlb|hits|under
