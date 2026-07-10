@@ -656,7 +656,43 @@ def fetch_performance() -> dict:
         "calibration": calib,
         "brier": brier,
         "by_market": by_market[:8],
+        "sleeper": _sleeper_roi(),
     }
+
+
+def _sleeper_roi() -> dict:
+    """Realized ROI of the +EV tier on the Sleeper (odds) book — the live track
+    record now that lines come from Sleeper. Separate from the PP win-rate metric
+    above because Sleeper posts per-pick odds: a pick is +EV iff model_prob*payout>1
+    and the honest measure is money made per unit, not win rate vs a flat breakeven.
+    Populates as picks settle. Fail-soft to empty."""
+    from props.models.odds_track import roi_summary
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT pk.model_prob,
+                       CASE WHEN pk.direction='over' THEN pl.over_payout ELSE pl.under_payout END AS payout,
+                       (pk.leg_result='win')::int AS win
+                FROM picks pk
+                JOIN games g USING (game_id)
+                JOIN prop_lines pl ON pl.line_id = pk.line_id
+                LEFT JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
+                WHERE pl.sportsbook='sleeper' AND pk.leg_result IN ('win','loss')
+                  AND pk.model_prob IS NOT NULL AND g.game_datetime IS NOT NULL
+                  AND pk.picked_at < g.game_datetime AND COALESCE(pg.did_play, true)
+                  AND CASE WHEN pk.direction='over' THEN pl.over_payout ELSE pl.under_payout END IS NOT NULL
+            """)).mappings().all()
+        picks = [{"model_prob": float(r["model_prob"]), "payout": float(r["payout"]),
+                  "win": int(r["win"])} for r in rows]
+    except Exception:
+        picks = []
+    s = roi_summary(picks)
+    verdict = ("—" if s["n"] == 0 else "profitable" if s["lo"] > 0
+               else "losing" if s["hi"] < 0 else "not proven")
+    return {"n_all": s["n_all"], "n": s["n"], "roi": round(s["roi"] * 100, 1),
+            "lo": round(s["lo"] * 100, 1), "hi": round(s["hi"] * 100, 1),
+            "hit": round(s["hit"] * 100, 1), "avg_payout": round(s["avg_payout"], 2),
+            "verdict": verdict}
 
 
 def fetch_soft_lines(league=None) -> list[dict]:

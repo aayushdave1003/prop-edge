@@ -1,6 +1,11 @@
-import type { Performance as Perf, Verdict } from "../types";
+import type { Performance as Perf, SleeperVerdict, Verdict } from "../types";
 
 const BE = 57.7; // per-leg 2-pick parlay breakeven (used for chart geometry)
+
+// ROI verdict colour: green = profitable (CI floor > 0), amber = not proven, red = losing.
+function roiColor(v: SleeperVerdict): string {
+  return v === "profitable" ? "#34D399" : v === "losing" ? "#F87171" : "#F5B544";
+}
 
 const VERDICT_TEXT: Record<Verdict, string> = {
   edge: "clears breakeven",
@@ -33,10 +38,48 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
   const recEdge = rec.verdict === "edge";
   const relation = recEdge ? "above" : rec.verdict === "not proven" ? "around" : "below";
 
+  const sl = perf.sleeper;
+
   return (
     <div className="space-y-4">
+      {/* LIVE track record — Sleeper (odds book), measured by realized ROI */}
+      <div className="rounded-[16px] border border-hair bg-panel p-[18px]">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="microlabel">Live track record · Sleeper (odds book)</div>
+          <div className="text-[11px] text-ink-4">realized ROI · +EV tier</div>
+        </div>
+        {sl.n_all === 0 ? (
+          <div className="py-2 text-[13px] leading-relaxed text-ink-3">
+            Tracking just started on Sleeper — the number populates as today's picks settle. A pick
+            is <b className="text-ink-2">+EV</b> when the model beats the book's price
+            (<span className="tnum">model_prob × payout &gt; 1</span>); the metric is realized ROI, so
+            it can only rise by genuinely beating the odds.
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <div>
+              <div className="tnum text-[34px] font-bold leading-none tracking-tight"
+                   style={{ color: roiColor(sl.verdict) }}>
+                {sl.roi >= 0 ? "+" : ""}{sl.roi}%
+              </div>
+              <div className="tnum mt-2 text-[11px] text-ink-3">
+                95% CI {sl.lo}–{sl.hi}% · {sl.n} +EV picks / {sl.n_all} settled
+              </div>
+            </div>
+            <div className="text-[12px] text-ink-2">
+              hit <b className="tnum">{sl.hit}%</b> @ avg <b className="tnum">{sl.avg_payout}×</b>{" "}
+              · <span className="font-semibold" style={{ color: roiColor(sl.verdict) }}>{sl.verdict}</span>
+              <div className="mt-1 text-[11px] text-ink-4">
+                money made per unit at the odds actually offered — never a phantom line
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="text-[13px] text-ink-2">
-        <b className="text-ink">Track record</b> · settled picks · paper / hypothetical
+        <b className="text-ink">PrizePicks history</b> <span className="text-ink-4">(frozen — source
+        Cloudflare-blocked)</span> · settled picks · paper / hypothetical
         <span className="ml-1 text-ink-4">· {perf.method}</span>
       </div>
 

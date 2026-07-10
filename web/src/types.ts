@@ -129,6 +129,21 @@ export interface Performance {
   calibration: { pred: number; actual: number; n: number }[];
   brier: number | null;
   by_market: { market: string; lean: Lean; pct: number; n: number; lo: number; hi: number }[];
+  sleeper: SleeperRoi;
+}
+
+// Live track record on Sleeper (an ODDS book): realized ROI of the +EV tier
+// (a pick is +EV iff model_prob*payout > 1). "up = good" here means money made.
+export type SleeperVerdict = "profitable" | "not proven" | "losing" | "—";
+export interface SleeperRoi {
+  n_all: number; // total settled Sleeper picks
+  n: number; // +EV tier size
+  roi: number; // realized ROI, %
+  lo: number; // 95% CI lower, %
+  hi: number; // 95% CI upper, %
+  hit: number; // hit rate, %
+  avg_payout: number; // avg multiplier of the +EV tier
+  verdict: SleeperVerdict;
 }
 
 // ── Soft Lines ───────────────────────────────────────────────────────────────
