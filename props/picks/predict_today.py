@@ -8,6 +8,7 @@ For each model in the registry:
   - Match to standard PrizePicks lines and compute edges
 """
 import json
+import os
 import pickle
 from datetime import date
 import requests
@@ -29,6 +30,10 @@ from props.picks.build_parlays import (
     build_correlated_parlays, print_parlay_recommendations,
     build_slate, print_slate,
 )
+
+# Which sportsbook's lines to score. Follows LINE_FEED (the LineFeed seam) so the
+# whole pipeline points at one book: 'prizepicks' (default) or 'sleeper'.
+ACTIVE_BOOK = os.getenv("LINE_FEED", "prizepicks")
 
 
 def load_model(entry):
@@ -288,19 +293,19 @@ def score_and_edge(model, meta, entry, feature_df):
         WITH latest AS (
             SELECT MAX(snapshot_at) AS max_snap
             FROM prop_lines
-            WHERE sportsbook='prizepicks' AND sport_code=:sport
+            WHERE sportsbook=:book AND sport_code=:sport
               AND stat_type=:stat AND line_variant='standard'
               AND player_id = ANY(:ids)
         )
         SELECT DISTINCT ON (pl.player_id, pl.line_value)
             pl.line_id, pl.player_id, pl.game_id, pl.line_value, pl.snapshot_at
         FROM prop_lines pl, latest
-        WHERE pl.sportsbook='prizepicks' AND pl.sport_code=:sport
+        WHERE pl.sportsbook=:book AND pl.sport_code=:sport
           AND pl.stat_type=:stat AND pl.line_variant='standard'
           AND pl.player_id = ANY(:ids)
           AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
         ORDER BY pl.player_id, pl.line_value, pl.snapshot_at DESC
-    """), engine, params={"sport": entry.sport_code, "stat": entry.stat_type, "ids": pitcher_ids})
+    """), engine, params={"sport": entry.sport_code, "stat": entry.stat_type, "ids": pitcher_ids, "book": ACTIVE_BOOK})
 
     if lines.empty:
         return pd.DataFrame()
@@ -377,13 +382,13 @@ def build_derived_player_feature_rows(sport_code: str, feature_keys: list, targe
         WITH latest AS (
             SELECT MAX(snapshot_at) AS max_snap
             FROM prop_lines
-            WHERE sportsbook='prizepicks' AND sport_code=:sport
+            WHERE sportsbook=:book AND sport_code=:sport
         )
         SELECT DISTINCT pl.player_id, pl.game_id
         FROM prop_lines pl, latest
-        WHERE pl.sportsbook='prizepicks' AND pl.sport_code=:sport
+        WHERE pl.sportsbook=:book AND pl.sport_code=:sport
           AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
-    """), engine, params={"sport": sport_code})
+    """), engine, params={"sport": sport_code, "book": ACTIVE_BOOK})
 
     if player_rows.empty:
         return pd.DataFrame()
@@ -465,19 +470,19 @@ def build_nba_combo_edges(nba_pred_by_player: dict) -> pd.DataFrame:
             WITH latest AS (
                 SELECT MAX(snapshot_at) AS max_snap
                 FROM prop_lines
-                WHERE sportsbook='prizepicks' AND sport_code='nba'
+                WHERE sportsbook=:book AND sport_code='nba'
                   AND stat_type=:stat AND line_variant='standard'
                   AND player_id = ANY(:ids)
             )
             SELECT DISTINCT ON (pl.player_id, pl.line_value)
                 pl.line_id, pl.player_id, pl.game_id, pl.line_value
             FROM prop_lines pl, latest
-            WHERE pl.sportsbook='prizepicks' AND pl.sport_code='nba'
+            WHERE pl.sportsbook=:book AND pl.sport_code='nba'
               AND pl.stat_type=:stat AND pl.line_variant='standard'
               AND pl.player_id = ANY(:ids)
               AND pl.snapshot_at >= latest.max_snap - INTERVAL '2 hours'
             ORDER BY pl.player_id, pl.line_value, pl.snapshot_at DESC
-        """), engine, params={"stat": combo_stat, "ids": player_ids})
+        """), engine, params={"stat": combo_stat, "ids": player_ids, "book": ACTIVE_BOOK})
 
         if lines.empty:
             continue
