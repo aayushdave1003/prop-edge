@@ -91,6 +91,20 @@ def _cut(sport, stat, direction, prob):
         return 0.57
 
 
+def _is_recommended(sport, stat, direction, prob, sportsbook=None,
+                    over_payout=None, under_payout=None) -> bool:
+    """Does the pick clear its book's bar? For an ODDS book (Sleeper) that's +EV
+    (model_prob*payout > 1 — the model beats the posted price); for PP's flat
+    pick'em it's the per-category confidence cutoff. The board's active book is
+    Sleeper, so most picks now route through the EV branch."""
+    if prob is None:
+        return False
+    if sportsbook == "sleeper":
+        payout = over_payout if direction == "over" else under_payout
+        return payout is not None and float(prob) * float(payout) > 1.0
+    return float(prob) >= _cut(sport, stat, direction, prob)
+
+
 def _likely_range(stat_key: str, mean: float) -> str:
     band = empirical_interval(stat_key, mean)
     if band is None:
@@ -119,6 +133,7 @@ _PICKS_SQL = """
         p.full_name AS player, p.photo_url AS photo_url,
         t.abbreviation AS team,
         pk.stat_type, pl.line_value AS line, pk.direction,
+        pl.over_payout, pl.under_payout, pl.sportsbook,
         pk.model_prob, pr.predicted_mean,
         COALESCE(pk.market_edge, pk.edge) AS edge_frac,
         pk.expected_value AS kelly, pk.line_movement, pk.line_open,
@@ -316,7 +331,8 @@ def fetch_picks(league=None, stats=None, direction=None, recommended_only=False)
         proj = float(r["predicted_mean"])
         prob = float(r["model_prob"]) if r["model_prob"] is not None else None
         direction_v = r["direction"]
-        recommended = prob is not None and prob >= _cut(r["sport_code"], r["stat_type"], direction_v, prob)
+        recommended = _is_recommended(r["sport_code"], r["stat_type"], direction_v, prob,
+                                      r["sportsbook"], r["over_payout"], r["under_payout"])
         if recommended_only and not recommended:
             continue
         actuals = form_map.get((r["player_id"], r["stat_type"]), [])
@@ -357,15 +373,18 @@ def fetch_picks(league=None, stats=None, direction=None, recommended_only=False)
 def _summary(conn) -> dict:
     rows = conn.execute(text(f"""
         SELECT pk.sport_code, pk.stat_type, pk.direction, pk.model_prob,
-               COALESCE(pk.market_edge, pk.edge) AS edge_frac
+               COALESCE(pk.market_edge, pk.edge) AS edge_frac,
+               pl.over_payout, pl.under_payout, pl.sportsbook
         FROM picks pk JOIN games g USING (game_id)
+        LEFT JOIN prop_lines pl ON pl.line_id = pk.line_id
         WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date = {TODAY}
           AND g.game_date = {TODAY}
           AND (pk.leg_result IS NULL OR pk.leg_result != 'void')
     """), _p()).mappings().all()
     today = len(rows)
-    rec = sum(1 for r in rows if r["model_prob"] is not None
-              and float(r["model_prob"]) >= _cut(r["sport_code"], r["stat_type"], r["direction"], r["model_prob"]))
+    rec = sum(1 for r in rows if _is_recommended(
+        r["sport_code"], r["stat_type"], r["direction"], r["model_prob"],
+        r["sportsbook"], r["over_payout"], r["under_payout"]))
     edges = [float(r["edge_frac"]) for r in rows if r["edge_frac"] is not None]
     avg_edge = round(sum(edges) / len(edges) * 100, 1) if edges else 0.0
 
@@ -394,7 +413,8 @@ def _top_slate(conn) -> dict | None:
     rows = conn.execute(text(f"""
         SELECT pk.pick_id, pk.player_id, pk.game_id, p.current_team_id AS team_id,
                g.sport_code, p.full_name AS player, pk.stat_type,
-               pl.line_value AS line, pk.direction, pk.model_prob
+               pl.line_value AS line, pk.direction, pk.model_prob,
+               pl.over_payout, pl.under_payout, pl.sportsbook
         FROM picks pk JOIN players p USING (player_id) JOIN games g USING (game_id)
         JOIN prop_lines pl ON pl.line_id = pk.line_id
         WHERE (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date = {TODAY}
@@ -403,7 +423,9 @@ def _top_slate(conn) -> dict | None:
         ORDER BY pk.model_prob DESC
     """), _p()).mappings().all()
     # recommended only, then diversify: one per player, never 2 from (game, direction)
-    recs = [r for r in rows if float(r["model_prob"]) >= _cut(r["sport_code"], r["stat_type"], r["direction"], r["model_prob"])]
+    recs = [r for r in rows if _is_recommended(
+        r["sport_code"], r["stat_type"], r["direction"], r["model_prob"],
+        r["sportsbook"], r["over_payout"], r["under_payout"])]
     chosen, seen_players, seen_keys = [], set(), set()
     for r in recs:
         if r["player_id"] in seen_players:
