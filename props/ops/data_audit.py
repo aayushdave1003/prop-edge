@@ -111,33 +111,30 @@ def run_checks() -> list[dict]:
             findings.append({"level": "warn", "name": "placeholder_picks",
                              "detail": f"{leak} settled pick(s) tied to a placeholder team"})
 
-        # ── late-scratch leakage into settled picks ──────────────────────────
-        # A pick that LOST because the player barely/never played is a scratch the
-        # injury feed + suppression missed. No-shows with no box-score row are
-        # already voided (zero P&L) and excluded here; the harmful case is a
-        # player who suited up, logged <5 min (or did_play=false), and lost the
-        # leg. Historically tiny (3 lost legs ever, all fringe role players on one
-        # date) — this is a regression guard: if suppression breaks, the rate
-        # climbs and the digest catches it. The predictive version (cross-check vs
-        # confirmed lineups) is data-gated: no lineup feed + a shallow ~1-month
-        # injury-snapshot history.
+        # ── DNP leaked into a loss (settle-path regression guard) ────────────
+        # A DNP / late scratch is a VOID (PrizePicks refunds it), and settle_picks
+        # now voids these at settlement — both the no-box-row case and the box-row-
+        # with did_play=false case. So this should be ZERO: if a did_play=false leg
+        # is ever graded 'loss' instead of void, the settle-path DNP guard has
+        # regressed and this catches it. We DROPPED the old "<5 min" heuristic — a
+        # player who logged a few minutes genuinely PLAYED, so that's a real
+        # limited-role loss PP would not void; flagging it as a "scratch"
+        # mislabeled real losses.
         scratch = c.execute(text("""
             SELECT p.full_name FROM picks pk
             JOIN player_games pg ON pg.player_id = pk.player_id AND pg.game_id = pk.game_id
-            JOIN games g ON g.game_id = pk.game_id
             JOIN players p ON p.player_id = pk.player_id
             WHERE pk.leg_result = 'loss'
               AND pk.settled_at >= NOW() - INTERVAL '14 days'
-              AND (pg.did_play = false
-                   OR (g.sport_code IN ('nba', 'wnba') AND COALESCE(pg.minutes_played, 0) < 5))
+              AND pg.did_play = false
         """)).scalars().all()
         if scratch:
-            findings.append({"level": "warn", "name": "scratch_picks",
-                             "detail": f"{len(scratch)} lost leg(s) on a no-show/late scratch in "
-                                       f"last 14d — {', '.join(scratch[:5])} (check suppression)"})
+            findings.append({"level": "warn", "name": "dnp_leak",
+                             "detail": f"{len(scratch)} DNP leg(s) graded LOSS instead of void in last "
+                                       f"14d — {', '.join(scratch[:5])} (settle-path DNP void regressed?)"})
         else:
             findings.append({"level": "ok", "name": "scratch_picks",
-                             "detail": "no lost legs on late scratches in last 14d"})
+                             "detail": "no DNP legs leaked into losses (they void at settle)"})
 
         # ── stale current_team_id vs most-recent game (informational) ────────
         stale = c.execute(text("""
