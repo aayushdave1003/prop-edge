@@ -122,6 +122,19 @@ def main():
     if settings.lines_paused:
         log.info("lines_paused", detail="LINES_PAUSED set — skipping pick generation")
         return
+    # Freshness guard (flag-independent safety net): NEVER build picks from stale
+    # lines. If the newest prop line is >30h old the scrape is down, and predict_main
+    # would match day-old lines to today's games — polluting the ledger + track
+    # record with a test against phantom lines. This lets tracking auto-RESUME the
+    # instant real lines return (from any source) and stay safe until then, so a
+    # rising number always reflects real picks vs real lines — never a mirage.
+    with engine.connect() as _c:
+        _newest_h = _c.execute(text(
+            "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(snapshot_at)))/3600 FROM prop_lines")).scalar()
+    if _newest_h is not None and float(_newest_h) > 30:
+        log.warning("lines_stale_skip", newest_line_hours=round(float(_newest_h), 1),
+                    detail="skipping pick generation — newest line >30h old (scrape down?)")
+        return
     run_migrations()
     # Predict reads are heavy and run against the small remote Railway instance,
     # which can transiently drop the connection under load (E10). Retry the whole
