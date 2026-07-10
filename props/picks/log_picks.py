@@ -114,6 +114,14 @@ def main():
 
     sport_by_model = {m.name: m.sport_code for m in MODELS}
     configure_logging()
+    # LINES_PAUSED: the scrape source is blocked, so prop_lines is stale. Without
+    # this guard predict_main happily matches DAYS-OLD lines to today's games and
+    # logs picks against phantom lines — polluting the ledger and the track record.
+    # A true pause means no new picks, not just no scrape. Settlement/backtest of
+    # existing picks still run downstream.
+    if settings.lines_paused:
+        log.info("lines_paused", detail="LINES_PAUSED set — skipping pick generation")
+        return
     run_migrations()
     # Predict reads are heavy and run against the small remote Railway instance,
     # which can transiently drop the connection under load (E10). Retry the whole

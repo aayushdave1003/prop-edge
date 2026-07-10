@@ -211,12 +211,17 @@ python -m props.picks.confirm_starters --date "$TODAY" || true
 # minutes budget. Only this secondary full-universe view goes ≤1 day stale on skip
 # days; the recommended picks (log_picks above) are generated daily regardless.
 # 10# forces base-10 so a zero-padded day-of-year (e.g. 007) isn't read as octal.
-if [ $(( 10#$(date +%j) % 2 )) -eq 0 ]; then
-    echo "--- Score full prop universe ---"
-    python -m props.picks.score_universe --date "$TODAY" || echo "WARN: score_universe failed"
-else
-    echo "--- Score full prop universe: skipped (every-other-day; scored_props kept from last run) ---"
-fi
+case "$(printf '%s' "${LINES_PAUSED:-}" | tr '[:upper:]' '[:lower:]')" in
+  1|true|yes)
+    echo "--- Score full prop universe: skipped (lines paused — no fresh lines, saves the ~28min hog) ---" ;;
+  *)
+    if [ $(( 10#$(date +%j) % 2 )) -eq 0 ]; then
+        echo "--- Score full prop universe ---"
+        python -m props.picks.score_universe --date "$TODAY" || echo "WARN: score_universe failed"
+    else
+        echo "--- Score full prop universe: skipped (every-other-day; scored_props kept from last run) ---"
+    fi ;;
+esac
 
 # ── 7. Second settle pass ────────────────────────────────────────────────────
 echo "--- Second settle pass ---"
