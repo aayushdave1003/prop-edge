@@ -36,6 +36,9 @@ jobs:
       # Lines paused (scrape source blocked): set repo variable LINES_PAUSED=1 to
       # skip the scrape gracefully + suppress the expected empty-slate alerts.
       LINES_PAUSED: ${{ vars.LINES_PAUSED || '0' }}
+      # Active line source (book): 'sleeper' (open API) or 'prizepicks'. One switch
+      # for ingest + predict — see props/ingest/line_feed.py.
+      LINE_FEED: ${{ vars.LINE_FEED || 'prizepicks' }}
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}

@@ -1,17 +1,14 @@
-"""Line-feed seam — isolates WHERE prop lines come from behind one interface.
+"""Line-feed seam — isolates WHERE prop lines come from behind one interface, and
+dispatches the ingest to the configured book. One env var swaps the whole pipeline:
 
-The default source is a scrape of PrizePicks' public projections endpoint. That
-scrape is the single biggest legal/operational risk in prop-edge (unofficial
-access, and a residential proxy to dodge datacenter blocks — see PROVENANCE.md).
-This module quarantines that risk behind a ``LineFeed`` seam so the fetch can be
-swapped for a licensed/official feed by changing one env var, with no pipeline
-rewrite:
+    LINE_FEED=prizepicks   ->  PrizePicksFeed  (unofficial scrape — Cloudflare-walled 2026-07)
+    LINE_FEED=sleeper      ->  SleeperFeed     (open public API — the live source)
+    LINE_FEED=licensed     ->  LicensedFeed    (stub; wire a paid feed)
 
-    LINE_FEED=prizepicks   (default)  ->  PrizePicksFeed  (unofficial scrape)
-    LINE_FEED=licensed                ->  LicensedFeed    (stub; wire a real feed)
-
-Only the FETCH — the risky network/ToS boundary — sits behind the seam. Parsing
-and landing into ``prop_lines`` is prop-edge's own logic and stays put.
+Each feed owns its full ``run()`` (fetch + parse + land into prop_lines). Run the
+active one with ``python -m props.ingest.line_feed`` — that's what the daily/refresh
+pipeline calls, so pointing at a different book is one env change, no code edits.
+``fetch_raw()`` (raw payload) is kept for the PP path + diagnostics.
 """
 from __future__ import annotations
 
@@ -22,48 +19,72 @@ from props.utils.logging import log
 
 
 class LineFeed(Protocol):
-    """A source of raw prop-line projections. ``fetch_raw`` returns the payload
-    shape the parser expects: ``{"data": [...], "included": [...]}``."""
+    """A source of prop lines. ``run()`` does the full ingest (fetch → land)."""
 
     source_name: str
 
     def fetch_raw(self) -> dict: ...
+    def run(self) -> None: ...
 
 
 class PrizePicksFeed:
-    """The current source: PrizePicks' public projections endpoint, fetched
-    through a residential proxy when configured. UNOFFICIAL — see PROVENANCE.md
-    for the ToS / legal / fragility risk. Isolated here so it can be replaced
-    without touching the ingest pipeline."""
+    """PrizePicks' public projections endpoint via a residential proxy. UNOFFICIAL
+    and Cloudflare-walled since 2026-07-07 (see PROVENANCE.md) — kept for when/if
+    the block lifts, but not the live source."""
 
     source_name = "prizepicks_scrape"
 
     def fetch_raw(self) -> dict:
-        # Imported lazily to avoid a circular import (prizepicks imports this).
-        from props.ingest.prizepicks import fetch_projections
+        from props.ingest.prizepicks import fetch_projections   # lazy: avoids a cycle
         return fetch_projections()
+
+    def run(self) -> None:
+        from props.ingest.prizepicks import run
+        run()
+
+
+class SleeperFeed:
+    """Sleeper Picks' public ``/lines/available`` API — open (no auth, no Cloudflare),
+    the live line source after PP + Underdog were both CF-walled. A different book
+    (per-pick odds), so tracking on it is a new track record measured by ROI
+    (props.models.odds_track), not PP's flat win-rate. See props/ingest/sleeper.py."""
+
+    source_name = "sleeper"
+
+    def fetch_raw(self) -> dict:
+        from props.ingest.sleeper import _get
+        return {"data": _get("/lines/available")}
+
+    def run(self) -> None:
+        from props.ingest.sleeper import run
+        run()
 
 
 class LicensedFeed:
-    """Placeholder for an official / licensed line feed (a data partnership or a
-    paid, ToS-clean API). Wire the real client here and set ``LINE_FEED=licensed``
-    to swap the whole pipeline over with zero downstream changes — it must return
-    the same shape as ``PrizePicksFeed.fetch_raw()``."""
+    """Placeholder for an official / licensed feed (a data partnership or paid API)."""
 
     source_name = "licensed_feed"
 
     def fetch_raw(self) -> dict:
-        raise NotImplementedError(
-            "No licensed line feed is wired yet. Implement a ToS-clean client "
-            "here and set LINE_FEED=licensed. See PROVENANCE.md."
-        )
+        raise NotImplementedError("No licensed feed wired. See PROVENANCE.md.")
+
+    def run(self) -> None:
+        raise NotImplementedError("No licensed feed wired. See PROVENANCE.md.")
+
+
+_FEEDS = {"prizepicks": PrizePicksFeed, "sleeper": SleeperFeed, "licensed": LicensedFeed}
 
 
 def get_line_feed() -> LineFeed:
     """Return the configured line feed (env ``LINE_FEED``, default prizepicks)."""
     name = os.getenv("LINE_FEED", "prizepicks").strip().lower()
-    if name == "licensed":
-        return LicensedFeed()
-    if name != "prizepicks":
+    feed = _FEEDS.get(name)
+    if feed is None:
         log.warning("unknown_line_feed", requested=name, using="prizepicks")
-    return PrizePicksFeed()
+        feed = PrizePicksFeed
+    return feed()
+
+
+if __name__ == "__main__":
+    # Ingest dispatcher: run the active book's full ingest. The pipeline calls this.
+    get_line_feed().run()

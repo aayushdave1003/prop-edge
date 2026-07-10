@@ -176,10 +176,12 @@ python -m props.picks.predict_game --sport wnba --date "$TODAY" || echo "WARN: w
 # fully self-contained on GitHub Actions. Without a proxy this is skipped and
 # the Mac cron (scripts/scrape_lines.sh) owns scraping; ingest_monitor flags
 # stale lines if the Mac is asleep. Injuries use ESPN (datacenter-friendly).
-if [ -n "${PRIZEPICKS_PROXY:-}" ]; then
-    echo "--- PrizePicks lines (via proxy) ---"
-    python -m props.ingest.prizepicks || echo "WARN: prizepicks scrape failed"
-fi
+# Line ingest for the ACTIVE book (LINE_FEED: sleeper by default now / prizepicks).
+# The dispatcher runs the right feed — Sleeper is an open API (no proxy); the PP
+# path uses PRIZEPICKS_PROXY internally when set. log_picks' freshness guard skips
+# pick-gen if this leaves lines stale, so a failed ingest can't pollute the ledger.
+echo "--- Line ingest (active book) ---"
+python -m props.ingest.line_feed || echo "WARN: line ingest failed"
 echo "--- Injuries ---"
 python -m props.ingest.injuries
 
