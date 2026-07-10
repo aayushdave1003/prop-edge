@@ -195,7 +195,14 @@ python -m props.picks.settle_picks
 # separate predict_today pass — that just doubled the load on the small Railway
 # instance and the drop risk (E10).
 echo "--- Generate and log today's picks ---"
-python -m props.picks.log_picks --date "$TODAY"
+# Retry once on a transient failure (the small Railway instance occasionally drops
+# the connection mid-write under load). Picks + predictions are idempotent
+# (ON CONFLICT), so a clean re-run reliably completes (E10) without duplicating.
+python -m props.picks.log_picks --date "$TODAY" || {
+    echo "log_picks failed — retrying once in 20s (transient DB drop?)"
+    sleep 20
+    python -m props.picks.log_picks --date "$TODAY" || echo "WARN: log_picks failed twice"
+}
 
 echo "--- Confirm MLB starters (morning check) ---"
 python -m props.picks.confirm_starters --date "$TODAY" || true
