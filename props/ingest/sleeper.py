@@ -110,9 +110,10 @@ def run(dry_run: bool = False) -> None:
             if not stat:
                 skip["unmodeled_stat"] += 1
                 continue
-            opt = (e.get("options") or [{}])[0]
-            line_val = opt.get("outcome_value")
-            if line_val is None:
+            opts = e.get("options") or []
+            over = next((o for o in opts if o.get("outcome") == "over"), None)
+            under = next((o for o in opts if o.get("outcome") == "under"), None)
+            if not over or over.get("outcome_value") is None:
                 skip["no_line_value"] += 1
                 continue
             sid = str(e.get("subject_id"))
@@ -130,8 +131,14 @@ def run(dry_run: bool = False) -> None:
             if key in seen:
                 continue
             seen.add(key)
+
+            def _mult(o):
+                m = (o or {}).get("payout_multiplier")
+                return float(m) if m is not None else None
             rows.append({"sc": sp, "pid": pid, "gid": gid, "stat": stat,
-                         "line": float(line_val), "variant": "standard", "ts": started})
+                         "line": float(over["outcome_value"]), "variant": "standard",
+                         "over_payout": _mult(over), "under_payout": _mult(under),
+                         "ts": started})
 
         print(f"Sleeper lines: {len(lines)} fetched")
         print(f"  landable prop_lines (player+game+stat resolved): {len(rows)}")
@@ -152,9 +159,10 @@ def run(dry_run: bool = False) -> None:
         if rows:
             session.execute(text("""
                 INSERT INTO prop_lines (
-                    sportsbook, sport_code, player_id, game_id, stat_type,
-                    line_value, line_variant, is_pickem, snapshot_at)
-                VALUES ('sleeper', :sc, :pid, :gid, :stat, :line, :variant, TRUE, :ts)
+                    sportsbook, sport_code, player_id, game_id, stat_type, line_value,
+                    over_payout, under_payout, line_variant, is_pickem, snapshot_at)
+                VALUES ('sleeper', :sc, :pid, :gid, :stat, :line,
+                        :over_payout, :under_payout, :variant, TRUE, :ts)
             """), rows)
         session.execute(text("""
             UPDATE ingestion_runs SET completed_at=NOW(), rows_inserted=:n, status='success'
