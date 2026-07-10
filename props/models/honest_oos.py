@@ -292,6 +292,7 @@ def load_prod_picks() -> list[dict]:
               AND pk.picked_at < g.game_datetime   -- gate 1: forward-only, no lookahead
               AND pl.line_value IS NOT NULL         -- gate 2: a real prop line existed
               AND COALESCE(pg.did_play, true)       -- gate 3: player played (a DNP is a void)
+              AND pl.sportsbook = 'prizepicks'      -- PP-only: Sleeper (odds book) is tracked by ROI in odds_track
         """)).mappings().all()
     out = []
     for r in rows:

@@ -91,6 +91,7 @@ def load_settled(session):
           AND pk.picked_at < g.game_datetime   -- forward-only: no lookahead
           AND pl.line_value IS NOT NULL         -- valid-line-only: a real line existed
           AND COALESCE(pg.did_play, true)       -- played-only: a DNP is a void, not win/loss
+          AND pl.sportsbook = 'prizepicks'      -- PP-only; Sleeper -> odds_track ROI
         ORDER BY decided
     """)).mappings().all()
     return [{"sport": r["sport"], "stat_type": r["stat_type"],
