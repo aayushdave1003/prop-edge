@@ -32,8 +32,10 @@ def _rows(session, days_back: int):
                g.sport_code, pk.stat_type, pk.direction,
                pk.model_prob, pk.leg_result, pl.full_name AS player
         FROM picks pk JOIN games g USING (game_id)
+        JOIN prop_lines pline ON pline.line_id = pk.line_id
         LEFT JOIN players pl ON pl.player_id = pk.player_id
         WHERE pk.leg_result IN ('win', 'loss', 'push')
+          AND pline.sportsbook = 'prizepicks'   -- PP-only (flat breakeven); Sleeper ROI is odds_track
           AND (pk.picked_at AT TIME ZONE 'America/Los_Angeles')::date
               >= (NOW() AT TIME ZONE 'America/Los_Angeles')::date - make_interval(days => :d)
     """), {"d": days_back}).all()
@@ -207,7 +209,7 @@ def build_payload(rows, target_date, today=None):
             f"{'✅' if ok else '🔻'}\nOverall: {dw}–{dl} ({dw/(dw+dl):.0%})"
             f"{dd_line}{weak_line}")
     return {"embeds": [{
-        "title": f"📊 prop-edge scorecard — {target_date:%a %b %-d}",
+        "title": f"📊 prop-edge — PrizePicks scorecard (frozen baseline) — {target_date:%a %b %-d}",
         "description": desc,
         "color": 0x2ecc71 if ok else 0xe67e22,
         "fields": fields,
