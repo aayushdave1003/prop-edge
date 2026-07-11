@@ -263,13 +263,18 @@ if [ -n "${ODDS_API_KEY:-}" ]; then
     python -m props.picks.soft_lines || true
 fi
 
-# ── 7e. Daily walk-forward backtest ──────────────────────────────────────────
-# Replays the recommended-tier strategy over a rolling window of SETTLED picks
-# (not the frozen market_odds the old weekly backtest needed): rec-tier W/L vs
-# breakeven + trend, model calibration/drift, and a counterfactual cutoff sweep
-# that checks the auto-tuner. Persists a daily snapshot + posts a Discord digest.
-echo "--- Daily backtest ---"
+# ── 7e. Daily walk-forward backtest (PrizePicks — FROZEN baseline) ───────────
+# The PP recommended-tier walk-forward. PP's scrape is Cloudflare-blocked so this
+# is a frozen historical baseline now (no new PP picks); the LIVE number is the
+# Sleeper ROI below.
+echo "--- Daily backtest (PP frozen baseline) ---"
 python -m props.picks.daily_backtest --window 45 || true
+
+# ── 7f. Sleeper ROI digest (the LIVE track record on the active odds book) ────
+# Realized ROI of the +EV tier (model_prob*payout>1) on Sleeper — the number that
+# actually moves now. Honest per-pick-odds measure, not win-rate vs a flat breakeven.
+echo "--- Sleeper ROI digest ---"
+python -m props.models.odds_track --digest || true
 
 # ── 8. Weekly model-vs-market backtest (Mondays) ─────────────────────────────
 # This one needs the paid odds feed (market_odds); it only has signal while that

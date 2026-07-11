@@ -330,7 +330,7 @@ def build_payload(run_date, window_days, wf, cal, sweep):
                        "inline": False})
 
     return {"embeds": [{
-        "title": f"🧪 prop-edge daily backtest — {run_date:%a %b %-d}",
+        "title": f"🧪 prop-edge — PrizePicks (frozen baseline) — {run_date:%a %b %-d}",
         "description": desc,
         "color": 0x3498db if ok else 0xe67e22,
         "fields": fields,

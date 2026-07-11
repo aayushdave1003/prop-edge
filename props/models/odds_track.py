@@ -136,11 +136,47 @@ def run_prod() -> int:
     return 0
 
 
+def discord_digest() -> int:
+    """Post the live Sleeper ROI to Discord (the nightly number that actually
+    moves, vs the frozen PrizePicks baseline). No-op if no webhook configured."""
+    import requests
+    from props.utils.config import settings
+    if not settings.discord_webhook_url:
+        return 0
+    picks = load_sleeper_picks()
+    s = roi_summary(picks)
+    if s["n_all"] == 0:
+        desc = ("Tracking just started on Sleeper — realized ROI of the +EV tier "
+                "populates as tonight's picks settle.")
+        color = 0x9A9AA8
+    else:
+        color = 0x2ECC71 if s["lo"] > 0 else 0xE74C3C if s["hi"] < 0 else 0xF1C40F
+        desc = (f"**+EV tier: ROI {s['roi']:+.1%}**  [{s['lo']:+.1%}, {s['hi']:+.1%}]  "
+                f"over {s['n']} picks (of {s['n_all']} settled)\n"
+                f"hit {s['hit']:.1%} @ avg {s['avg_payout']:.2f}x · {_verdict(s)}")
+    payload = {"embeds": [{
+        "title": "🎯 prop-edge — Sleeper ROI (live track record)",
+        "description": desc, "color": color,
+        "footer": {"text": "+EV iff model_prob·payout>1 · ROI = money made per unit vs the book's odds · paper"},
+    }]}
+    try:
+        r = requests.post(settings.discord_webhook_url, json=payload, timeout=10)
+        print("sleeper_digest_sent", r.status_code)
+    except Exception as e:
+        print("sleeper_digest_failed", str(e)[:100])
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--digest", action="store_true", help="post the ROI to Discord")
     args = ap.parse_args()
-    return selftest() if args.selftest else run_prod()
+    if args.selftest:
+        return selftest()
+    if args.digest:
+        return discord_digest()
+    return run_prod()
 
 
 if __name__ == "__main__":
