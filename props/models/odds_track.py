@@ -7,14 +7,19 @@ REAL per-pick odds (a multiplier per side, e.g. over 1.54x / under 2.10x), which
 range 1.15x-3.53x — so a flat breakeven is meaningless. The honest measure is EV
 against the actual price:
 
-    a pick is +EV  iff  model_prob * payout > 1   (equivalently model_prob > 1/payout)
+    a pick is +EV  iff  calibrate(model_prob) * payout > 1   (calibrate = the live
+        Platt fit; raw model_prob runs ~12pts over-confident, so raw prob*payout>1
+        floods the tier with false-+EV picks that lose — the -23% ROI lesson)
     realized return per pick = payout-1 if it wins, else -1
     ROI = mean realized return over the +EV picks
 
-This is INHERENTLY leak-free: the +EV decision uses only the model prob and the
-odds available at pick time — nothing is fit on outcomes, so there's no cutoff to
-select and no way to peek. ROI>0 (with its CI floor above 0) means the model beat
-the book's price — the only thing that actually makes money.
+This stays forward-safe: the +EV decision uses the odds available at pick time and
+a calibration fit only on picks that settled BEFORE it (self-tuning, like the
+per-category cutoffs) — a pick's own outcome never feeds its own decision, so
+there's no cutoff selected on the scored window. ROI>0 (CI floor above 0) means
+the model beat the book's price after honest calibration — the only thing that
+actually makes money. (calibrate() lives in the loader; pick_ev stays a pure
+formula so the synthetic self-test can pass it known-true probs.)
 """
 from __future__ import annotations
 
@@ -46,9 +51,18 @@ def roi_summary(picks: list[dict]) -> dict:
             "avg_payout": sum(float(p["payout"]) for p in ev_pos) / n}
 
 
+# Below this many settled +EV picks the normal-approx CI isn't trustworthy (and
+# on an all-win/all-loss run its width collapses to a false-certain 0), so we
+# refuse a directional verdict and say "building" — symmetric, suppresses a
+# spurious PROFITABLE just as readily as a spurious losing.
+MIN_TIER_N = 30
+
+
 def _verdict(s: dict) -> str:
     if s["n"] == 0:
         return "—"
+    if s["n"] < MIN_TIER_N:
+        return f"building ({s['n']}/{MIN_TIER_N} +EV picks)"
     if s["lo"] > 0:
         return "PROFITABLE (95% CI above 0)"
     if s["hi"] < 0:
@@ -119,8 +133,13 @@ def load_sleeper_picks() -> list[dict]:
               AND CASE WHEN pk.direction='over' THEN pl.over_payout ELSE pl.under_payout END IS NOT NULL
               AND COALESCE(pgame.did_play, true)
         """)).mappings().all()
+    # Judge +EV on the CALIBRATED prob — raw model_prob runs ~12pts over-confident,
+    # so raw prob*payout>1 floods the tier with false-+EV picks (the -23% lesson).
+    # Same live Platt fit the board's recommend flag now uses; selftest feeds true
+    # probs straight to roi_summary, so it stays unaffected.
+    from props.models.prob_calibration import calibrate
     return [{"sport": r["sport"], "stat_type": r["stat_type"], "direction": r["direction"],
-             "model_prob": float(r["model_prob"]), "payout": float(r["payout"]),
+             "model_prob": calibrate(float(r["model_prob"])), "payout": float(r["payout"]),
              "win": int(r["win"])} for r in rows]
 
 
@@ -128,9 +147,13 @@ def run_prod() -> int:
     picks = load_sleeper_picks()
     s = roi_summary(picks)
     print(f"\nSleeper settled picks: {len(picks)}  |  +EV tier: {s['n']}")
-    if s["n"]:
+    if s["n"] >= MIN_TIER_N:
         print(f"  realized ROI: {s['roi']:+.1%}  [{s['lo']:+.1%}, {s['hi']:+.1%}]  "
               f"(hit {s['hit']:.1%} @ avg {s['avg_payout']:.2f}x)  →  {_verdict(s)}")
+    elif s["n"]:
+        # too few to trust an ROI — show accumulation, not a phantom ±100%
+        print(f"  {_verdict(s)} — hit {s['hit']:.1%} @ avg {s['avg_payout']:.2f}x so far "
+              f"(ROI held back until the tier reaches {MIN_TIER_N})")
     else:
         print("  no settled +EV Sleeper picks yet — tracking begins as picks settle.")
     return 0
@@ -149,6 +172,13 @@ def discord_digest() -> int:
         desc = ("Tracking just started on Sleeper — realized ROI of the +EV tier "
                 "populates as tonight's picks settle.")
         color = 0x9A9AA8
+    elif s["n"] < MIN_TIER_N:
+        # too few settled +EV picks to trust an ROI (a 3-pick run can read ±100%) —
+        # show the accumulation instead of broadcasting a phantom number.
+        color = 0x9A9AA8
+        desc = (f"**Building** — {s['n']}/{MIN_TIER_N} settled +EV picks "
+                f"(of {s['n_all']} settled overall). Too few for an honest ROI verdict; "
+                f"the number populates once the +EV tier fills.")
     else:
         color = 0x2ECC71 if s["lo"] > 0 else 0xE74C3C if s["hi"] < 0 else 0xF1C40F
         desc = (f"**+EV tier: ROI {s['roi']:+.1%}**  [{s['lo']:+.1%}, {s['hi']:+.1%}]  "
@@ -157,7 +187,7 @@ def discord_digest() -> int:
     payload = {"embeds": [{
         "title": "🎯 prop-edge — Sleeper ROI (live track record)",
         "description": desc, "color": color,
-        "footer": {"text": "+EV iff model_prob·payout>1 · ROI = money made per unit vs the book's odds · paper"},
+        "footer": {"text": "+EV iff calibrated_prob·payout>1 · ROI = money made per unit vs the book's odds · paper"},
     }]}
     try:
         r = requests.post(settings.discord_webhook_url, json=payload, timeout=10)

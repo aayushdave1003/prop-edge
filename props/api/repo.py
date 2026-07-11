@@ -101,7 +101,13 @@ def _is_recommended(sport, stat, direction, prob, sportsbook=None,
         return False
     if sportsbook == "sleeper":
         payout = over_payout if direction == "over" else under_payout
-        return payout is not None and float(prob) * float(payout) > 1.0
+        if payout is None:
+            return False
+        # +EV is a magnitude test (unlike PP's monotonic cutoff), so it must use
+        # the CALIBRATED prob: raw model_prob runs ~12pts over-confident, and raw
+        # prob*payout>1 floods the tier with false-+EV picks (the -23% ROI lesson).
+        # calibrate() (module-level, with identity fallback) is the live Platt fit.
+        return calibrate(float(prob)) * float(payout) > 1.0
     return float(prob) >= _cut(sport, stat, direction, prob)
 
 
@@ -685,10 +691,10 @@ def fetch_performance() -> dict:
 def _sleeper_roi() -> dict:
     """Realized ROI of the +EV tier on the Sleeper (odds) book — the live track
     record now that lines come from Sleeper. Separate from the PP win-rate metric
-    above because Sleeper posts per-pick odds: a pick is +EV iff model_prob*payout>1
-    and the honest measure is money made per unit, not win rate vs a flat breakeven.
-    Populates as picks settle. Fail-soft to empty."""
-    from props.models.odds_track import roi_summary
+    above because Sleeper posts per-pick odds: a pick is +EV iff calibrate(prob)*payout>1
+    (raw prob runs over-confident) and the honest measure is money made per unit, not
+    win rate vs a flat breakeven. Populates as the +EV tier fills. Fail-soft to empty."""
+    from props.models.odds_track import roi_summary, MIN_TIER_N
     try:
         with engine.connect() as conn:
             rows = conn.execute(text("""
@@ -704,12 +710,16 @@ def _sleeper_roi() -> dict:
                   AND pk.picked_at < g.game_datetime AND COALESCE(pg.did_play, true)
                   AND CASE WHEN pk.direction='over' THEN pl.over_payout ELSE pl.under_payout END IS NOT NULL
             """)).mappings().all()
-        picks = [{"model_prob": float(r["model_prob"]), "payout": float(r["payout"]),
+        # calibrate: the +EV tier must be judged on the honest prob — same as the
+        # board's recommend flag and the odds_track digest (raw runs ~12pts hot).
+        picks = [{"model_prob": calibrate(float(r["model_prob"])), "payout": float(r["payout"]),
                   "win": int(r["win"])} for r in rows]
     except Exception:
         picks = []
     s = roi_summary(picks)
-    verdict = ("—" if s["n"] == 0 else "profitable" if s["lo"] > 0
+    verdict = ("—" if s["n"] == 0
+               else "building" if s["n"] < MIN_TIER_N
+               else "profitable" if s["lo"] > 0
                else "losing" if s["hi"] < 0 else "not proven")
     return {"n_all": s["n_all"], "n": s["n"], "roi": round(s["roi"] * 100, 1),
             "lo": round(s["lo"] * 100, 1), "hi": round(s["hi"] * 100, 1),

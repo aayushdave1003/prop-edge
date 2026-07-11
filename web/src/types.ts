@@ -133,8 +133,9 @@ export interface Performance {
 }
 
 // Live track record on Sleeper (an ODDS book): realized ROI of the +EV tier
-// (a pick is +EV iff model_prob*payout > 1). "up = good" here means money made.
-export type SleeperVerdict = "profitable" | "not proven" | "losing" | "—";
+// (a pick is +EV iff CALIBRATED prob × payout > 1). "up = good" here means money
+// made. "building" = fewer than MIN_TIER_N settled +EV picks, so no verdict yet.
+export type SleeperVerdict = "profitable" | "not proven" | "losing" | "building" | "—";
 export interface SleeperRoi {
   n_all: number; // total settled Sleeper picks
   n: number; // +EV tier size

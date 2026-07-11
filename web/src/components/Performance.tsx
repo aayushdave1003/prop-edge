@@ -1,8 +1,9 @@
 import type { Performance as Perf, SleeperVerdict, Verdict } from "../types";
 
 const BE = 57.7; // per-leg 2-pick parlay breakeven (used for chart geometry)
+const SLEEPER_MIN_TIER = 30; // mirrors odds_track.MIN_TIER_N — below this, no ROI verdict
 
-// ROI verdict colour: green = profitable (CI floor > 0), amber = not proven, red = losing.
+// ROI verdict colour: green = profitable (CI floor > 0), amber = not proven / building, red = losing.
 function roiColor(v: SleeperVerdict): string {
   return v === "profitable" ? "#34D399" : v === "losing" ? "#F87171" : "#F5B544";
 }
@@ -52,8 +53,20 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
           <div className="py-2 text-[13px] leading-relaxed text-ink-3">
             Tracking just started on Sleeper — the number populates as today's picks settle. A pick
             is <b className="text-ink-2">+EV</b> when the model beats the book's price
-            (<span className="tnum">model_prob × payout &gt; 1</span>); the metric is realized ROI, so
+            (<span className="tnum">calibrated prob × payout &gt; 1</span>); the metric is realized ROI, so
             it can only rise by genuinely beating the odds.
+          </div>
+        ) : sl.verdict === "building" ? (
+          <div className="py-1">
+            <div className="tnum text-[26px] font-bold leading-none text-ink-2">
+              {sl.n} / {SLEEPER_MIN_TIER} <span className="text-[14px] font-semibold text-ink-3">+EV picks</span>
+            </div>
+            <div className="mt-2 text-[12.5px] leading-relaxed text-ink-3">
+              The model only clears the book's price
+              (<span className="tnum">calibrated prob × payout &gt; 1</span>) on a handful of picks so far —
+              too few for an honest ROI verdict (a 3-pick run can read ±100%). The number populates once the
+              +EV tier reaches {SLEEPER_MIN_TIER}. <span className="tnum">{sl.n_all}</span> settled overall.
+            </div>
           </div>
         ) : (
           <div className="flex flex-wrap items-end gap-x-6 gap-y-2">

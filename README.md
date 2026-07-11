@@ -25,7 +25,7 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 ## Results
 
-**Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `model_prob × payout > 1`, and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). It's a *new* track record that populates as picks settle; see [`props/models/odds_track.py`](props/models/odds_track.py).
+**Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `calibrated_prob × payout > 1`. The probability is Platt-calibrated before the EV test (raw model confidence runs ~12pts over-confident, which otherwise manufactures phantom edges that lose money), and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). It's a *new* track record that populates as the +EV tier fills; see [`props/models/odds_track.py`](props/models/odds_track.py).
 
 ### PrizePicks — frozen history (audited)
 
