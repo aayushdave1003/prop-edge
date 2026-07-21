@@ -201,7 +201,14 @@ echo "--- Generate and log today's picks ---"
 python -m props.picks.log_picks --date "$TODAY" || {
     echo "log_picks failed — retrying once in 20s (transient DB drop?)"
     sleep 20
-    python -m props.picks.log_picks --date "$TODAY" || echo "WARN: log_picks failed twice"
+    # A genuine double-failure is a REAL failure (pick-gen produced nothing) — the
+    # ERR trap can't see it because `||` handles it here, so count it explicitly.
+    # Otherwise the heartbeat reports "picks=0, step_failures=0", which reads as an
+    # empty slate rather than the crash it is (07-19: transient Railway DB window).
+    python -m props.picks.log_picks --date "$TODAY" || {
+        echo "WARN: log_picks failed twice"
+        FAILURES=$((FAILURES + 1))
+    }
 }
 
 echo "--- Confirm MLB starters (morning check) ---"
