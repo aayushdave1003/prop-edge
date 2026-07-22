@@ -2,7 +2,7 @@
 
 A self-running ML pipeline that predicts player-prop outcomes across major US sports, prices them against PrizePicks lines, and **runs, settles, monitors, and self-corrects entirely on its own**.
 
-Research project. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
+An **actively-developed** research project — the current focus is a model-independent **market-arbitrage layer**, in live forward-testing. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
 
 📊 Live dashboard: **[prop-edge-production-1b02.up.railway.app](https://prop-edge-production-1b02.up.railway.app)**
 
@@ -12,7 +12,7 @@ Research project. Paper-tracking only. Not financial advice, not a betting produ
 
 Every morning, for MLB, NBA, WNBA, and NHL, the cloud pipeline:
 
-1. **Scrapes** fresh PrizePicks lines (through a residential proxy so it runs on cloud IPs), plus schedules, box scores, injuries, and probable starters
+1. **Ingests** fresh prop lines through a pluggable [`LineFeed`](props/ingest/line_feed.py) seam (currently Sleeper's open API; PrizePicks via residential proxy when reachable), plus schedules, box scores, injuries, and probable starters
 2. **Builds** 110–137 lookahead-safe features per player-game (rolling form, matchup quality, platoon splits, basketball IQ, opponent defense, rest, park factors, …)
 3. **Predicts** expected outcomes with LightGBM Poisson models (binary classifiers for sparse targets like home runs) and converts to over/under probabilities via the Poisson CDF
 4. **Logs picks** with model edge, suppressing injured/out players, bench/DNP risks, and stale games at the source
@@ -27,6 +27,8 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 **Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `calibrated_prob × payout > 1`. The probability is Platt-calibrated before the EV test (raw model confidence runs ~12pts over-confident, which otherwise manufactures phantom edges that lose money), and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). It's a *new* track record that populates as the +EV tier fills; see [`props/models/odds_track.py`](props/models/odds_track.py).
 
+**Active focus: a market-arbitrage layer.** Model-*independent* — [`sleeper_arb`](props/picks/sleeper_arb.py) flags Sleeper lines the **sharp** market (DK/FD no-vig consensus) prices as +EV (`sharp_prob × payout > 1`), with the sharp read captured **pre-game** so it's leak-free. A rigorous clean backtest (odds re-snapshotted at each game's start−2h to eliminate a day-game leak that had inflated a naive first pass) showed an early positive signal — **+6.9% vs a −11.7% bet-everything baseline** — now under **live forward-testing**, with the running ROI gated so it never over-claims on a thin sample.
+
 ### PrizePicks — frozen history (audited)
 
 The source below is Cloudflare-blocked, so this is a frozen baseline, not a live metric.
@@ -36,7 +38,7 @@ The source below is Cloudflare-blocked, so this is a frozen baseline, not a live
 | **Recommended tier** (forward-only, valid-line, played) | n = 167 | **47.3%** · 95% CI [39.9%, 54.9%] |
 | All logged picks (same gates) | 1,165W – 1,229L | 48.7% |
 
-The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff auto-derived from settled history. It's measured **forward-only** (picks logged after game start are excluded), **valid-line-only** (picks with no prop line — nothing to be right or wrong about — are dropped), and **played-only** (a player who didn't suit up is a void PrizePicks refunds, not a win/loss), with each cutoff selected **point-in-time** (it sees only picks that settled *before* the pick it judges). A 2-pick PrizePicks parlay breaks even at **57.7%**; the recommended tier sits **below** breakeven and **no sport or category clears it** (WNBA 48.9%, MLB 39.3%) — so this is **not a proven edge**.
+The **recommended tier** is the slate the system actually surfaces — picks clearing a per-category confidence cutoff auto-derived from settled history. It's measured **forward-only** (picks logged after game start are excluded), **valid-line-only** (picks with no prop line — nothing to be right or wrong about — are dropped), and **played-only** (a player who didn't suit up is a void PrizePicks refunds, not a win/loss), with each cutoff selected **point-in-time** (it sees only picks that settled *before* the pick it judges) — so it's the honest, rigorously-measured number, not an inflated one. This PrizePicks tier is a **frozen baseline** (its source is Cloudflare-blocked); the live edge research has since moved to per-pick odds and the **market-arbitrage layer** above.
 
 An earlier "72.1%" headline was an in-sample measurement artifact: the cutoff had been selected on the same outcomes it was then scored against. The full trail — 72.0% → 56.4% → 50.3% → ~47%, as lookahead, no-line, and DNP picks were removed — is reproduced in [`props/models/mirage_analysis_mlb_hits_under.py`](props/models/mirage_analysis_mlb_hits_under.py).
 
