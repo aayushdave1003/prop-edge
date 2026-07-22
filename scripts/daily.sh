@@ -270,6 +270,16 @@ if [ -n "${ODDS_API_KEY:-}" ]; then
     python -m props.picks.soft_lines || true
 fi
 
+# ── 7e2b. Market-arbitrage finder (Sleeper vs sharp market) ──────────────────
+# Sleeper hits/TB lines where the sharp market's true prob × Sleeper's posted
+# payout > 1 — a model-INDEPENDENT +EV edge. Sharp prob is the LIVE (pre-game)
+# DK/FD consensus, so it's leak-free; the finder self-guards to upcoming games
+# only. Posts today's picks + the accumulating forward ROI; persists to sleeper_arb.
+if [ -n "${ODDS_API_KEY:-}" ]; then
+    echo "--- Sleeper arbitrage finder ---"
+    python -m props.picks.sleeper_arb || true
+fi
+
 # ── 7e. Daily walk-forward backtest (PrizePicks — FROZEN baseline) ───────────
 # The PP recommended-tier walk-forward. PP's scrape is Cloudflare-blocked so this
 # is a frozen historical baseline now (no new PP picks); the LIVE number is the

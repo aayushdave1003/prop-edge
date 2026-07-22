@@ -139,6 +139,26 @@ MIGRATIONS: list[tuple[str, str]] = [
     # so the ESPN-id headshot URL the UI builds was invalid → fallback).
     ("0014_players_photo_url",
      "ALTER TABLE players ADD COLUMN IF NOT EXISTS photo_url TEXT"),
+    # Market-arbitrage finder (props.picks.sleeper_arb): Sleeper hits/TB lines
+    # where the sharp market's true prob × Sleeper's posted payout > 1 — a +EV
+    # edge INDEPENDENT of the model. Sharp prob is captured pre-game (live AM
+    # fetch), so it's leak-free. One row per day per +EV pick; graded on-the-fly
+    # against player_games. Forward track record accrues as picks settle.
+    ("0015_sleeper_arb",
+     "CREATE TABLE IF NOT EXISTS sleeper_arb ("
+     "  run_date        DATE NOT NULL,"
+     "  player_id       INTEGER NOT NULL,"
+     "  game_id         INTEGER,"
+     "  stat_type       TEXT NOT NULL,"
+     "  line_value      NUMERIC(8,2) NOT NULL,"
+     "  side            TEXT NOT NULL,"
+     "  sharp_prob      NUMERIC(8,4),"
+     "  payout          NUMERIC(8,4),"
+     "  ev              NUMERIC(8,4),"
+     "  sharp_line      NUMERIC(8,2),"
+     "  sharp_over_prob NUMERIC(8,4),"
+     "  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  PRIMARY KEY (run_date, player_id, stat_type, line_value))"),
 ]
 
 
