@@ -4,7 +4,7 @@ A self-running ML pipeline that predicts player-prop outcomes across major US sp
 
 An **actively-developed** research project — the current focus is a model-independent **market-arbitrage layer**, in live forward-testing. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
 
-📊 Live dashboard: **[prop-edge-production-1b02.up.railway.app](https://prop-edge-production-1b02.up.railway.app)**
+📊 Live board: **[prop-edge-board.up.railway.app](https://prop-edge-board.up.railway.app)**
 
 ---
 
