@@ -413,7 +413,7 @@ def run(target_date: date | None = None) -> pd.DataFrame:
                 features = _safe_augment(
                     _augment_nba_universe, features,
                     nba_games, today, season, fk, nba_injury_flags, label="nba")
-            elif entry.sport_code in ("wnba", "nhl"):
+            elif entry.sport_code in ("wnba", "nhl", "nfl"):
                 # Already full-universe (scans prop_lines, not a likely subset).
                 features = build_derived_player_feature_rows(entry.sport_code, fk, today)
             elif entry.role == "pitcher":

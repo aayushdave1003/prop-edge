@@ -1031,7 +1031,7 @@ def main(target_date: date = None):
                 features = build_nba_player_feature_rows(nba_games, today, season,
                                                           meta["feature_keys"],
                                                           injury_flags=nba_injury_flags)
-            elif entry.sport_code in ("wnba", "nhl"):
+            elif entry.sport_code in ("wnba", "nhl", "nfl"):
                 features = build_derived_player_feature_rows(
                     entry.sport_code, meta["feature_keys"], today)
             elif entry.role == "pitcher":

@@ -35,7 +35,7 @@ def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
     AND the wrong (lenient) per-category cutoff. Fall back to the name prefix."""
     if sport_by_model and model_name in sport_by_model:
         return sport_by_model[model_name]
-    for prefix in ("wnba", "nba", "nhl", "mlb"):   # wnba before nba
+    for prefix in ("wnba", "nba", "nhl", "nfl", "mlb"):   # wnba before nba
         if model_name.startswith(prefix):
             return prefix
     return "mlb"
@@ -405,10 +405,10 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
     if top.empty:
         return
 
-    sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒"}
+    sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒", "nfl": "🏈"}
 
     fields = []
-    for sport_order in ["nba", "wnba", "mlb", "nhl"]:
+    for sport_order in ["nba", "wnba", "mlb", "nhl", "nfl"]:
         sport_picks = top[top["sport_code"] == sport_order]
         if sport_picks.empty:
             continue

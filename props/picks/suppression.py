@@ -53,6 +53,11 @@ MIN_LINE_BY_STAT = {
     # NHL
     "goals":              0.5,
     "saves":             15.0,
+    # NFL (yard scales differ wildly from basketball/baseball)
+    "passing_yards":    100.0,
+    "rushing_yards":     20.0,
+    "receiving_yards":   15.0,
+    "receptions":         1.5,
 }
 
 # Maximum line value per stat — filters multi-game cumulative / fantasy lines.
@@ -78,6 +83,11 @@ MAX_LINE_BY_STAT = {
     # NHL
     "goals":               5.0,
     "saves":              50.0,
+    # NFL
+    "passing_yards":     400.0,
+    "rushing_yards":     175.0,
+    "receiving_yards":   175.0,
+    "receptions":         15.0,
 }
 
 # Injury-status keywords.

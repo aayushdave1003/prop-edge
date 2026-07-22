@@ -89,6 +89,11 @@ python -m props.ingest.nhl_schedule "$YESTERDAY" || echo "WARN: nhl_schedule fai
 python -m props.ingest.nhl_schedule "$TODAY"     || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
 python -m props.ingest.nhl_schedule "$TOMORROW"  || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
 
+echo "--- NFL schedule ---"
+python -m props.ingest.nfl_schedule "$YESTERDAY" || echo "WARN: nfl_schedule failed (espn / offseason)"
+python -m props.ingest.nfl_schedule "$TODAY"     || echo "WARN: nfl_schedule failed (espn / offseason)"
+python -m props.ingest.nfl_schedule "$TOMORROW"  || echo "WARN: nfl_schedule failed (espn / offseason)"
+
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 # When writing to Railway (remote DB), cap the batch to avoid backfilling years
 # of history. The universe is already bounded to the last 5 days
@@ -104,6 +109,7 @@ fi
 python -m props.ingest.nba_boxscores
 python -m props.ingest.wnba_boxscores
 python -m props.ingest.nhl_boxscores
+python -m props.ingest.nfl_boxscores
 
 # ── 2b. MLB ballpark weather (Open-Meteo, free) ──────────────────────────────
 # Wind blowing out drives offense (validated: 65% over-rate vs 43% calm/in).
@@ -153,6 +159,13 @@ if [ "$(has_recent_games nhl)" = "1" ]; then
     python -m props.features.nhl_advanced_stats
 else
     echo "--- NHL rolling features: skipped (off-season, no games in 10d) ---"
+fi
+
+if [ "$(has_recent_games nfl)" = "1" ]; then
+    echo "--- NFL rolling features ---"
+    python -m props.features.nfl_rolling
+else
+    echo "--- NFL rolling features: skipped (off-season, no games in 10d) ---"
 fi
 
 echo "--- MLB rolling features ---"

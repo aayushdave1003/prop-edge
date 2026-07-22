@@ -175,6 +175,34 @@ MODELS = [
         model_path=Path("models/nhl_saves_v1.txt"),
         meta_path=Path("models/nhl_saves_v1_meta.json"),
     ),
+    # NFL — yards markets (rushing/receiving beat baseline; nfl_models_v1 ships only
+    # winners, so a missing .txt just skips at predict time). Trained on L1 (mean
+    # yardage); score_and_edge converts the mean to P(over) via the Poisson CDF.
+    ModelEntry(
+        name="nfl_rushing_yards_v1",
+        sport_code="nfl",
+        stat_type="rushing_yards",
+        role="player",
+        model_path=Path("models/nfl_rushing_yards_v1.txt"),
+        meta_path=Path("models/nfl_rushing_yards_v1_meta.json"),
+    ),
+    ModelEntry(
+        name="nfl_receiving_yards_v1",
+        sport_code="nfl",
+        stat_type="receiving_yards",
+        role="player",
+        model_path=Path("models/nfl_receiving_yards_v1.txt"),
+        meta_path=Path("models/nfl_receiving_yards_v1_meta.json"),
+    ),
+    # receptions is a clean Poisson fit (unlike the L1-yards markets); +1.30% OOS.
+    ModelEntry(
+        name="nfl_receptions_v1",
+        sport_code="nfl",
+        stat_type="receptions",
+        role="player",
+        model_path=Path("models/nfl_receptions_v1.txt"),
+        meta_path=Path("models/nfl_receptions_v1_meta.json"),
+    ),
 ]
 
 # NBA/WNBA combo markets — direct summed-target Poisson models

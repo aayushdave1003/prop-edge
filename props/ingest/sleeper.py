@@ -29,7 +29,7 @@ from props.utils.db import session_scope
 from props.utils.logging import configure_logging, log
 
 BASE = "https://api.sleeper.app"
-SPORTS = ("mlb", "wnba")
+SPORTS = ("mlb", "wnba", "nfl")
 
 # Sleeper wager_type -> our stat_type. Only stats we actually model; anything
 # else (doubles, singles, stolen_bases, threes_made w/o a WNBA model, …) is skipped.
@@ -42,6 +42,13 @@ WAGER_TO_STAT = {
     # WNBA
     "points": "points", "rebounds": "rebounds", "assists": "assists",
     "pts_reb_ast": "pts_rebs_asts",
+    # NFL — VERIFY exact wager_type strings via `--dry-run` in-season (Sleeper may
+    # use rush_yd / rec_yd / pass_yd). Aliases map to one internal stat; unused keys
+    # are harmless, unmapped wagers are safely skipped (unmodeled_stat).
+    "rushing_yards": "rushing_yards", "rush_yards": "rushing_yards", "rush_yd": "rushing_yards",
+    "receiving_yards": "receiving_yards", "rec_yards": "receiving_yards", "rec_yd": "receiving_yards",
+    "passing_yards": "passing_yards", "pass_yards": "passing_yards", "pass_yd": "passing_yards",
+    "receptions": "receptions", "reception": "receptions",
 }
 
 
