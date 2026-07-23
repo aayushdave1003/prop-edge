@@ -24,8 +24,9 @@ from props.utils.config import settings
 from props.utils.logging import log, configure_logging
 
 LINES_STALE_HOURS = 18      # refresh.yml scrapes ~3x/day; >18h = scrape broken
-LINES_THIN_FRAC = 0.30      # today < 30% of the 7-day avg distinct lines = thin
+LINES_THIN_FRAC = 0.30      # today's lines-PER-GAME < 30% of the 7-day avg = thin coverage
 LINES_MIN_BASELINE = 50     # only flag "thin" once there's a real baseline
+LINES_COLLAPSE_FRAC = 0.10  # today's TOTAL lines < 10% of avg = feed likely broken (flag even if per-game ok)
 INJURY_STALE_HOURS = 40     # injuries refresh daily; >40h = feed cold
 ODDS_QUOTA_LOW = 1500       # warn while there's still runway to top up
 
@@ -96,22 +97,35 @@ def run_checks() -> list[dict]:
 
             daily = c.execute(text("""
                 SELECT (snapshot_at AT TIME ZONE 'America/Los_Angeles')::date AS d,
-                       COUNT(DISTINCT (player_id, stat_type)) AS n
+                       COUNT(DISTINCT (player_id, stat_type)) AS n,
+                       COUNT(DISTINCT game_id) AS games
                 FROM prop_lines
                 WHERE snapshot_at > NOW() - INTERVAL '8 days'
                 GROUP BY 1 ORDER BY 1
             """)).all()
-            by_day = {str(r[0]): int(r[1]) for r in daily}
+            by_day = {str(r[0]): (int(r[1]), int(r[2])) for r in daily}
             today = _scalar(c, "SELECT (NOW() AT TIME ZONE 'America/Los_Angeles')::date::text")
-            today_n = by_day.get(today, 0)
-            prior = [n for d, n in by_day.items() if d != today]
-            avg_prior = sum(prior) / len(prior) if prior else 0
-            if avg_prior >= LINES_MIN_BASELINE and today_n < LINES_THIN_FRAC * avg_prior:
+            today_n, today_g = by_day.get(today, (0, 0))
+            prior = [(n, g) for d, (n, g) in by_day.items() if d != today]
+            avg_prior_n = sum(n for n, _ in prior) / len(prior) if prior else 0
+            # Normalize by game count: a LIGHT game day (few games, no WNBA) has
+            # fewer total lines but NORMAL lines-per-game — that's the schedule,
+            # not a bug, so it shouldn't alarm. Flag only a real per-game coverage
+            # gap, or a near-total collapse (broken feed).
+            today_lpg = today_n / today_g if today_g else 0.0
+            prior_lpg = [n / g for n, g in prior if g]
+            avg_prior_lpg = sum(prior_lpg) / len(prior_lpg) if prior_lpg else 0.0
+            thin_per_game = avg_prior_lpg > 0 and today_lpg < LINES_THIN_FRAC * avg_prior_lpg
+            collapse = avg_prior_n >= LINES_MIN_BASELINE and today_n < LINES_COLLAPSE_FRAC * avg_prior_n
+            if avg_prior_n >= LINES_MIN_BASELINE and (thin_per_game or collapse):
+                why = "feed likely broken" if collapse else "thin per-game coverage"
                 findings.append({"level": "warn", "name": "slate_thin",
-                                 "detail": f"today {today_n} distinct lines vs {avg_prior:.0f} avg — thin/missing slate"})
+                                 "detail": f"today {today_n} lines / {today_g} games = {today_lpg:.0f}/game "
+                                           f"vs {avg_prior_lpg:.0f}/game avg — {why}"})
             else:
                 findings.append({"level": "ok", "name": "slate_volume",
-                                 "detail": f"today {today_n} lines (7d avg {avg_prior:.0f})"})
+                                 "detail": f"today {today_n} lines / {today_g} games "
+                                           f"({today_lpg:.0f}/game; 7d avg {avg_prior_lpg:.0f}/game)"})
 
         # ── box scores: recent FINAL games must have player_games ────────────
         missing = c.execute(text("""
