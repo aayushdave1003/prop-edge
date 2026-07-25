@@ -130,6 +130,20 @@ export interface Performance {
   brier: number | null;
   by_market: { market: string; lean: Lean; pct: number; n: number; lo: number; hi: number }[];
   sleeper: SleeperRoi;
+  arb: ArbRoi;
+}
+
+// Market-arbitrage finder (props.picks.sleeper_arb): realized ROI of Sleeper lines
+// the SHARP market prices as +EV (sharp_prob × payout > 1) — model-independent.
+// "building" = fewer than MIN_TIER_N settled picks, so no verdict yet.
+export interface ArbRoi {
+  n_all: number; // total arb +EV picks logged
+  n: number; // settled so far
+  roi: number; // realized ROI, %
+  lo: number; // 95% CI lower, %
+  hi: number; // 95% CI upper, %
+  hit: number; // hit rate, %
+  verdict: SleeperVerdict; // reuses the same states (building/profitable/losing/not proven/—)
 }
 
 // Live track record on Sleeper (an ODDS book): realized ROI of the +EV tier

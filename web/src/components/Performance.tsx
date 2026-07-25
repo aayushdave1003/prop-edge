@@ -40,6 +40,7 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
   const relation = recEdge ? "above" : rec.verdict === "not proven" ? "around" : "below";
 
   const sl = perf.sleeper;
+  const ar = perf.arb;
 
   return (
     <div className="space-y-4">
@@ -84,6 +85,50 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
               · <span className="font-semibold" style={{ color: roiColor(sl.verdict) }}>{sl.verdict}</span>
               <div className="mt-1 text-[11px] text-ink-4">
                 money made per unit at the odds actually offered — never a phantom line
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Market-arbitrage finder — Sleeper vs the sharp market (model-independent) */}
+      <div className="rounded-[16px] border border-hair bg-panel p-[18px]">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="microlabel">Market arbitrage · Sleeper vs sharp</div>
+          <div className="text-[11px] text-ink-4">realized ROI · model-independent</div>
+        </div>
+        {ar.n_all === 0 ? (
+          <div className="py-2 text-[13px] leading-relaxed text-ink-3">
+            Just started — picks accumulate as the morning cron runs. A pick is <b className="text-ink-2">+EV</b>{" "}
+            when the <b>sharp</b> market prices a Sleeper line as beatable
+            (<span className="tnum">sharp prob × payout &gt; 1</span>) — independent of the model.
+          </div>
+        ) : ar.verdict === "building" ? (
+          <div className="py-1">
+            <div className="tnum text-[26px] font-bold leading-none text-ink-2">
+              {ar.n} / {SLEEPER_MIN_TIER} <span className="text-[14px] font-semibold text-ink-3">settled picks</span>
+            </div>
+            <div className="mt-2 text-[12.5px] leading-relaxed text-ink-3">
+              Too few settled picks for an honest ROI verdict yet (a short run can read ±100%). The number
+              populates once the tier reaches {SLEEPER_MIN_TIER}. <span className="tnum">{ar.n_all}</span> logged so far.
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <div>
+              <div className="tnum text-[34px] font-bold leading-none tracking-tight"
+                   style={{ color: roiColor(ar.verdict) }}>
+                {ar.roi >= 0 ? "+" : ""}{ar.roi}%
+              </div>
+              <div className="tnum mt-2 text-[11px] text-ink-3">
+                95% CI {ar.lo}–{ar.hi}% · {ar.n} settled / {ar.n_all} logged
+              </div>
+            </div>
+            <div className="text-[12px] text-ink-2">
+              hit <b className="tnum">{ar.hit}%</b>{" "}
+              · <span className="font-semibold" style={{ color: roiColor(ar.verdict) }}>{ar.verdict}</span>
+              <div className="mt-1 text-[11px] text-ink-4">
+                bets where Sleeper's price beats the sharp consensus — no model required
               </div>
             </div>
           </div>
