@@ -293,6 +293,16 @@ if [ -n "${ODDS_API_KEY:-}" ]; then
     python -m props.picks.sleeper_arb || true
 fi
 
+# ── 7e2c. NFL correlated-parlay probe (weekly, in-season) ────────────────────
+# QB+own-WR passing/receiving stacks are MECHANICALLY correlated; if the lift
+# clears Sleeper's 2-pick vig, the stack is +EV without beating any single price
+# (the one honest profitability shot left — MLB same-team corr was too small).
+# Self-gates on sample size; runs Mondays during NFL season and posts when real.
+if [ "$(has_recent_games nfl)" = "1" ] && [ "$(date +%u)" = "1" ]; then
+    echo "--- NFL QB+WR correlation probe ---"
+    python -m props.models.nfl_corr_probe --post || true
+fi
+
 # ── 7e. Daily walk-forward backtest (PrizePicks — FROZEN baseline) ───────────
 # The PP recommended-tier walk-forward. PP's scrape is Cloudflare-blocked so this
 # is a frozen historical baseline now (no new PP picks); the LIVE number is the
