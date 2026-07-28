@@ -159,6 +159,14 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  sharp_over_prob NUMERIC(8,4),"
      "  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
      "  PRIMARY KEY (run_date, player_id, stat_type, line_value))"),
+    # Tag each arb pick with the SHARP REFERENCE that flagged it (props.ingest.
+    # sharp_feed), so a paid feed (OddsJam/Unabated/Pinnacle) can run alongside the
+    # free odds_api default and be A/B'd on realized ROI. sharp_feed joins the PK so
+    # both feeds' picks for the same (game, player, stat, line) coexist.
+    ("0016_sleeper_arb_feed",
+     "ALTER TABLE sleeper_arb ADD COLUMN IF NOT EXISTS sharp_feed TEXT NOT NULL DEFAULT 'odds_api';"
+     "ALTER TABLE sleeper_arb DROP CONSTRAINT IF EXISTS sleeper_arb_pkey;"
+     "ALTER TABLE sleeper_arb ADD PRIMARY KEY (run_date, player_id, stat_type, line_value, sharp_feed)"),
 ]
 
 

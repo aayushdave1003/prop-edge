@@ -32,7 +32,7 @@ from sqlalchemy import text
 from props.utils.db import session_scope, engine
 from props.utils.config import settings
 from props.utils.logging import log, configure_logging
-from props.ingest.market_odds import build_market_probs
+from props.ingest.sharp_feed import get_sharp_feed
 from props.picks.soft_lines import implied_lambda, p_over_at
 from props.models.odds_track import MIN_TIER_N
 
@@ -104,20 +104,22 @@ def compute_arb(sleeper_lines, sharp_by_ps) -> list[dict]:
     return findings
 
 
-def _persist(session, run_date, findings):
-    session.execute(text("DELETE FROM sleeper_arb WHERE run_date = :d"), {"d": run_date})
+def _persist(session, run_date, findings, feed):
+    # scope the wipe to THIS feed so a paid feed doesn't clobber the odds_api A/B leg
+    session.execute(text("DELETE FROM sleeper_arb WHERE run_date = :d AND sharp_feed = :feed"),
+                    {"d": run_date, "feed": feed})
     for f in findings:
         session.execute(text("""
             INSERT INTO sleeper_arb (run_date, player_id, game_id, stat_type, line_value,
-                side, sharp_prob, payout, ev, sharp_line, sharp_over_prob)
-            VALUES (:d, :pid, :gid, :st, :ln, :side, :sp, :pay, :ev, :sl, :sop)
-            ON CONFLICT (run_date, player_id, stat_type, line_value) DO UPDATE SET
+                side, sharp_prob, payout, ev, sharp_line, sharp_over_prob, sharp_feed)
+            VALUES (:d, :pid, :gid, :st, :ln, :side, :sp, :pay, :ev, :sl, :sop, :feed)
+            ON CONFLICT (run_date, player_id, stat_type, line_value, sharp_feed) DO UPDATE SET
                 side=EXCLUDED.side, sharp_prob=EXCLUDED.sharp_prob, payout=EXCLUDED.payout,
                 ev=EXCLUDED.ev, sharp_line=EXCLUDED.sharp_line,
                 sharp_over_prob=EXCLUDED.sharp_over_prob, created_at=NOW()
         """), {"d": run_date, "pid": f["player_id"], "gid": f["game_id"], "st": f["stat_type"],
                "ln": f["line"], "side": f["side"], "sp": f["sharp_prob"], "pay": f["payout"],
-               "ev": f["ev"], "sl": f["sharp_line"], "sop": f["sharp_over_prob"]})
+               "ev": f["ev"], "sl": f["sharp_line"], "sop": f["sharp_over_prob"], "feed": feed})
 
 
 def _post_discord(run_date, findings):
@@ -152,34 +154,42 @@ def run(post: bool = True, run_date: date | None = None):
     configure_logging()
     if run_date is None:
         run_date = datetime.now(ZoneInfo("America/Los_Angeles")).date()
-    market = build_market_probs(run_date)          # LIVE fetch — pre-game, leak-free
+    feed = get_sharp_feed()                        # pluggable sharp reference (SHARP_FEED env)
+    market = feed.build_probs(run_date)             # LIVE fetch — pre-game, leak-free
     if not market:
-        log.info("sleeper_arb_skipped", reason="no_market_data")
+        log.info("sleeper_arb_skipped", reason="no_market_data", sharp_feed=feed.name)
         return
     sharp_by_ps = _sharp_by_player_stat(market)
     with session_scope() as s:
         lines = _load_sleeper_lines(s, run_date)
         findings = compute_arb(lines, sharp_by_ps)
-        _persist(s, run_date, findings)
-    log.info("sleeper_arb_done", sleeper_lines=len(lines), matched_sharp=len(sharp_by_ps),
-             plus_ev=len(findings), top=(findings[0]["ev"] if findings else None))
+        _persist(s, run_date, findings, feed.name)
+    log.info("sleeper_arb_done", sharp_feed=feed.name, sleeper_lines=len(lines),
+             matched_sharp=len(sharp_by_ps), plus_ev=len(findings),
+             top=(findings[0]["ev"] if findings else None))
     if post:
         _post_discord(run_date, findings)
 
 
 # ── forward realized-ROI tracker ─────────────────────────────────────────────
-def arb_roi() -> dict:
+def arb_roi(feed: str | None = None) -> dict:
     """Realized ROI of the persisted +EV arb picks, graded on-the-fly against
     settled outcomes. Forward-only (finder runs pre-game), played-only. Reuses the
-    MIN_TIER_N gate so a thin sample reports 'building', not a phantom verdict."""
+    MIN_TIER_N gate so a thin sample reports 'building', not a phantom verdict.
+    Pass ``feed`` to scope to one sharp reference (the A/B)."""
+    where = "WHERE pg.stats ? a.stat_type AND COALESCE(pg.did_play, true)"
+    params = {}
+    if feed is not None:
+        where += " AND a.sharp_feed = :feed"
+        params["feed"] = feed
     with engine.connect() as c:
-        rows = c.execute(text("""
+        rows = c.execute(text(f"""
             SELECT a.side, a.payout::float AS payout, a.line_value::float AS line,
                    (pg.stats->>a.stat_type)::float AS actual
             FROM sleeper_arb a
             JOIN player_games pg ON pg.player_id=a.player_id AND pg.game_id=a.game_id
-            WHERE pg.stats ? a.stat_type AND COALESCE(pg.did_play, true)
-        """)).mappings().all()
+            {where}
+        """), params).mappings().all()
     rets = []
     for r in rows:
         over_win = r["actual"] > r["line"]
@@ -197,16 +207,26 @@ def arb_roi() -> dict:
     return {"n": n, "roi": roi, "lo": lo, "hi": hi, "hit": hit, "verdict": verdict}
 
 
-def _print_roi():
-    s = arb_roi()
-    print(f"Sleeper ARBITRAGE +EV picks (settled): n={s['n']}")
+def _one_roi(label, s):
     if s["n"] >= MIN_TIER_N:
-        print(f"  realized ROI: {s['roi']:+.1%}  [{s['lo']:+.1%}, {s['hi']:+.1%}]  "
-              f"(hit {s['hit']:.1%})  →  {s['verdict']}")
+        print(f"  {label:10} n={s['n']:>4}  ROI {s['roi']:+.1%}  [{s['lo']:+.1%}, {s['hi']:+.1%}]  "
+              f"hit {s['hit']:.1%}  →  {s['verdict']}")
     elif s["n"]:
-        print(f"  {s['verdict']} ({s['n']}/{MIN_TIER_N} settled +EV picks) — ROI held back until the tier fills")
+        print(f"  {label:10} building ({s['n']}/{MIN_TIER_N} settled) — ROI held until the tier fills")
     else:
-        print("  no settled arb picks yet — the forward track record starts as picks settle.")
+        print(f"  {label:10} no settled picks yet")
+
+
+def _print_roi():
+    with engine.connect() as c:
+        feeds = [r[0] for r in c.execute(text(
+            "SELECT DISTINCT sharp_feed FROM sleeper_arb ORDER BY sharp_feed")).all()]
+    print("Sleeper ARBITRAGE +EV picks (settled)" + (" — A/B by sharp feed:" if len(feeds) > 1 else ":"))
+    if len(feeds) <= 1:
+        _one_roi(feeds[0] if feeds else "odds_api", arb_roi())
+    else:
+        for fd in feeds:                            # A/B: each sharp reference's own ROI
+            _one_roi(fd, arb_roi(fd))
 
 
 def main():
