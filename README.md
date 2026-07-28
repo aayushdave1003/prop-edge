@@ -2,7 +2,7 @@
 
 A self-running ML pipeline that predicts player-prop outcomes across major US sports, prices them against PrizePicks lines, and **runs, settles, monitors, and self-corrects entirely on its own**.
 
-An **actively-developed** research project — the current focus is a model-independent **market-arbitrage layer**, in live forward-testing. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
+An **actively-developed** research project — the model has no standalone edge, so the current focus is **model-independent** profitability lanes (odds-boost EV, market-arbitrage, correlated parlays), each graded forward and reported straight whether it wins or loses. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
 
 📊 Live board: **[prop-edge-board.up.railway.app](https://prop-edge-board.up.railway.app)**
 
@@ -27,7 +27,13 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 **Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `calibrated_prob × payout > 1`. The probability is Platt-calibrated before the EV test (raw model confidence runs ~12pts over-confident, which otherwise manufactures phantom edges that lose money), and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). It's a *new* track record that populates as the +EV tier fills; see [`props/models/odds_track.py`](props/models/odds_track.py).
 
-**Active focus: a market-arbitrage layer.** Model-*independent* — [`sleeper_arb`](props/picks/sleeper_arb.py) flags Sleeper lines the **sharp** market (DK/FD no-vig consensus) prices as +EV (`sharp_prob × payout > 1`), with the sharp read captured **pre-game** so it's leak-free. A rigorous clean backtest (odds re-snapshotted at each game's start−2h to eliminate a day-game leak that had inflated a naive first pass) showed an early positive signal — **+6.9% vs a −11.7% bet-everything baseline** — now under **live forward-testing**, with the running ROI gated so it never over-claims on a thin sample.
+**Active focus: model-independent profitability lanes.** The model itself has no discriminative edge (Brier resolution ≈ 0), so the edge research is model-*independent* — and every lane is graded forward with the same honesty gate, reported straight whether it wins or loses:
+
+- **Odds boosts** — [`boost_ev`](props/picks/boost_ev.py). The one *structural* +EV lane: a sportsbook "boost" is **deliberately** priced +EV (the book eats margin to acquire/retain you), so a boost is worth taking iff `sharp_prob × boosted_payout > 1`. Each entered boost is priced against the same sharp reference and graded forward against results — so the tool earns a realized track record instead of asserting an edge.
+- **Market arbitrage** — [`sleeper_arb`](props/picks/sleeper_arb.py) flags Sleeper lines the **sharp** market (DK/FD no-vig consensus) prices as +EV, with the sharp read captured **pre-game** so it's leak-free. A clean backtest (odds re-snapshotted at each game's start−2h, after catching a day-game leak that inflated a naive first pass) showed +6.9% — but the **live forward LOST: −17.8%, CI below zero at n = 81. Lane closed**, reported honestly. A pluggable [`SHARP_FEED`](props/ingest/sharp_feed.py) seam can A/B a *paid* sharp reference (OddsJam/Unabated/Pinnacle) against the free default — the one experiment that targets *why* it lost.
+- **Correlated parlays** — pick'em books price legs independently, so positively-correlated legs are +EV without beating any single price. MLB same-team lift (~3–4%) is too small vs the ~9% two-pick vig; NFL QB+own-WR (mechanically correlated) is [probed](props/models/nfl_corr_probe.py) weekly in-season. Honest prior: still likely too small.
+
+The through-line: no *modeling* edge survives contact with a forward test — the numbers only shrink, never grow. The boost lane is the exception because its edge is the book's choice, not a model's cleverness.
 
 ### PrizePicks — frozen history (audited)
 

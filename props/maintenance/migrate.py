@@ -167,6 +167,28 @@ MIGRATIONS: list[tuple[str, str]] = [
      "ALTER TABLE sleeper_arb ADD COLUMN IF NOT EXISTS sharp_feed TEXT NOT NULL DEFAULT 'odds_api';"
      "ALTER TABLE sleeper_arb DROP CONSTRAINT IF EXISTS sleeper_arb_pkey;"
      "ALTER TABLE sleeper_arb ADD PRIMARY KEY (run_date, player_id, stat_type, line_value, sharp_feed)"),
+    # Promo/odds-boost tracker (props.picks.boost_ev): sportsbook odds boosts are
+    # DELIBERATELY +EV (the book eats margin to acquire/retain), so unlike soft
+    # lines / correlation this is a real edge. Each entered boost is priced against
+    # the same SHARP reference the arb uses (sharp true prob × boosted payout > 1).
+    # true_prob/decimal_odds/ev are filled in by evaluate(); graded forward vs
+    # player_games so the tracker accrues an honest realized ROI like every lane.
+    ("0017_promo_boosts",
+     "CREATE TABLE IF NOT EXISTS promo_boosts ("
+     "  run_date     DATE NOT NULL,"
+     "  book         TEXT NOT NULL,"
+     "  player_id    INTEGER,"
+     "  player_name  TEXT NOT NULL,"
+     "  stat_type    TEXT NOT NULL,"
+     "  line_value   NUMERIC(8,2) NOT NULL,"
+     "  side         TEXT NOT NULL,"
+     "  boosted_odds INTEGER NOT NULL,"
+     "  true_prob    NUMERIC(8,4),"
+     "  decimal_odds NUMERIC(8,4),"
+     "  ev           NUMERIC(8,4),"
+     "  note         TEXT,"
+     "  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  PRIMARY KEY (run_date, book, player_name, stat_type, line_value, side))"),
 ]
 
 

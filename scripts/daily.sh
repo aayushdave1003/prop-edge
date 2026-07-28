@@ -303,6 +303,15 @@ if [ "$(has_recent_games nfl)" = "1" ] && [ "$(date +%u)" = "1" ]; then
     python -m props.models.nfl_corr_probe --post || true
 fi
 
+# ── 7e2d. Promo / odds-boost digest ──────────────────────────────────────────
+# Odds boosts are the one STRUCTURAL +EV lane (the book deliberately overpays to
+# acquire/retain). Boosts are entered by hand (props.picks.boost_ev --add); this
+# posts today's +EV ones priced vs the sharp market + the accruing realized ROI.
+# Self-skips silently (no post, no sharp fetch) on days with no boosts entered.
+if [ -n "${ODDS_API_KEY:-}" ]; then
+    python -m props.picks.boost_ev --digest || true
+fi
+
 # ── 7e. Daily walk-forward backtest (PrizePicks — FROZEN baseline) ───────────
 # The PP recommended-tier walk-forward. PP's scrape is Cloudflare-blocked so this
 # is a frozen historical baseline now (no new PP picks); the LIVE number is the
