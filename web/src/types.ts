@@ -131,6 +131,7 @@ export interface Performance {
   by_market: { market: string; lean: Lean; pct: number; n: number; lo: number; hi: number }[];
   sleeper: SleeperRoi;
   arb: ArbRoi;
+  boost: BoostRoi;
 }
 
 // Market-arbitrage finder (props.picks.sleeper_arb): realized ROI of Sleeper lines
@@ -144,6 +145,20 @@ export interface ArbRoi {
   hi: number; // 95% CI upper, %
   hit: number; // hit rate, %
   verdict: SleeperVerdict; // reuses the same states (building/profitable/losing/not proven/—)
+}
+
+// Promo/odds-boost tracker (props.picks.boost_ev): the one STRUCTURAL +EV lane —
+// sportsbook boosts are DELIBERATELY priced +EV, so a boost is worth taking iff
+// sharp_prob × boosted_payout > 1. Boosts are entered by hand; n_all counts those
+// logged. Same shape/verdict states as ArbRoi.
+export interface BoostRoi {
+  n_all: number; // total boosts logged
+  n: number; // settled +EV boosts so far
+  roi: number; // realized ROI, %
+  lo: number; // 95% CI lower, %
+  hi: number; // 95% CI upper, %
+  hit: number; // hit rate, %
+  verdict: SleeperVerdict;
 }
 
 // Live track record on Sleeper (an ODDS book): realized ROI of the +EV tier

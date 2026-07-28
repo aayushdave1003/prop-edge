@@ -286,11 +286,15 @@ fi
 # ── 7e2b. Market-arbitrage finder (Sleeper vs sharp market) ──────────────────
 # Sleeper hits/TB lines where the sharp market's true prob × Sleeper's posted
 # payout > 1 — a model-INDEPENDENT +EV edge. Sharp prob is the LIVE (pre-game)
-# DK/FD consensus, so it's leak-free; the finder self-guards to upcoming games
-# only. Posts today's picks + the accumulating forward ROI; persists to sleeper_arb.
+# DK/FD consensus, so it's leak-free; the finder self-guards to upcoming games only.
+# DEMOTED (2026-07): the lane is confirmed LOSING (−15.5%, CI fully below 0 at n=89),
+# so it no longer posts "take these" picks to Discord (--no-post) — advertising picks
+# from a proven-losing lane would be dishonest. It still runs + persists silently so
+# the forward ROI stays visible on the dashboard arb panel AND the SHARP_FEED A/B
+# baseline keeps accruing (a paid feed can be compared against it later).
 if [ -n "${ODDS_API_KEY:-}" ]; then
-    echo "--- Sleeper arbitrage finder ---"
-    python -m props.picks.sleeper_arb || true
+    echo "--- Sleeper arbitrage finder (silent · A/B baseline) ---"
+    python -m props.picks.sleeper_arb --no-post || true
 fi
 
 # ── 7e2c. NFL correlated-parlay probe (weekly, in-season) ────────────────────

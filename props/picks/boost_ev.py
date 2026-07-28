@@ -33,6 +33,8 @@ un-pricable, and the +EV boosts are graded forward against player_games so the t
 earns a realized track record instead of just asserting EV.
 """
 import argparse
+import re
+import sys
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
@@ -103,10 +105,13 @@ def _sharp_market(run_date) -> dict:
     return _sharp_by_player_stat(market) if market else {}
 
 
-def add_boost(run_date, book, player_name, stat_type, line, side, odds, note=""):
+def add_boost(run_date, book, player_name, stat_type, line, side, odds, note="",
+              sharp_by_ps=None):
     """Persist a boost (evaluating it against today's sharp market) and return the
-    priced result — so adding a boost immediately tells you whether to take it."""
-    sharp_by_ps = _sharp_market(run_date)
+    priced result — so adding a boost immediately tells you whether to take it. Pass
+    a precomputed ``sharp_by_ps`` to avoid a per-boost fetch in batch adds."""
+    if sharp_by_ps is None:
+        sharp_by_ps = _sharp_market(run_date)
     priced = _price_boost(player_name, stat_type, line, side, odds, sharp_by_ps)
     with session_scope() as s:
         pid = _resolve_player_id(s, player_name)
@@ -124,6 +129,34 @@ def add_boost(run_date, book, player_name, stat_type, line, side, odds, note="")
                "nt": note or priced["note"]})
     priced["book"] = book
     return priced
+
+
+def add_many(run_date, raw_lines) -> list[dict]:
+    """Batch-add boosts pasted one per line: `book, player, stat, line, side, odds[, note]`
+    (comma OR pipe separated). Blank lines and `#` comments are skipped. One sharp fetch
+    for the whole batch. Returns the priced boosts; prints each as it's added."""
+    sharp_by_ps = _sharp_market(run_date)      # one fetch for the whole paste
+    out = []
+    for raw in raw_lines:
+        raw = raw.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        parts = [p.strip() for p in re.split(r"[|,\t]", raw) if p.strip() != ""]
+        if len(parts) < 6:
+            print(f"  skip (need book,player,stat,line,side,odds): {raw!r}"); continue
+        book, player, stat, line, side, odds = parts[:6]
+        note = parts[6] if len(parts) > 6 else ""
+        try:
+            b = add_boost(run_date, book, player, stat, float(line), side.lower().strip(),
+                          int(str(odds).replace("+", "")), note, sharp_by_ps=sharp_by_ps)
+        except (ValueError, TypeError) as e:
+            print(f"  skip ({e}): {raw!r}"); continue
+        out.append(b)
+        tag = ("  → TAKE ✅" if (b["ev"] or -1) > 0 else "  → pass" if b["ev"] is not None else "")
+        print("  added: " + _fmt(b) + tag)
+    plus = sum(1 for b in out if (b["ev"] or -1) > 0)
+    print(f"\n{len(out)} boost(s) added · {plus} are +EV.")
+    return out
 
 
 def evaluate(run_date) -> list[dict]:
@@ -270,6 +303,9 @@ def _require(args, *names):
 def main():
     p = argparse.ArgumentParser(description="Promo / odds-boost EV tracker")
     p.add_argument("--add", action="store_true", help="add + persist a boost")
+    p.add_argument("--add-many", dest="add_many", action="store_true",
+                   help="batch-add boosts from --file or stdin: 'book,player,stat,line,side,odds' per line")
+    p.add_argument("--file", default=None, help="file of boosts for --add-many (else reads stdin)")
     p.add_argument("--check", action="store_true", help="price a boost on-demand (no persist)")
     p.add_argument("--eval", action="store_true", help="re-price all of the date's boosts")
     p.add_argument("--digest", action="store_true", help="evaluate + post the +EV digest")
@@ -305,6 +341,14 @@ def main():
         print("added: " + _fmt(b))
         if b["ev"] is not None:
             print("  →  " + ("TAKE IT ✅" if b["ev"] > 0 else "pass ❌"))
+    elif args.add_many:
+        if args.file:
+            with open(args.file) as fh:
+                raw = fh.readlines()
+        else:
+            print("paste boosts (book,player,stat,line,side,odds per line), then Ctrl-D:")
+            raw = sys.stdin.readlines()
+        add_many(rd, raw)
     elif args.digest:
         discord_digest(rd, post=True)
     elif args.eval:

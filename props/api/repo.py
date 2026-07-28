@@ -686,7 +686,25 @@ def fetch_performance() -> dict:
         "by_market": by_market[:8],
         "sleeper": _sleeper_roi(),
         "arb": _arb_roi(),
+        "boost": _boost_roi(),
     }
+
+
+def _boost_roi() -> dict:
+    """Realized ROI of the promo/odds-boost tracker (props.picks.boost_ev) — the one
+    STRUCTURAL +EV lane (books DELIBERATELY overprice boosts to acquire/retain). n_all
+    = boosts logged; n = settled boosts we flagged +EV. Gated by MIN_TIER_N so a thin
+    sample reports 'building', not a phantom. Fail-soft to — (empty until boosts are entered)."""
+    try:
+        from props.picks.boost_ev import boost_roi
+        s = boost_roi()
+        with engine.connect() as conn:
+            n_all = conn.execute(text("SELECT COUNT(*) FROM promo_boosts")).scalar() or 0
+    except Exception:
+        return {"n_all": 0, "n": 0, "roi": 0.0, "lo": 0.0, "hi": 0.0, "hit": 0.0, "verdict": "—"}
+    return {"n_all": int(n_all), "n": s["n"], "roi": round(s["roi"] * 100, 1),
+            "lo": round(s["lo"] * 100, 1), "hi": round(s["hi"] * 100, 1),
+            "hit": round(s["hit"] * 100, 1), "verdict": s["verdict"]}
 
 
 def _arb_roi() -> dict:

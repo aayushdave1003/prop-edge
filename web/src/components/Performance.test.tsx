@@ -24,6 +24,7 @@ const perf: Performance = {
   by_market: [{ market: "MLB · Hits", lean: "under", pct: 62, n: 9, lo: 30, hi: 86 }],
   sleeper: { n_all: 0, n: 0, roi: 0, lo: 0, hi: 0, hit: 0, avg_payout: 0, verdict: "—" },
   arb: { n_all: 0, n: 0, roi: 0, lo: 0, hi: 0, hit: 0, verdict: "—" },
+  boost: { n_all: 0, n: 0, roi: 0, lo: 0, hi: 0, hit: 0, verdict: "—" },
 };
 
 const GREEN = "#34D399";

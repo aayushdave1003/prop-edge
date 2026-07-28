@@ -41,6 +41,7 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
 
   const sl = perf.sleeper;
   const ar = perf.arb;
+  const bo = perf.boost;
 
   return (
     <div className="space-y-4">
@@ -129,6 +130,53 @@ export function PerformanceView({ perf, loading }: { perf: Perf | null; loading:
               · <span className="font-semibold" style={{ color: roiColor(ar.verdict) }}>{ar.verdict}</span>
               <div className="mt-1 text-[11px] text-ink-4">
                 bets where Sleeper's price beats the sharp consensus — no model required
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Promo / odds-boost tracker — the one STRUCTURAL +EV lane (book-subsidized) */}
+      <div className="rounded-[16px] border border-hair bg-panel p-[18px]">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="microlabel">Promo boosts · book-subsidized +EV</div>
+          <div className="text-[11px] text-ink-4">realized ROI · structural edge</div>
+        </div>
+        {bo.n_all === 0 ? (
+          <div className="py-2 text-[13px] leading-relaxed text-ink-3">
+            The one <b className="text-ink-2">structural</b> +EV lane. A sportsbook "boost" is{" "}
+            <b>deliberately</b> priced +EV — the book eats margin to acquire you — so unlike the model
+            or arbitrage, the edge is the book's <i>choice</i>, not a bet on beating an efficient market.
+            Enter the day's boosts and each is priced against the sharp market
+            (<span className="tnum">sharp prob × boosted payout &gt; 1</span>); the ones that clear are
+            worth taking, and they're graded forward here like every other lane.
+          </div>
+        ) : bo.verdict === "building" ? (
+          <div className="py-1">
+            <div className="tnum text-[26px] font-bold leading-none text-ink-2">
+              {bo.n} / {SLEEPER_MIN_TIER} <span className="text-[14px] font-semibold text-ink-3">+EV boosts</span>
+            </div>
+            <div className="mt-2 text-[12.5px] leading-relaxed text-ink-3">
+              Too few settled +EV boosts for an honest ROI verdict yet (a short run can read ±100%). The
+              number populates once the tier reaches {SLEEPER_MIN_TIER}. <span className="tnum">{bo.n_all}</span> logged so far.
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+            <div>
+              <div className="tnum text-[34px] font-bold leading-none tracking-tight"
+                   style={{ color: roiColor(bo.verdict) }}>
+                {bo.roi >= 0 ? "+" : ""}{bo.roi}%
+              </div>
+              <div className="tnum mt-2 text-[11px] text-ink-3">
+                95% CI {bo.lo}–{bo.hi}% · {bo.n} +EV boosts / {bo.n_all} logged
+              </div>
+            </div>
+            <div className="text-[12px] text-ink-2">
+              hit <b className="tnum">{bo.hit}%</b>{" "}
+              · <span className="font-semibold" style={{ color: roiColor(bo.verdict) }}>{bo.verdict}</span>
+              <div className="mt-1 text-[11px] text-ink-4">
+                boosts the book overpays vs the sharp market — priced, then graded forward
               </div>
             </div>
           </div>
