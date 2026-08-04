@@ -1,5 +1,7 @@
 """Unit tests for the promo/odds-boost tracker (pricing math) — no DB, no network."""
-from props.picks.boost_ev import american_to_decimal, _price_boost
+from datetime import date
+
+from props.picks.boost_ev import american_to_decimal, _price_boost, _nudge_payload
 
 
 def _sharp(over_prob=0.55, line=1.5, stat="total_bases"):
@@ -49,3 +51,17 @@ def test_unpricable_unreliable_anchor():
     # sharp anchor 95% is outside [0.20,0.80] (alt/thin line) -> not priced
     b = _price_boost("Aaron Judge", "total_bases", 1.5, "over", 200, _sharp(0.95))
     assert b["ev"] is None and "anchor" in b["note"]
+
+
+def test_nudge_payload_carries_the_command():
+    # empty-day reminder must tell the user how to enter boosts, no track record yet
+    p = _nudge_payload(date(2026, 8, 4), {"n": 0, "roi": 0, "lo": 0, "hi": 0, "hit": 0, "verdict": "—"})
+    body = p["embeds"][0]["description"]
+    assert "--add-many" in body
+    assert "none entered" in p["embeds"][0]["title"]
+    assert "Track record" not in body  # nothing settled yet -> no phantom verdict
+
+
+def test_nudge_payload_appends_track_record_once_filled():
+    p = _nudge_payload(date(2026, 8, 4), {"n": 40, "roi": 0.12, "lo": 0.03, "hi": 0.21, "hit": 55, "verdict": "profitable"})
+    assert "Track record" in p["embeds"][0]["description"]

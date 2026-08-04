@@ -33,6 +33,7 @@ un-pricable, and the +EV boosts are graded forward against player_games so the t
 earns a realized track record instead of just asserting EV.
 """
 import argparse
+import os
 import re
 import sys
 from datetime import datetime, date
@@ -200,12 +201,47 @@ def _fmt(b: dict) -> str:
             f"· {b['ev']*100:+.0f}% EV")
 
 
+def _nudge_payload(run_date, s: dict) -> dict:
+    """The empty-day reminder embed (pure — no I/O, so it's testable). Doubles as a
+    status line: appends the accruing track record if the tier has filled."""
+    body = ("No boosts entered yet today. Odds boosts are the one **structural** +EV lane — "
+            "a 1-minute glance at your books pays for itself. Drop them in:\n"
+            "```\npython -m props.picks.boost_ev --add-many\n"
+            "DK, Aaron Judge, total_bases, 1.5, over, +200\n```\n"
+            "(or `--check` a single one). Each is priced vs the sharp market — take the +EV ones.")
+    if s["n"] >= MIN_TIER_N:
+        body += f"\n\n**Track record so far:** ROI {s['roi']:+.1%} over {s['n']} settled · {s['verdict']}"
+    elif s["n"]:
+        body += f"\n\n**Building:** {s['n']}/{MIN_TIER_N} settled +EV boosts."
+    return {"embeds": [{
+        "title": f"🎯 Promo boosts — {run_date:%a %b %-d} · none entered yet",
+        "description": body,
+        "color": 0xF39C12,
+        "footer": {"text": "reminder · set BOOST_NUDGE=0 to silence · paper-only"},
+    }]}
+
+
+def _post_nudge(run_date):
+    """Post the empty-day reminder (the user asked to be nudged). Silenceable via
+    BOOST_NUDGE=0 — a daily prompt should always have an off switch."""
+    if os.getenv("BOOST_NUDGE", "1") == "0":
+        return
+    try:
+        requests.post(settings.discord_webhook_url,
+                      json=_nudge_payload(run_date, boost_roi()), timeout=10)
+    except Exception as e:
+        log.warning("boost_ev_nudge_failed", error=str(e)[:120])
+
+
 def discord_digest(run_date, post: bool = True) -> list[dict]:
     results = evaluate(run_date)
     plus = [b for b in results if b["ev"] is not None and b["ev"] > 0]
     log.info("boost_ev_done", boosts=len(results), plus_ev=len(plus),
              top=(plus[0]["ev"] if plus else None))
-    if not post or not settings.discord_webhook_url or not results:
+    if not post or not settings.discord_webhook_url:
+        return results
+    if not results:
+        _post_nudge(run_date)      # empty day → gentle reminder, not a silent skip
         return results
     if plus:
         body = "**Take these — the book is overpaying vs the sharp market:**\n" + \

@@ -307,11 +307,13 @@ if [ "$(has_recent_games nfl)" = "1" ] && [ "$(date +%u)" = "1" ]; then
     python -m props.models.nfl_corr_probe --post || true
 fi
 
-# ── 7e2d. Promo / odds-boost digest ──────────────────────────────────────────
+# ── 7e2d. Promo / odds-boost digest + reminder ───────────────────────────────
 # Odds boosts are the one STRUCTURAL +EV lane (the book deliberately overpays to
-# acquire/retain). Boosts are entered by hand (props.picks.boost_ev --add); this
-# posts today's +EV ones priced vs the sharp market + the accruing realized ROI.
-# Self-skips silently (no post, no sharp fetch) on days with no boosts entered.
+# acquire/retain). Boosts are entered by hand (props.picks.boost_ev --add-many);
+# this posts today's +EV ones priced vs the sharp market + the accruing realized
+# ROI. On days with NO boosts entered it posts a gentle reminder instead (the user
+# asked to be nudged — the tracker's only failure mode is forgetting to feed it);
+# silence with BOOST_NUDGE=0. No sharp fetch / quota burn on the empty-day path.
 if [ -n "${ODDS_API_KEY:-}" ]; then
     python -m props.picks.boost_ev --digest || true
 fi
