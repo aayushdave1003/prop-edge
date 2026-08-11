@@ -182,9 +182,12 @@ def main():
     configure_logging()
     p = argparse.ArgumentParser()
     p.add_argument("--force", action="store_true", help="recalibrate even if a calibrator exists")
+    p.add_argument("--only", default=None, help="regenerate only this model name (e.g. total_bases_v1)")
     args = p.parse_args()
     print("=== Calibration (NHL skipped: too few games) ===")
     for cfg in CONFIGS:
+        if args.only and cfg["name"] != args.only:
+            continue
         print(" ", calibrate_one(cfg, args.force))
 
 
