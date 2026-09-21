@@ -10,7 +10,7 @@ An **actively-developed** research project — the model has no standalone edge,
 
 ## What it does
 
-Every morning, for MLB, NBA, WNBA, and NHL, the cloud pipeline:
+Every morning, for MLB, NBA, WNBA, NHL, and NFL, the cloud pipeline:
 
 1. **Ingests** fresh prop lines through a pluggable [`LineFeed`](props/ingest/line_feed.py) seam (currently Sleeper's open API; PrizePicks via residential proxy when reachable), plus schedules, box scores, injuries, and probable starters
 2. **Builds** 110–137 lookahead-safe features per player-game (rolling form, matchup quality, platoon splits, basketball IQ, opponent defense, rest, park factors, …)
@@ -34,6 +34,20 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 - **Correlated parlays** — pick'em books price legs independently, so positively-correlated legs are +EV without beating any single price. MLB same-team lift (~3–4%) is too small vs the ~9% two-pick vig; NFL QB+own-WR (mechanically correlated) is [probed](props/models/nfl_corr_probe.py) weekly in-season. Honest prior: still likely too small.
 
 The through-line: no *modeling* edge survives contact with a forward test — the numbers only shrink, never grow. The boost lane is the exception because its edge is the book's choice, not a model's cleverness.
+
+### NFL — first live season (2026)
+
+NFL went live on **2026-09-09**, the first new sport to reach production since the Sleeper switch.
+
+| | Sample | Record |
+|---|--------|--------|
+| NFL picks, all markets | n = 170 settled | **86–84 · 50.6%** |
+
+Markets live: `receptions`, `receiving_yards`, `rushing_yards` (`passing_yards` was dropped at −6.23% OOS).
+Read this as **confirmation the harness is honest, not as a result**: 50.6% is exactly what the
+[resolution audit](props/models/resolution_audit.py) predicts for a model with no within-market discrimination, and it landed there on a sport
+whose models were trained and shipped *after* that audit — i.e. the no-edge finding generalizes out of sample.
+These models run on raw Poisson (no calibrator yet; the tail is still too sparse to fit one).
 
 ### PrizePicks — frozen history (audited)
 
