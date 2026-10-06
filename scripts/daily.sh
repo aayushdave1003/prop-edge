@@ -64,35 +64,57 @@ echo "--- Roster sync (current_team_id) ---"
 python -m props.ingest.rosters || echo "WARN: roster sync failed"
 
 # ── 1. Schedules (yesterday + today + tomorrow for early-morning runs) ──────
+# Schedule window: yesterday (self-heal for games that moved or finished late)
+# through SCHED_DAYS_AHEAD days out.
+#
+# WHY A FORWARD WINDOW, NOT JUST TOMORROW: a line can only resolve to a pick if
+# its game is already in `games`. Books post lines days ahead — Sleeper carries
+# NFL a week out and MLB playoff dates as soon as the bracket sets — so a ±1-day
+# window silently dropped every one of them. Measured 2026-10-06, that was
+# 220 mlb + 89 nfl + 68 wnba lines in a single run, all as `unresolved_game`.
+# NFL is the clearest case: it plays weekly, so on most weekdays a ±1-day window
+# contains no NFL game at all.
+#
+# Cost: this multiplies schedule calls by ~3. They are small date-scoped
+# requests and most return zero events, but SCHED_DAYS_AHEAD is tunable if a
+# run gets tight.
+SCHED_DAYS_AHEAD=${SCHED_DAYS_AHEAD:-8}
+
+# _sched <ingest_module> [warn_reason]
+# With a warn reason, failures are reported but not counted as step failures —
+# for sports whose endpoints time out on empty off-season dates. Without one,
+# failures are hard (MLB/WNBA: in-season, the spine of the daily slate).
+_sched() {
+    local mod="$1" warn="${2:-}" i off d
+    for i in $(seq -1 "$SCHED_DAYS_AHEAD"); do
+        if [ "$i" -lt 0 ]; then off="-$(( -i ))d"; else off="+${i}d"; fi
+        d=$(date -v${off} +%Y-%m-%d 2>/dev/null || date -d "${i} days" +%Y-%m-%d)
+        if [ -n "$warn" ]; then
+            python -m "props.ingest.${mod}" "$d" || echo "WARN: ${mod} failed for ${d} (${warn})"
+        else
+            python -m "props.ingest.${mod}" "$d"
+        fi
+    done
+}
+
 echo "--- MLB schedule ---"
-python -m props.ingest.mlb_schedule "$YESTERDAY"
-python -m props.ingest.mlb_schedule "$TODAY"
-python -m props.ingest.mlb_schedule "$TOMORROW"
+_sched mlb_schedule
 
 # NBA/NHL go quiet in summer; their schedule endpoints (flaky stats.nba.com,
 # api-web.nhle.com) then time out on empty future dates. A transient timeout
 # there must not inflate step_failures — a real in-season gap still surfaces via
-# ingest_monitor's slate_volume check. WARN, don't count. (MLB/WNBA stay hard:
-# in-season, and the spine of the daily slate.)
+# ingest_monitor's slate_volume check. WARN, don't count.
 echo "--- NBA schedule ---"
-python -m props.ingest.nba_schedule "$YESTERDAY" || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
-python -m props.ingest.nba_schedule "$TODAY"     || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
-python -m props.ingest.nba_schedule "$TOMORROW"  || echo "WARN: nba_schedule failed (flaky stats.nba.com / offseason)"
+_sched nba_schedule "flaky stats.nba.com / offseason"
 
 echo "--- WNBA schedule ---"
-python -m props.ingest.wnba_schedule "$YESTERDAY"
-python -m props.ingest.wnba_schedule "$TODAY"
-python -m props.ingest.wnba_schedule "$TOMORROW"
+_sched wnba_schedule
 
 echo "--- NHL schedule ---"
-python -m props.ingest.nhl_schedule "$YESTERDAY" || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
-python -m props.ingest.nhl_schedule "$TODAY"     || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
-python -m props.ingest.nhl_schedule "$TOMORROW"  || echo "WARN: nhl_schedule failed (api-web.nhle.com / offseason)"
+_sched nhl_schedule "api-web.nhle.com / offseason"
 
 echo "--- NFL schedule ---"
-python -m props.ingest.nfl_schedule "$YESTERDAY" || echo "WARN: nfl_schedule failed (espn / offseason)"
-python -m props.ingest.nfl_schedule "$TODAY"     || echo "WARN: nfl_schedule failed (espn / offseason)"
-python -m props.ingest.nfl_schedule "$TOMORROW"  || echo "WARN: nfl_schedule failed (espn / offseason)"
+_sched nfl_schedule "espn / offseason"
 
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 # When writing to Railway (remote DB), cap the batch to avoid backfilling years
