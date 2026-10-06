@@ -105,15 +105,34 @@ def run(dry_run: bool = False) -> None:
     season = str(started.year)
 
     lines = _get("/lines/available")
-    # game_id -> date (from each sport's season schedule)
+    # game_id -> date, from every schedule slice a live line could belong to.
+    #
+    # "regular" ALONE IS NOT ENOUGH, in two ways that both fail silently (the
+    # line just resolves to no date -> unresolved_game -> nothing lands):
+    #
+    #   * POSTSEASON. /schedule/{sport}/regular/{season} stops at the end of the
+    #     regular season (mlb 2026: 3/25-9/27). Once MLB and WNBA reached the
+    #     playoffs, every one of their lines became unresolvable -- measured
+    #     2026-10-06, that was 292 mlb + 68 wnba lines and ZERO landable rows.
+    #   * YEAR ROLLOVER. `season` is the current calendar year, but NFL/NBA/NHL
+    #     seasons span it (nfl 2026: 9/09/26 - 1/10/27). Come January the year
+    #     flips and the current season's schedule is no longer fetched at all.
+    #
+    # Unknown combinations return an empty list rather than an error, so asking
+    # for slices that do not exist (nhl "post" before the playoffs, next year's
+    # season) is harmless.
     sched: dict[str, str] = {}
+    seasons = (season, str(int(season) - 1))
     for sp in SPORTS:
-        try:
-            for g in _get(f"/schedule/{sp}/regular/{season}"):
-                if g.get("game_id"):
-                    sched[str(g["game_id"])] = g.get("date")
-        except Exception as e:
-            log.warning("sleeper_schedule_failed", sport=sp, err=str(e)[:100])
+        for yr in seasons:
+            for season_type in ("regular", "post"):
+                try:
+                    for g in _get(f"/schedule/{sp}/{season_type}/{yr}"):
+                        if g.get("game_id"):
+                            sched[str(g["game_id"])] = g.get("date")
+                except Exception as e:
+                    log.warning("sleeper_schedule_failed", sport=sp, season=yr,
+                                season_type=season_type, err=str(e)[:100])
     # sleeper roster: sport -> {subject_id: full_name}
     rosters = {sp: _get(f"/players/{sp}") for sp in SPORTS}
 
