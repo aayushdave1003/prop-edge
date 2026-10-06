@@ -2,6 +2,9 @@
 
 Auto-archived from ROADMAP.md as items ship.
 
+## Shipped — 2026-10-06
+- ✅ **P3** **`WAGER_TO_STAT` is keyed on wager_type alone — cross-sport collision. FIXED 2026-10-06.** Rekeyed on `(sport, wager_type)`; added NHL + NBA to `SPORTS`; corrected `earned_runs` → `earned_runs_allowed`; dropped the dead `outs`/`passing_yards` targets. Guarded by `tests/test_sleeper_mapping.py` (every mapping must answer a registered model for that sport; every modelled sport must be in `SPORTS`). Original text: `props/ingest/sleeper.py` maps wager_type→stat without the sport, so NFL `assists` (defensive assisted tackles; 16 lines seen live, e.g. a `DB`) resolves to the **basketball** `assists` stat. Harmless today — there is no (nfl, assists) model in the registry, so no pick is generated — but it would land junk `prop_lines` rows. Also dead: `passing_yards` is still mapped although the model was dropped at −6.23% OOS. Fix: key the dict on `(sport, wager_type)`.
+
 ## Shipped — 2026-06-25
 - ✅ **P3** **NBA usage redistribution when a star sits — DONE.** Extended the minutes-based teammate-absence features to the actual *usage* freed when a rotation player (≥15 min avg) sits: `freed_fga_total`/`freed_fta_total`/`freed_ast_total` (summed recent avgs of absent rotation teammates) + `top_absent_fga`. Assess-first cleared the bar (resid corr +0.09–0.11 vs the 0.03 bar; ~0 corr with the raw outcome), A/B confirmed real gain (**points +0.93% / assists +0.48% MAE** over the prior feature set). Wired into `nba_points_v1` + `nba_assists_v1`, backfilled derived, retrained (now +5.35% / +1.77% vs season-avg baseline) and recalibrated (both isotonic maps non-degenerate).
 

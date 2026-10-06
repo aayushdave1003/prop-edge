@@ -29,26 +29,56 @@ from props.utils.db import session_scope
 from props.utils.logging import configure_logging, log
 
 BASE = "https://api.sleeper.app"
-SPORTS = ("mlb", "wnba", "nfl")
+SPORTS = ("mlb", "nba", "wnba", "nfl", "nhl")
 
-# Sleeper wager_type -> our stat_type. Only stats we actually model; anything
-# else (doubles, singles, stolen_bases, threes_made w/o a WNBA model, …) is skipped.
-WAGER_TO_STAT = {
-    # MLB
-    "hits": "hits", "total_bases": "total_bases", "rbis": "rbis",
-    "home_runs": "home_runs", "strike_outs": "strikeouts_pitcher",
-    "hits_allowed": "hits_allowed", "earned_runs": "earned_runs",
-    "hits_runs_rbis": "hits_runs_rbis", "outs": "outs",
-    # WNBA
+# (sport, Sleeper wager_type) -> our stat_type.
+#
+# Keyed on the PAIR, not on wager_type alone. The same string means different
+# things in different sports — NFL "assists" is a defensive assisted tackle,
+# NBA/NHL "assists" is the real stat — so a flat dict silently cross-wires them.
+#
+# The target MUST equal a `registry.MODELS` stat_type FOR THAT SPORT, or the line
+# can never become a pick. Two models went dark that way: `earned_runs_allowed_v1`
+# (lines landed as "earned_runs") and all three NHL models (sport not ingested).
+#
+# Extra aliases are harmless — an unused key costs nothing — but a MISSING key is
+# a silent failure (the wager just counts as `unmodeled_stat`). So prefer listing
+# plausible variants over guessing one exact string.
+_BASKETBALL = {
     "points": "points", "rebounds": "rebounds", "assists": "assists",
-    "pts_reb_ast": "pts_rebs_asts",
-    # NFL — VERIFY exact wager_type strings via `--dry-run` in-season (Sleeper may
-    # use rush_yd / rec_yd / pass_yd). Aliases map to one internal stat; unused keys
-    # are harmless, unmapped wagers are safely skipped (unmodeled_stat).
-    "rushing_yards": "rushing_yards", "rush_yards": "rushing_yards", "rush_yd": "rushing_yards",
-    "receiving_yards": "receiving_yards", "rec_yards": "receiving_yards", "rec_yd": "receiving_yards",
-    "passing_yards": "passing_yards", "pass_yards": "passing_yards", "pass_yd": "passing_yards",
-    "receptions": "receptions", "reception": "receptions",
+    "pts_reb_ast": "pts_rebs_asts", "pts_rebs_asts": "pts_rebs_asts",
+    "pts_reb": "pts_rebs", "pts_rebs": "pts_rebs",
+    "pts_ast": "pts_asts", "pts_asts": "pts_asts",
+    "reb_ast": "rebs_asts", "rebs_asts": "rebs_asts",
+}
+
+WAGER_TO_STAT: dict[tuple[str, str], str] = {
+    # ── MLB (strings verified live) ────────────────────────────────────────────
+    ("mlb", "hits"): "hits",
+    ("mlb", "total_bases"): "total_bases",
+    ("mlb", "rbis"): "rbis",
+    ("mlb", "home_runs"): "home_runs",
+    ("mlb", "hits_runs_rbis"): "hits_runs_rbis",
+    ("mlb", "strike_outs"): "strikeouts_pitcher",
+    ("mlb", "hits_allowed"): "hits_allowed",
+    ("mlb", "earned_runs"): "earned_runs_allowed",   # NOT "earned_runs" — see above
+    # ── NFL (strings verified live 2026-09-07) ─────────────────────────────────
+    ("nfl", "receiving_yards"): "receiving_yards",
+    ("nfl", "receptions"): "receptions",
+    ("nfl", "rushing_yards"): "rushing_yards",
+    # ── NHL (strings verified live 2026-10-05) ─────────────────────────────────
+    # Sleeper also posts points/shots/powerplay_points/blocked_shots — no model
+    # for those, so they stay unmapped.
+    ("nhl", "goals"): "goals",
+    ("nhl", "assists"): "assists",
+    ("nhl", "saves"): "saves",
+    # ── NBA / WNBA ─────────────────────────────────────────────────────────────
+    # WNBA strings verified live; NBA mirrors them (off-season at time of writing,
+    # so re-check with `--dry-run` once the season opens). threes_made is NBA-only
+    # — there is no wnba_threes_made model.
+    ("nba", "threes_made"): "threes_made",
+    **{("nba", k): v for k, v in _BASKETBALL.items()},
+    **{("wnba", k): v for k, v in _BASKETBALL.items()},
 }
 
 
@@ -113,7 +143,7 @@ def run(dry_run: bool = False) -> None:
             if sp not in SPORTS:
                 skip["sport"] += 1
                 continue
-            stat = WAGER_TO_STAT.get(e.get("wager_type"))
+            stat = WAGER_TO_STAT.get((sp, e.get("wager_type")))
             if not stat:
                 skip["unmodeled_stat"] += 1
                 continue
