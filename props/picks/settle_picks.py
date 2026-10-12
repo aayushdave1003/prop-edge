@@ -12,23 +12,44 @@ from props.utils.db import session_scope
 from props.utils.logging import log, configure_logging
 
 
+# A pick's stat_type names the BETTING MARKET; a box score names the sport's own
+# statistic. Where those diverge, settlement silently fails: `_resolve_stat`
+# returns None, the pick logs `stat_not_in_box` and is counted as `missing`, and
+# it stays unsettled forever. That is how 7,079 `hits_runs_rbis` picks -- the
+# highest-volume MLB market -- went un-graded from launch until 2026-10-08,
+# invisible to the win rate, the ROI, and the per-category cutoffs that auto-tune
+# off settled history.
+#
+# Two kinds of divergence, two maps. Keep both in sync with `registry.MODELS`
+# stat_types; `tests/test_settle_resolution.py` enforces that every one resolves.
+
 COMBO_STAT_MAP = {
+    # Markets that sum several box-score stats.
     "pts_rebs_asts": ["points", "rebounds", "assists"],
     "pts_rebs":      ["points", "rebounds"],
     "pts_asts":      ["points", "assists"],
     "rebs_asts":     ["rebounds", "assists"],
     "blocks_steals": ["blocks", "steals"],
+    "hits_runs_rbis": ["hits", "runs", "rbis"],
 }
 
+STAT_ALIASES = {
+    # Same statistic, different name in the box score.
+    "earned_runs_allowed": "earned_runs",     # mlb_boxscores stores "earned_runs"
+    "strikeouts_batter":   "strikeouts",      # "strikeouts_pitcher" is the other side
+}
+
+
 def _resolve_stat(stats_json: dict, stat_type: str):
-    """Return actual stat value, handling combo stats like pts_rebs_asts."""
+    """Return the actual stat value for a market, or None if the box score
+    cannot answer it (combo parts missing, or an unknown stat)."""
     if stat_type in COMBO_STAT_MAP:
         parts = COMBO_STAT_MAP[stat_type]
         values = [stats_json.get(p) for p in parts]
         if any(v is None for v in values):
             return None
         return sum(float(v) for v in values)
-    return stats_json.get(stat_type)
+    return stats_json.get(STAT_ALIASES.get(stat_type, stat_type))
 
 
 def find_unsettled_picks():
