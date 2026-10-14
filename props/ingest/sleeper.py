@@ -94,6 +94,23 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z ]", "", s.lower()).strip()
 
 
+def pick_candidate(cands: list[tuple[int, int]], want_tid: int | None):
+    """Choose among players sharing a normalised name, or None if undecidable.
+
+    Normalised names are NOT unique — MLB has 8 genuine namesake pairs (two Will
+    Smiths: a catcher with 444 games and a pitcher with 110) and NHL has 12. The
+    only honest tiebreak is the team the line itself names; anything else is a
+    guess, and a wrong attribution silently corrupts both the features used to
+    price the prop and the settled record. So an undecidable line is dropped.
+    """
+    if len(cands) == 1:
+        return cands[0]
+    if want_tid is None:
+        return None
+    narrowed = [c for c in cands if c[1] == want_tid]
+    return narrowed[0] if len(narrowed) == 1 else None
+
+
 def _sleeper_name(p: dict) -> str:
     md = (p or {}).get("metadata") or {}
     return md.get("full_name") or f"{(p or {}).get('first_name', '')} {(p or {}).get('last_name', '')}".strip()
@@ -137,12 +154,29 @@ def run(dry_run: bool = False) -> None:
     rosters = {sp: _get(f"/players/{sp}") for sp in SPORTS}
 
     with session_scope() as session:
-        # our players: (sport, norm_name) -> (player_id, current_team_id)
-        our: dict[tuple[str, str], tuple[int, int]] = {}
+        # our players: (sport, norm_name) -> [(player_id, current_team_id), …]
+        #
+        # A LIST, not a single value. Normalised names are not unique: MLB has 8
+        # genuine namesake pairs (two Will Smiths — a catcher with 444 games and
+        # a pitcher with 110) and NHL has 12. This used to be a plain dict, so
+        # the LAST row of an unordered query silently won and a line could be
+        # attached to the wrong player entirely. Candidates are disambiguated
+        # below by the line's own team; a line we still cannot pin is SKIPPED
+        # rather than guessed at — a wrong attribution poisons the record, a
+        # skipped line is just a missing row.
+        our: dict[tuple[str, str], list[tuple[int, int]]] = {}
         for sp in SPORTS:
             for r in session.execute(text(
-                "SELECT player_id, full_name, current_team_id FROM players WHERE sport_code=:sp"), {"sp": sp}):
-                our[(sp, _norm(r.full_name))] = (r.player_id, r.current_team_id)
+                "SELECT player_id, full_name, current_team_id FROM players WHERE sport_code=:sp"
+                " ORDER BY player_id"), {"sp": sp}):
+                our.setdefault((sp, _norm(r.full_name)), []).append((r.player_id, r.current_team_id))
+        # Sleeper's team abbreviation -> our team_id, per sport. Used ONLY to
+        # break a namesake tie (game resolution still goes through the matched
+        # player's own team, so nothing else hinges on abbreviation matching).
+        abbr_to_tid: dict[tuple[str, str], int] = {}
+        for r in session.execute(text(
+            "SELECT sport_code, abbreviation, team_id FROM teams WHERE abbreviation IS NOT NULL")):
+            abbr_to_tid[(r.sport_code, r.abbreviation)] = r.team_id
         # our upcoming games keyed by (sport, team_id, date) for BOTH sides — we
         # resolve a line's game via the mapped player's OWN team, not Sleeper's
         # (ambiguous) abbreviation, so nothing hinges on abbrev matching.
@@ -173,11 +207,20 @@ def run(dry_run: bool = False) -> None:
                 skip["no_line_value"] += 1
                 continue
             sid = str(e.get("subject_id"))
-            match = our.get((sp, _norm(_sleeper_name(rosters[sp].get(sid, {})))))
-            if not match:
+            cands = our.get((sp, _norm(_sleeper_name(rosters[sp].get(sid, {})))), [])
+            if not cands:
                 skip["unmatched_player"] += 1
                 continue
-            pid, tid = match
+            chosen = pick_candidate(
+                cands, abbr_to_tid.get((sp, (over.get("subject_team") or "").strip())))
+            if chosen is None:
+                skip["ambiguous_player"] += 1
+                log.warning("sleeper_ambiguous_player", sport=sp,
+                            name=_sleeper_name(rosters[sp].get(sid, {})),
+                            candidates=[c[0] for c in cands],
+                            sleeper_team=over.get("subject_team"))
+                continue
+            pid, tid = chosen
             gdate = sched.get(str(e.get("game_id")))
             gid = games_map.get((sp, tid, gdate)) if (gdate and tid) else None
             if gid is None:

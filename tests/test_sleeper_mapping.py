@@ -45,3 +45,39 @@ def test_sports_covers_every_registered_model_sport():
     modelled = {m.sport_code for m in MODELS}
     missing = modelled - set(SPORTS)
     assert missing == set(), f"models exist but lines are never ingested: {missing}"
+
+
+# ── namesakes ───────────────────────────────────────────────────────────────
+# Normalised names are not unique. MLB has 8 genuine namesake pairs (two Will
+# Smiths -- a catcher with 444 games and 273 lines, and a pitcher with 110
+# games) and NHL has 12. The player map was a plain dict, so the LAST row of an
+# unordered query silently won and a line could attach to the wrong player.
+
+from props.ingest.sleeper import pick_candidate
+
+CATCHER = (595, 23)     # Will Smith, C
+PITCHER = (1885, 9)     # Will Smith, P
+
+
+def test_single_candidate_needs_no_team():
+    assert pick_candidate([CATCHER], None) == CATCHER
+
+
+def test_namesakes_are_split_by_the_lines_own_team():
+    assert pick_candidate([CATCHER, PITCHER], 23) == CATCHER
+    assert pick_candidate([CATCHER, PITCHER], 9) == PITCHER
+
+
+def test_namesake_without_a_team_is_dropped_not_guessed():
+    """A wrong attribution corrupts both the pricing features and the settled
+    record; a dropped line is merely a missing row."""
+    assert pick_candidate([CATCHER, PITCHER], None) is None
+
+
+def test_namesake_with_an_unknown_team_is_dropped():
+    assert pick_candidate([CATCHER, PITCHER], 999) is None
+
+
+def test_namesake_on_the_same_team_is_dropped():
+    """Two same-named players on one roster cannot be told apart by team."""
+    assert pick_candidate([(1, 23), (2, 23)], 23) is None
