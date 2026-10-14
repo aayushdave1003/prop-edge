@@ -16,7 +16,9 @@ Two ESPN-specific wrinkles this module handles:
      duplicate players and nothing would settle.
 """
 import json
+import re
 import time
+import unicodedata
 
 from curl_cffi import requests as cc
 from sqlalchemy import text
@@ -127,17 +129,63 @@ def find_unprocessed_games() -> list[dict]:
              "home_abbr": r[5], "away_abbr": r[6]} for r in rows]
 
 
+def _accent_fold(s: str) -> str:
+    """Lowercase, strip accents and punctuation — the same shape as sleeper._norm,
+    which is what actually has to match a line feed's name to this player."""
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z ]", "", s.lower()).strip()
+
+
+def _folded_names(session) -> dict[str, list[tuple[int, str]]]:
+    """folded name -> [(player_id, stored name)], built once per process.
+
+    Cached because resolve_player runs per player per box score; the NBA roster
+    is ~900 rows, so one read beats a query per lookup. Lowest player_id first so
+    the canonical row (created by the stats.nba.com path, which carries the long
+    history) wins over any later duplicate.
+    """
+    if not hasattr(_folded_names, "_cache"):
+        rows = session.execute(text(
+            "SELECT player_id, full_name FROM players WHERE sport_code='nba' ORDER BY player_id")).all()
+        cache: dict[str, list[tuple[int, str]]] = {}
+        for pid, full in rows:
+            cache.setdefault(_accent_fold(full), []).append((pid, full))
+        _folded_names._cache = cache
+    return _folded_names._cache
+
+
 def resolve_player(session, name: str, team_id: int) -> int:
     """Find the existing NBA player row this name refers to, or create one.
 
-    Resolution: fuzzy full-name match (pg_trgm > 0.8) -> create with an espn_
-    external_id. The old last-name-only fallback (``full_name LIKE '%Smith'``) was
-    DROPPED: it matched on surname alone, so it could attach this box score's
-    stats to a DIFFERENT same-surname player — silently corrupting settlement and
-    therefore the tracked win rate. A missed match just creates a new row (visible,
-    recoverable); a *wrong* match poisons the record. The full-name fuzzy match
-    already handles legitimate spelling variants, so we now fail safe to create.
+    Resolution order:
+      1. ACCENT-FOLDED exact match. pg_trgm compares raw bytes, so an accent is
+         several trigrams of difference: similarity('Pacôme Dadiet',
+         'Pacome Dadiet') is 0.647 and 'Egor Dëmin' vs 'Egor Demin' is 0.571 —
+         both under the 0.8 bar. ESPN writes unaccented names, stats.nba.com
+         writes accented ones, so EVERY accented player was silently forking into
+         a second espn_ row: 18 of them by the 2026 preseason, including Jokić,
+         Dončić, Porziņģis and Vučević, with their recent games stranded away
+         from their multi-season history.
+      2. Fuzzy full-name match (pg_trgm > 0.8) for genuine spelling variants.
+      3. Create, with an espn_ external_id.
+
+    The old last-name-only fallback (``full_name LIKE '%Smith'``) was DROPPED: it
+    matched on surname alone, so it could attach this box score's stats to a
+    DIFFERENT same-surname player — silently corrupting settlement and therefore
+    the tracked win rate. A missed match just creates a new row (visible,
+    recoverable); a *wrong* match poisons the record. Step 1 is safe in that same
+    sense: accent-folding only ever merges names that are already identical once
+    accents are removed, which is exactly the comparison the line feed makes.
     """
+    folded = _accent_fold(name)
+    if folded:
+        # Folded in Python, not SQL: Postgres has no `unaccent` extension here,
+        # and doing it this way guarantees the comparison is byte-identical to
+        # the one `sleeper._norm` makes when matching a line to a player.
+        hit = _folded_names(session).get(folded)
+        if hit:
+            return hit[0][0]
+
     res = session.execute(text("""
         SELECT player_id FROM players
         WHERE sport_code = 'nba' AND similarity(full_name, :name) > 0.8
@@ -154,6 +202,10 @@ def resolve_player(session, name: str, team_id: int) -> int:
         SET full_name = EXCLUDED.full_name
         RETURNING player_id
     """), {"ext": f"espn_{name.lower().replace(' ', '_')}", "name": name, "tid": team_id}).first()
+    # Keep the cache coherent: without this a player appearing in two box scores
+    # in the same run would miss the cache the second time and fork again.
+    if folded:
+        _folded_names(session).setdefault(folded, []).append((res[0], name))
     return res[0]
 
 
