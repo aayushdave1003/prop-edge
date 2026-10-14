@@ -40,7 +40,19 @@ STAT_ALIASES = {
 }
 
 
-def _resolve_stat(stats_json: dict, stat_type: str):
+# NFL box scores are written PER STAT GROUP: a running back who caught no passes
+# gets {carries, rushing_yards, rushing_tds} and no receiving keys at all. The
+# absent key means a real ZERO, not "unknown" — but `.get()` returns None either
+# way, so those picks never settled. 8 were stuck for a month (every one a back
+# with no catches) and it would recur every week. Only these keys, only when the
+# player HAS a recorded box-score row, so a genuine no-data case still yields None.
+ZERO_WHEN_ABSENT = {
+    "nfl": {"receptions", "receiving_yards", "receiving_tds",
+            "rushing_yards", "rushing_tds", "carries", "targets"},
+}
+
+
+def _resolve_stat(stats_json: dict, stat_type: str, sport_code: str | None = None):
     """Return the actual stat value for a market, or None if the box score
     cannot answer it (combo parts missing, or an unknown stat)."""
     if stat_type in COMBO_STAT_MAP:
@@ -49,14 +61,18 @@ def _resolve_stat(stats_json: dict, stat_type: str):
         if any(v is None for v in values):
             return None
         return sum(float(v) for v in values)
-    return stats_json.get(STAT_ALIASES.get(stat_type, stat_type))
+    key = STAT_ALIASES.get(stat_type, stat_type)
+    value = stats_json.get(key)
+    if value is None and stats_json and key in ZERO_WHEN_ABSENT.get(sport_code or "", ()):
+        return 0
+    return value
 
 
 def find_unsettled_picks():
     """Return list of picks rows joined to game status and actual stat."""
     with session_scope() as session:
         rows = session.execute(text("""
-            SELECT pk.pick_id, pk.stat_type, pk.direction,
+            SELECT pk.pick_id, pk.stat_type, pk.direction, pk.sport_code,
                    pl.line_value,
                    pg.player_game_id, pg.stats, pg.did_play,
                    g.status, g.game_date,
@@ -148,7 +164,7 @@ def run():
 
     with session_scope() as session:
         for r in rows:
-            (pick_id, stat_type, direction, line_value,
+            (pick_id, stat_type, direction, sport_code, line_value,
              player_game_id, stats_json, did_play, game_status, game_date, player_name,
              game_has_box) = r
 
@@ -258,7 +274,7 @@ def run():
                 settled += 1
                 continue
 
-            actual_raw = _resolve_stat(stats_json, stat_type)
+            actual_raw = _resolve_stat(stats_json, stat_type, sport_code)
             if actual_raw is None:
                 log.warning("stat_not_in_box", pick_id=pick_id,
                             stat=stat_type, player=player_name)

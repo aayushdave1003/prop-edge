@@ -78,3 +78,40 @@ def test_alias_picks_the_right_side_of_a_pair():
 
 def test_unknown_stat_is_none():
     assert _resolve_stat({"hits": 1}, "not_a_real_stat") is None
+
+
+# ── NFL writes box scores PER STAT GROUP ────────────────────────────────────
+# A running back who caught no passes gets {carries, rushing_*} and NO receiving
+# keys. The absent key means a real zero, but `.get()` returns None either way,
+# so those picks never settled -- 8 sat stuck for a month, every one a back with
+# no catches, and it would have recurred weekly.
+
+NFL_RUSH_ONLY = {"carries": 18, "rushing_tds": 1, "rushing_yards": 81}
+
+
+def test_absent_nfl_receiving_group_is_zero_not_unknown():
+    assert _resolve_stat(NFL_RUSH_ONLY, "receptions", "nfl") == 0
+    assert _resolve_stat(NFL_RUSH_ONLY, "receiving_yards", "nfl") == 0
+
+
+def test_present_nfl_stats_still_win():
+    box = {"receptions": 5, "receiving_yards": 62, "carries": 1}
+    assert _resolve_stat(box, "receptions", "nfl") == 5
+    assert _resolve_stat(box, "receiving_yards", "nfl") == 62
+
+
+def test_zero_default_does_not_leak_to_other_sports():
+    """A missing MLB key is genuinely unknown -- grading it 0 would invent a
+    result and silently corrupt the win rate."""
+    assert _resolve_stat({"at_bats": 4}, "hits", "mlb") is None
+    assert _resolve_stat({"points": 10}, "rebounds", "nba") is None
+
+
+def test_zero_default_requires_an_actual_box_row():
+    """No recorded stats at all is a DNP, not a zero."""
+    assert _resolve_stat({}, "receptions", "nfl") is None
+
+
+def test_zero_default_requires_the_sport():
+    """Without sport_code the old conservative behaviour stands."""
+    assert _resolve_stat(NFL_RUSH_ONLY, "receptions") is None
