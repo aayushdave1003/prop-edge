@@ -614,3 +614,22 @@ def test_rec_cutoff_hierarchy():
     assert cc.rec_cutoff("nba", "points", table=table) == 0.80
     assert cc.rec_cutoff("nhl", "goals", table=table) == 0.70  # global default
     assert cc.rec_cutoff(None, None, table=table) == 0.70
+
+
+# ── structlog reserved-kwarg guard ──────────────────────────────────────────
+# `event` is structlog's own positional field. Passing it as a kwarg raises
+# TypeError, and every occurrence was INSIDE an exception handler -- so a
+# transient fetch failure crashed the whole ingest instead of logging and
+# moving on. It was fixed once in nfl_boxscores and still lurked in four other
+# modules, including nba_boxscores, which runs nightly.
+def test_no_reserved_event_kwarg_in_log_calls():
+    import pathlib
+    import re
+    root = pathlib.Path(__file__).resolve().parent.parent / "props"
+    bad = []
+    pattern = re.compile(r"log\.(?:debug|info|warning|error|critical)\([^)]*?\bevent\s*=", re.S)
+    for path in root.rglob("*.py"):
+        for m in pattern.finditer(path.read_text()):
+            line = path.read_text()[: m.start()].count("\n") + 1
+            bad.append(f"{path.relative_to(root.parent)}:{line}")
+    assert bad == [], f"`event=` is reserved by structlog and raises TypeError: {bad}"

@@ -61,7 +61,7 @@ def process_game(session, game: dict) -> int:
         data = cc.get(ESPN_SUMMARY, params={"event": game["external_id"]},
                       impersonate="chrome120", timeout=15).json()
     except Exception as e:
-        log.warning("soccer_boxscore_fetch_failed", event=game["external_id"], err=str(e)[:120])
+        log.warning("soccer_boxscore_fetch_failed", game_ext=game["external_id"], err=str(e)[:120])
         return 0
     rosters = data.get("rosters", [])
     if not rosters:

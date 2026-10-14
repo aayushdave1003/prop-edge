@@ -255,7 +255,7 @@ def process_game(session, game: dict, sb_cache: dict) -> int:
         data = cc.get(ESPN_SUMMARY, params={"event": event_id},
                       impersonate="chrome120", timeout=15).json()
     except Exception as e:
-        log.warning("nba_boxscore_fetch_failed", event=event_id, err=str(e)[:120])
+        log.warning("nba_boxscore_fetch_failed", game_ext=event_id, err=str(e)[:120])
         return 0
 
     hdr = (data.get("header", {}).get("competitions") or [{}])[0]

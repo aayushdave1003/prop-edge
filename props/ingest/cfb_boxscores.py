@@ -14,7 +14,7 @@ from props.ingest.nfl_boxscores import parse_team_players
 ESPN_SUMMARY = "https://site.api.espn.com/apis/site/v2/sports/football/college-football/summary"
 
 
-def find_unprocessed_games(reprocess_all: bool = False) -> list[dict]:
+def find_unprocessed_games(reprocess_all: bool = False, limit: int = 600) -> list[dict]:
     extra = "" if reprocess_all else \
         "AND NOT EXISTS (SELECT 1 FROM player_games pg WHERE pg.game_id = g.game_id)"
     with session_scope() as session:
@@ -23,8 +23,8 @@ def find_unprocessed_games(reprocess_all: bool = False) -> list[dict]:
             FROM games g
             WHERE g.sport_code = 'cfb' AND g.external_id IS NOT NULL AND g.status = 'final'
               {extra}
-            ORDER BY g.game_date DESC LIMIT 600
-        """)).all()
+            ORDER BY g.game_date DESC LIMIT :lim
+        """), {"lim": limit}).all()
     return [{"game_id": r[0], "external_id": r[1], "home_team_id": r[2], "away_team_id": r[3]} for r in rows]
 
 
@@ -44,7 +44,7 @@ def process_game(session, game: dict) -> int:
         data = cc.get(ESPN_SUMMARY, params={"event": game["external_id"]},
                       impersonate="chrome120", timeout=15).json()
     except Exception as e:
-        log.warning("cfb_boxscore_fetch_failed", event=game["external_id"], err=str(e)[:120])
+        log.warning("cfb_boxscore_fetch_failed", game_ext=game["external_id"], err=str(e)[:120])
         return 0
     hdr = (data.get("header", {}).get("competitions") or [{}])[0]
     if not hdr.get("status", {}).get("type", {}).get("completed"):
@@ -75,23 +75,39 @@ def process_game(session, game: dict) -> int:
     return rows
 
 
-def run(reprocess_all: bool = False):
+def run(reprocess_all: bool = False, limit: int = 600, batch: int = 50):
+    """Ingest box scores for unprocessed CFB games.
+
+    Commits every `batch` games. The whole loop used to run inside ONE
+    session_scope, so a backfill that outran its timeout lost every game it had
+    already fetched and had no way to resume — 452 games is ~10 minutes of ESPN
+    round-trips, right at the edge. Batching makes a long backfill restartable:
+    re-running simply picks up whatever is still unprocessed.
+    """
     configure_logging()
-    games = find_unprocessed_games(reprocess_all=reprocess_all)
+    games = find_unprocessed_games(reprocess_all=reprocess_all, limit=limit)
     log.info("found_unprocessed_cfb_games", count=len(games))
     if not games:
         return
     total = failed = 0
-    with session_scope() as session:
-        for g in games:
-            n = process_game(session, g)
-            failed += (n == 0)
-            total += n
-            time.sleep(0.15)
+    for start in range(0, len(games), batch):
+        chunk = games[start:start + batch]
+        with session_scope() as session:
+            for g in chunk:
+                n = process_game(session, g)
+                failed += (n == 0)
+                total += n
+                time.sleep(0.15)
+        log.info("cfb_boxscore_batch", done=min(start + batch, len(games)),
+                 of=len(games), players=total)
     log.info("cfb_boxscore_ingest_complete", games=len(games), players=total, failed=failed)
 
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(); ap.add_argument("--all", action="store_true")
-    run(reprocess_all=ap.parse_args().all)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--limit", type=int, default=600, help="max games to consider")
+    ap.add_argument("--batch", type=int, default=50, help="games per commit")
+    a = ap.parse_args()
+    run(reprocess_all=a.all, limit=a.limit, batch=a.batch)
