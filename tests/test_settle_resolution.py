@@ -37,6 +37,12 @@ BOX = {
     "nfl": {k: 1 for k in [
         "carries", "receiving_tds", "receiving_yards", "receptions",
         "rushing_tds", "rushing_yards", "targets"]},
+    # CFB, like NFL, is written per stat group -- but unlike NFL the groups come
+    # through together on a player who did both, so the union is the fixture.
+    "cfb": {k: 1 for k in [
+        "carries", "completions", "interceptions", "pass_attempts", "passing_tds",
+        "passing_yards", "receiving_tds", "receiving_yards", "receptions",
+        "rushing_tds", "rushing_yards", "targets"]},
     # NHL splits by position: skaters carry no "saves", goalies do. A saves
     # market only ever lands on a goalie row, so that is the row to test against.
     "nhl": {k: 1 for k in [

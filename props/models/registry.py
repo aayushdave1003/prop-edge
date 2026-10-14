@@ -205,6 +205,21 @@ MODELS = [
     ),
 ]
 
+# CFB (college football) — reuses the NFL football stack; trained by
+# props.models.cfb_models_v1 on a temporal holdout (oldest 80% train, newest 20%
+# test), all four beating the season-avg baseline: receiving_yards +11.45%,
+# rushing_yards +9.92%, passing_yards +5.71%, receptions +3.80%. The 2026 season
+# being ingested is what lifted these — the original 2023–25-only assessment had
+# only receiving_yards as a winner.
+MODELS += [
+    ModelEntry(
+        name=f"cfb_{stat}_v1", sport_code="cfb", stat_type=stat, role="player",
+        model_path=Path(f"models/cfb_{stat}_v1.txt"),
+        meta_path=Path(f"models/cfb_{stat}_v1_meta.json"),
+    )
+    for stat in ("receiving_yards", "rushing_yards", "passing_yards", "receptions")
+]
+
 # NBA/WNBA combo markets — direct summed-target Poisson models
 # (props.models.basketball_combos_v1). stat_type matches prop_lines.
 MODELS += [

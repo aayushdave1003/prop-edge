@@ -46,9 +46,12 @@ STAT_ALIASES = {
 # way, so those picks never settled. 8 were stuck for a month (every one a back
 # with no catches) and it would recur every week. Only these keys, only when the
 # player HAS a recorded box-score row, so a genuine no-data case still yields None.
+_FOOTBALL_GROUPS = {"receptions", "receiving_yards", "receiving_tds",
+                    "rushing_yards", "rushing_tds", "carries", "targets",
+                    "passing_yards", "passing_tds", "pass_attempts", "completions"}
 ZERO_WHEN_ABSENT = {
-    "nfl": {"receptions", "receiving_yards", "receiving_tds",
-            "rushing_yards", "rushing_tds", "carries", "targets"},
+    "nfl": _FOOTBALL_GROUPS,
+    "cfb": _FOOTBALL_GROUPS,   # same ESPN football shape, same absent-means-zero
 }
 
 

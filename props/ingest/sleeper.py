@@ -29,7 +29,7 @@ from props.utils.db import session_scope
 from props.utils.logging import configure_logging, log
 
 BASE = "https://api.sleeper.app"
-SPORTS = ("mlb", "nba", "wnba", "nfl", "nhl")
+SPORTS = ("mlb", "nba", "wnba", "nfl", "nhl", "cfb")
 
 # (sport, Sleeper wager_type) -> our stat_type.
 #
@@ -72,6 +72,11 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("nhl", "goals"): "goals",
     ("nhl", "assists"): "assists",
     ("nhl", "saves"): "saves",
+    # ── CFB (strings verified live 2026-10-14; same names as NFL) ──────────────
+    ("cfb", "receiving_yards"): "receiving_yards",
+    ("cfb", "rushing_yards"): "rushing_yards",
+    ("cfb", "passing_yards"): "passing_yards",
+    ("cfb", "receptions"): "receptions",
     # ── NBA / WNBA ─────────────────────────────────────────────────────────────
     # WNBA strings verified live; NBA mirrors them (off-season at time of writing,
     # so re-check with `--dry-run` once the season opens). threes_made is NBA-only

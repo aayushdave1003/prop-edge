@@ -30,7 +30,21 @@ def explode_stats(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def run():
+def run(recent_days: int | None = None):
+    """Compute CFB rolling features.
+
+    `recent_days` bounds what is WRITTEN (the compute always covers all history,
+    since a rolling window needs it). The default mirrors every other sport:
+    only the last few weeks are rewritten, because settled rolling features are
+    stable once computed.
+
+    A sport joining mid-season needs more than that — CFB's 2026 season was
+    never ingested, so its whole year needed deriving at once. Passing
+    `--days 70` writes exactly that span, which is the honest alternative to
+    DERIVED_BACKFILL_ALL: that flag rewrites all 32k rows including three
+    already-derived seasons, and the prod guard refuses it for good reason (a
+    full rewrite floods WAL and once filled the Railway volume).
+    """
     configure_logging()
     started = datetime.now()
     with session_scope() as session:
@@ -47,8 +61,9 @@ def run():
                     ignore_index=True)
     log.info("rolling_features_computed", rows=len(out), features=len(out.columns) - 1)
     cols = [c for c in out.columns if c != "player_game_id"]
+    write_kwargs = {} if recent_days is None else {"recent_days": recent_days}
     write_derived([(int(r["player_game_id"]), feat_dict(r, cols)) for _, r in out.iterrows()],
-                  mode="replace", label="cfb_rolling")
+                  mode="replace", label="cfb_rolling", **write_kwargs)
     with session_scope() as session:
         session.execute(text("UPDATE ingestion_runs SET completed_at=NOW(), rows_inserted=:n, status='success' WHERE run_id=:rid"),
                         {"n": len(out), "rid": run_id})
@@ -56,4 +71,8 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--days", type=int, default=None,
+                    help="write rows from the last N days (default: the shared 21d window)")
+    run(recent_days=ap.parse_args().days)

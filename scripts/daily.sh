@@ -116,6 +116,12 @@ _sched nhl_schedule "api-web.nhle.com / offseason"
 echo "--- NFL schedule ---"
 _sched nfl_schedule "espn / offseason"
 
+# CFB: Aug–Jan, ~60 games a Saturday. Ingested so the sport's data keeps pace
+# with the lines Sleeper already posts for it (~800/day in season); the models
+# are not registered yet, so this accrues data rather than producing picks.
+echo "--- CFB schedule ---"
+_sched cfb_schedule "espn / offseason"
+
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 # When writing to Railway (remote DB), cap the batch to avoid backfilling years
 # of history. The universe is already bounded to the last 5 days
@@ -132,6 +138,10 @@ python -m props.ingest.nba_boxscores
 python -m props.ingest.wnba_boxscores
 python -m props.ingest.nhl_boxscores
 python -m props.ingest.nfl_boxscores
+# CFB volume is ~10x NFL's, so cap each run and commit in batches: a backlog
+# that outruns the step's time budget keeps whatever it already fetched and the
+# next run resumes, instead of rolling the whole thing back.
+python -m props.ingest.cfb_boxscores --limit 120 --batch 40 || echo "WARN: cfb_boxscores failed (espn / offseason)"
 
 # ── 2b. MLB ballpark weather (Open-Meteo, free) ──────────────────────────────
 # Wind blowing out drives offense (validated: 65% over-rate vs 43% calm/in).
@@ -181,6 +191,13 @@ if [ "$(has_recent_games nhl)" = "1" ]; then
     python -m props.features.nhl_advanced_stats
 else
     echo "--- NHL rolling features: skipped (off-season, no games in 10d) ---"
+fi
+
+if [ "$(has_recent_games cfb)" = "1" ]; then
+    echo "--- CFB rolling features ---"
+    python -m props.features.cfb_rolling || echo "WARN: cfb_rolling failed"
+else
+    echo "--- CFB rolling features: skipped (off-season, no games in 10d) ---"
 fi
 
 if [ "$(has_recent_games nfl)" = "1" ]; then
