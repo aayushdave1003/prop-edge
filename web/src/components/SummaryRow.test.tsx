@@ -13,20 +13,32 @@ const summary: Summary = {
 };
 
 describe("SummaryRow", () => {
-  it("renders the KPI labels and the fixed breakeven card", () => {
+  it("renders the KPI labels and the audited tracked-tier card", () => {
     render(<SummaryRow summary={summary} />);
     expect(screen.getByText("Today's Board")).toBeInTheDocument();
-    expect(screen.getByText("Breakeven")).toBeInTheDocument();
-    // breakeven is a constant, always honest
-    expect(screen.getByText("57.7%")).toBeInTheDocument();
-    // 7-day record renders W–L
+    expect(screen.getByText("Tracked Tier")).toBeInTheDocument();
+    // The audited rec-tier number and the breakeven bar are shown TOGETHER, so
+    // the tier can only ever be read against the bar it is actually below.
+    expect(screen.getByText("47.3%")).toBeInTheDocument();
+    expect(screen.getByText(/57\.7% breakeven/)).toBeInTheDocument();
+    // raw volume renders W–L
     expect(screen.getByText("402–415")).toBeInTheDocument();
+  });
+
+  it("labels the raw rate as volume, never as the tracked record", () => {
+    render(<SummaryRow summary={summary} />);
+    // 49% here is every logged leg, dominated by lopsided base-rate markets
+    // (MLB RBI-overs hit ~70% unaided). Calling it a hit/win rate next to a
+    // breakeven bar invited the conclusion that the system is profitable.
+    expect(screen.getByText("7-Day Volume")).toBeInTheDocument();
+    expect(screen.getByText("49% of all logged legs")).toBeInTheDocument();
+    expect(screen.queryByText(/49% hit/)).not.toBeInTheDocument();
   });
 
   it("renders em-dash placeholders when there is no summary", () => {
     render(<SummaryRow summary={null} />);
-    // 4 of the 5 cards fall back to "—" (Breakeven stays 57.7%)
+    // 4 of the 5 cards fall back to "—" (Tracked Tier is a constant)
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4);
-    expect(screen.getByText("57.7%")).toBeInTheDocument();
+    expect(screen.getByText("47.3%")).toBeInTheDocument();
   });
 });

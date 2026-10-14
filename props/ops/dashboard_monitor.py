@@ -35,31 +35,50 @@ def _timed_get(url: str, timeout: int) -> tuple[int | None, float, str]:
         return None, time.monotonic() - t0, str(e)[:80]
 
 
+def _targets() -> list[tuple[str, str, str, str]]:
+    """(label, base_url, liveness_path, real_work_path) per deployed surface.
+
+    There are TWO services, with different shapes. Only the Streamlit one was
+    ever checked, so the React board — the URL the README advertises as the live
+    board — could have gone down with no alert. The board has no
+    `/_stcore/health`; its liveness is `/api/health` and the endpoint worth
+    timing is `/api/picks`, which actually queries the DB (a static 200 on `/`
+    would still be served with the database unreachable).
+    """
+    out = []
+    if settings.dashboard_url:
+        out.append(("dashboard", settings.dashboard_url.rstrip("/"),
+                    "/_stcore/health", "/?view=results"))
+    if getattr(settings, "board_url", ""):
+        out.append(("board", settings.board_url.rstrip("/"),
+                    "/api/health", "/api/picks"))
+    return out
+
+
 def run_checks() -> list[dict]:
-    base = settings.dashboard_url.rstrip("/")
     findings: list[dict] = []
+    for label, base, health_path, work_path in _targets():
+        code, dt, err = _timed_get(f"{base}{health_path}", HEALTH_TIMEOUT)
+        if code == 200:
+            findings.append({"level": "ok", "name": f"{label}_health",
+                             "detail": f"200 in {dt*1000:.0f}ms"})
+        else:
+            findings.append({"level": "warn", "name": f"{label}_health_down",
+                             "detail": f"{base}{health_path} {code or 'ERR'} after {dt:.1f}s"
+                                       + (f" ({err})" if err else "")})
 
-    code, dt, err = _timed_get(f"{base}/_stcore/health", HEALTH_TIMEOUT)
-    if code == 200:
-        findings.append({"level": "ok", "name": "health",
-                         "detail": f"200 in {dt*1000:.0f}ms"})
-    else:
-        findings.append({"level": "warn", "name": "health_down",
-                         "detail": f"health {code or 'ERR'} after {dt:.1f}s"
-                                   + (f" ({err})" if err else "")})
-
-    # a real render — the results page is read-only and self-contained
-    code, dt, err = _timed_get(f"{base}/?view=results", RENDER_TIMEOUT)
-    if code != 200:
-        findings.append({"level": "warn", "name": "render_down",
-                         "detail": f"GET ?view=results {code or 'ERR'} after {dt:.1f}s"
-                                   + (f" ({err})" if err else "")})
-    elif dt > SLOW_RENDER_S:
-        findings.append({"level": "warn", "name": "render_slow",
-                         "detail": f"render took {dt:.1f}s (>{SLOW_RENDER_S:.0f}s)"})
-    else:
-        findings.append({"level": "ok", "name": "render",
-                         "detail": f"200 in {dt:.1f}s"})
+        # real work: a page render / a DB-backed endpoint, not just liveness
+        code, dt, err = _timed_get(f"{base}{work_path}", RENDER_TIMEOUT)
+        if code != 200:
+            findings.append({"level": "warn", "name": f"{label}_render_down",
+                             "detail": f"GET {work_path} {code or 'ERR'} after {dt:.1f}s"
+                                       + (f" ({err})" if err else "")})
+        elif dt > SLOW_RENDER_S:
+            findings.append({"level": "warn", "name": f"{label}_render_slow",
+                             "detail": f"{work_path} took {dt:.1f}s (>{SLOW_RENDER_S:.0f}s)"})
+        else:
+            findings.append({"level": "ok", "name": f"{label}_render",
+                             "detail": f"{work_path} 200 in {dt:.1f}s"})
     return findings
 
 
@@ -71,7 +90,7 @@ def _alert(findings: list[dict]):
     lines = "\n".join(f"• **{f['name']}** — {f['detail']}" for f in warns)
     payload = {"embeds": [{
         "title": "⚠️ prop-edge dashboard monitor",
-        "description": f"{settings.dashboard_url}\n{lines}",
+        "description": f"{settings.dashboard_url}\n{settings.board_url}\n{lines}",
         "color": 0xE74C3C,
         "footer": {"text": "dashboard_monitor"},
     }]}

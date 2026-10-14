@@ -15,13 +15,27 @@ export function SummaryRow({ summary }: { summary: Summary | null }) {
       color: edge >= 0 ? "#34D399" : "#F87171",
     },
     {
-      label: "7-Day Record",
+      // Raw hit rate across EVERY logged leg. Deliberately not called a "win
+      // rate": it is dominated by markets with lopsided base rates the book
+      // already prices in (MLB RBI-overs land ~70% on their own), so it is not
+      // the tracked record and must not be read against the breakeven bar.
+      label: "7-Day Volume",
       value: s ? `${s.w}–${s.l}` : "—",
-      sub: s ? `${s.win_rate_pct}% hit · logged` : "logged picks",
+      sub: s ? `${s.win_rate_pct}% of all logged legs` : "logged legs",
       bar: "#7A7A88",
       color: "#ECECF2",
     },
-    { label: "Breakeven", value: "57.7%", sub: "2-leg parlay", bar: "#F5B544", color: "#F5B544" },
+    {
+      // The audited number, from the same walk-forward evaluation the results
+      // page reports. Showing the raw rate WITHOUT this invited exactly the
+      // wrong conclusion — 60% sitting next to "Breakeven 57.7%" reads as
+      // profitable when the tracked tier is below it.
+      label: "Tracked Tier",
+      value: "47.3%",
+      sub: "audited · vs 57.7% breakeven",
+      bar: "#F87171",
+      color: "#F87171",
+    },
   ];
   return (
     <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">

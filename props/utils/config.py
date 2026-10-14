@@ -32,5 +32,9 @@ class Settings(BaseSettings):
     discord_app_id: str = ""
     # Public dashboard URL — used by the perf/uptime monitor (props.ops.dashboard_monitor).
     dashboard_url: str = "https://prop-edge-production-1b02.up.railway.app"
+    # Public pick board (React + FastAPI, a SEPARATE Railway service). This is the
+    # URL the README advertises as the live board, so it needs monitoring too —
+    # it was unwatched, and going down would have alerted no one.
+    board_url: str = "https://prop-edge-board.up.railway.app"
 
 settings = Settings()
