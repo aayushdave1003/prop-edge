@@ -81,3 +81,24 @@ def test_namesake_with_an_unknown_team_is_dropped():
 def test_namesake_on_the_same_team_is_dropped():
     """Two same-named players on one roster cannot be told apart by team."""
     assert pick_candidate([(1, 23), (2, 23)], 23) is None
+
+
+# ── every registered sport must survive the pick-logging path ───────────────
+# log_picks resolves a model's sport by prefix when the registry lookup misses,
+# and renders the daily Discord post by iterating an explicit sport list. A
+# sport missing from either is silent: picks get MLB's cutoff, or are written to
+# the DB and never shown.
+
+def test_every_registered_sport_resolves_and_renders():
+    import inspect
+    from props.picks import log_picks
+    from props.models.registry import MODELS
+
+    sports = {m.sport_code for m in MODELS}
+    src = inspect.getsource(log_picks)
+    for sport in sorted(sports):
+        assert f'"{sport}"' in src, f"{sport} appears nowhere in log_picks"
+
+    for m in MODELS:
+        assert log_picks.sport_for_model(m.name, None) == m.sport_code, (
+            f"{m.name} resolves to the wrong sport without a registry hint")
