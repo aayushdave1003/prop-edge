@@ -46,10 +46,16 @@ SPORTS = ("mlb", "nba", "wnba", "nfl", "nhl", "cfb")
 # plausible variants over guessing one exact string.
 _BASKETBALL = {
     "points": "points", "rebounds": "rebounds", "assists": "assists",
+    # Sleeper is INCONSISTENT across combo arities: the 3-way is the compact
+    # "pts_reb_ast", but the 2-way combos spell it out as "X_and_Y". Verified
+    # live on NBA opening night 2026-10-20. The compact 2-way forms below were
+    # a guess mirrored from WNBA — which only ever posts the 3-way, so nothing
+    # exercised them — and they silently discarded 394 NBA lines/day across
+    # three markets we have trained models for. Kept as harmless aliases.
     "pts_reb_ast": "pts_rebs_asts", "pts_rebs_asts": "pts_rebs_asts",
-    "pts_reb": "pts_rebs", "pts_rebs": "pts_rebs",
-    "pts_ast": "pts_asts", "pts_asts": "pts_asts",
-    "reb_ast": "rebs_asts", "rebs_asts": "rebs_asts",
+    "points_and_rebounds": "pts_rebs", "pts_reb": "pts_rebs", "pts_rebs": "pts_rebs",
+    "points_and_assists": "pts_asts", "pts_ast": "pts_asts", "pts_asts": "pts_asts",
+    "rebounds_and_assists": "rebs_asts", "reb_ast": "rebs_asts", "rebs_asts": "rebs_asts",
 }
 
 WAGER_TO_STAT: dict[tuple[str, str], str] = {
