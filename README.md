@@ -2,7 +2,7 @@
 
 A self-running ML pipeline that predicts player-prop outcomes across major US sports, prices them against PrizePicks lines, and **runs, settles, monitors, and self-corrects entirely on its own**.
 
-An **actively-developed** research project — the model has no standalone edge, so the current focus is **model-independent** profitability lanes (odds-boost EV, market-arbitrage, correlated parlays), each graded forward and reported straight whether it wins or loses. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
+An **actively-developed** research project — the model has no standalone edge, so the current focus is **model-independent** profitability lanes (correlated parlays — live since 2026-11; odds-boost EV — awaiting first entries; market-arbitrage — closed after losing forward), each graded forward and reported straight whether it wins or loses. Paper-tracking only. Not financial advice, not a betting product — it never places a bet or touches an account.
 
 📊 Live board: **[prop-edge-board.up.railway.app](https://prop-edge-board.up.railway.app)**
 
@@ -25,15 +25,29 @@ No laptop required. It runs on GitHub Actions 24/7 and reaches out only when it 
 
 ## Results
 
-**Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `calibrated_prob × payout > 1`. The probability is Platt-calibrated before the EV test (raw model confidence runs ~12pts over-confident, which otherwise manufactures phantom edges that lose money), and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). It's a *new* track record that populates as the +EV tier fills; see [`props/models/odds_track.py`](props/models/odds_track.py).
+**Live source: Sleeper (odds book).** PrizePicks Cloudflare-walled its public endpoint (2026-07), so the pipeline switched to Sleeper's open API via the [`LineFeed`](props/ingest/line_feed.py) seam. Sleeper posts real **per-pick odds**, so the model is now tracked by **realized ROI** — a pick is +EV iff `calibrated_prob × payout > 1`. The probability is Platt-calibrated before the EV test (raw model confidence runs ~12pts over-confident, which otherwise manufactures phantom edges that lose money), and the metric is money made per unit at the price the book actually offered (leak-free — the odds define the bar, no confidence cutoff to fit). That track record is now in — and it's negative. As of **2026-11-09** the calibrated +EV tier has settled **n = 8,099** at **−8.5% realized ROI** [−10.5%, −6.5%] (hit 50.2% @ avg 1.83×): the CI is entirely below zero, so the model lane is a measured loser, not a pending question. See [`props/models/odds_track.py`](props/models/odds_track.py).
+
+**Why "accuracy" is the wrong scoreboard here** — all settled Sleeper picks (forward-only, valid-line, played; prod, 2026-11-09):
+
+| | n | win rate | avg payout | ROI at stored payout |
+|---|---|---|---|---|
+| **All sports** | 31,416 | 59.9% | 1.56× | **−8.7%** |
+| MLB | 21,844 | 61.8% | 1.51× | −9.1% |
+| NBA | 3,612 | 53.4% | 1.77× | −6.1% |
+| WNBA | 2,724 | 52.3% | 1.77× | −8.0% |
+| NHL | 1,662 | 68.5% | 1.35× | −9.0% |
+| CFB | 793 | 49.2% | 1.76× | −13.5% |
+| NFL | 781 | 53.0% | 1.77× | −6.9% |
+
+NHL is the cleanest illustration: a 68.5% win rate *sounds* elite, but those picks pay 1.35× on average, where breakeven is 74% — so it loses 9%. Every sport clusters at −6% to −13%, roughly the book's vig, exactly what the [resolution audit](props/models/resolution_audit.py)'s within-market AUC ≈ 0.50 predicts: the model "wins" high-base-rate outcomes the book has already priced. Win rate is a mirage; ROI at the offered price is the metric.
 
 **Active focus: model-independent profitability lanes.** The model itself has no discriminative edge (Brier resolution ≈ 0), so the edge research is model-*independent* — and every lane is graded forward with the same honesty gate, reported straight whether it wins or loses:
 
-- **Odds boosts** — [`boost_ev`](props/picks/boost_ev.py). The one *structural* +EV lane: a sportsbook "boost" is **deliberately** priced +EV (the book eats margin to acquire/retain you), so a boost is worth taking iff `sharp_prob × boosted_payout > 1`. Each entered boost is priced against the same sharp reference and graded forward against results — so the tool earns a realized track record instead of asserting an edge.
-- **Market arbitrage** — [`sleeper_arb`](props/picks/sleeper_arb.py) flags Sleeper lines the **sharp** market (DK/FD no-vig consensus) prices as +EV, with the sharp read captured **pre-game** so it's leak-free. A clean backtest (odds re-snapshotted at each game's start−2h, after catching a day-game leak that inflated a naive first pass) showed +6.9% — but the **live forward LOST: −17.8%, CI below zero at n = 81. Lane closed**, reported honestly. A pluggable [`SHARP_FEED`](props/ingest/sharp_feed.py) seam can A/B a *paid* sharp reference (OddsJam/Unabated/Pinnacle) against the free default — the one experiment that targets *why* it lost.
-- **Correlated parlays** — pick'em books price legs independently, so positively-correlated legs are +EV without beating any single price. MLB same-team lift (~3–4%) is too small vs the ~9% two-pick vig; NFL QB+own-WR (mechanically correlated) is [probed](props/models/nfl_corr_probe.py) weekly in-season. Honest prior: still likely too small.
+- **Odds boosts** — [`boost_ev`](props/picks/boost_ev.py). The one *structural* +EV lane: a sportsbook "boost" is **deliberately** priced +EV (the book eats margin to acquire/retain you), so a boost is worth taking iff `sharp_prob × boosted_payout > 1`. Each entered boost is priced against the same sharp reference and graded forward against results — so the tool earns a realized track record instead of asserting an edge. (Ledger empty as of 2026-11-09 — no boosts entered yet, so this lane has no record either way.)
+- **Market arbitrage** — [`sleeper_arb`](props/picks/sleeper_arb.py) flags Sleeper lines the **sharp** market (DK/FD no-vig consensus) prices as +EV, with the sharp read captured **pre-game** so it's leak-free. A clean backtest (odds re-snapshotted at each game's start−2h, after catching a day-game leak that inflated a naive first pass) showed +6.9% — but the **live forward LOST and the lane was closed at n = 81 (−17.8%)**, reported honestly. Silent tracking has continued since: as of 2026-11-09 it stands at **n = 721, −9.6% ROI [−14.8%, −4.5%], hit 62.0%** — a high win rate at payouts too small to carry it, verdict unchanged. A pluggable [`SHARP_FEED`](props/ingest/sharp_feed.py) seam can A/B a *paid* sharp reference (OddsJam/Unabated/Pinnacle) against the free default — the one experiment that targets *why* it lost.
+- **Correlated parlays** — pick'em books price legs independently, so positively-correlated legs are +EV without beating any single price. MLB same-team lift (~3–4%) is too small vs the ~9% two-pick vig. **NFL QB+own-WR cleared its hurdle**: the [probe](props/models/nfl_corr_probe.py) (n = 312 settled stacks) measures joint over·over at **0.381 vs 0.297 if independent** (lift 1.29×) — **+14.4% EV at a 3.0× payout** (it dies at 2.5×, so the multiplier is the whole edge). A stack logger ([`nfl_stacks`](props/picks/nfl_stacks.py), live 2026-11-09) now records *every* available QB+own-WR pair pre-game at the **product of the legs' posted multipliers** (first slate: 12 stacks at 3.10–3.20×, above the probe's 3.0× assumption) and grades them forward. **One unverified assumption remains**: whether Sleeper actually accepts the combo in-app at the full product (the API carries no restriction metadata) — until confirmed, every ROI from this lane is an **upper bound**, and the lane posts nothing to Discord.
 
-The through-line: no *modeling* edge survives contact with a forward test — the numbers only shrink, never grow. The boost lane is the exception because its edge is the book's choice, not a model's cleverness.
+The through-line: no *modeling* edge survives contact with a forward test — the numbers only shrink, never grow. The two candidate exceptions get their edge from structure, not model cleverness: boosts (the book's deliberate margin give-back) and the QB+WR stack (mechanical correlation the parlay pricing ignores) — the first is unfed, the second unproven until its forward record fills.
 
 ### NFL — first live season (2026)
 
@@ -41,10 +55,11 @@ NFL went live on **2026-09-09**, the first new sport to reach production since t
 
 | | Sample | Record |
 |---|--------|--------|
-| NFL picks, all markets | n = 170 settled | **86–84 · 50.6%** |
+| NFL picks, all markets (as of 2026-11-09) | n = 781 settled | **414–367 · 53.0%** · −6.9% ROI @ avg 1.77× |
 
-Markets live: `receptions`, `receiving_yards`, `rushing_yards` (`passing_yards` was dropped at −6.23% OOS).
-Read this as **confirmation the harness is honest, not as a result**: 50.6% is exactly what the
+Markets modeled: `receptions`, `receiving_yards`, `rushing_yards` (`passing_yards` was dropped at −6.23% OOS;
+its *lines* are ingested again since 2026-11-09 — model-less by design — as the QB leg of the stack lane above).
+Read this as **confirmation the harness is honest, not as a result**: 53.0% at 1.77× (breakeven ≈ 56.5%) is exactly what the
 [resolution audit](props/models/resolution_audit.py) predicts for a model with no within-market discrimination, and it landed there on a sport
 whose models were trained and shipped *after* that audit — i.e. the no-edge finding generalizes out of sample.
 These models run on raw Poisson (no calibrator yet; the tail is still too sparse to fit one).

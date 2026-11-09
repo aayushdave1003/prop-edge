@@ -361,6 +361,18 @@ if [ "$(has_recent_games nfl)" = "1" ] && [ "$(date +%u)" = "1" ]; then
     python -m props.models.nfl_corr_probe --post || true
 fi
 
+# ── 7e2d. NFL QB+own-WR stack logger (daily, in-season) ─────────────────────
+# The probe's verdict is IN (2026-11-09: joint 0.381 vs 0.297 independent,
+# +14.4% EV @3.0x, n=312). This logs every available PRE-GAME stack at the
+# product of its two legs' posted multipliers and grades them forward (--roi).
+# Silent by design: an unproven lane doesn't advertise picks (the arb lesson),
+# and the stored payout is an upper bound until the in-app correlated-combo
+# check is done (see props/picks/nfl_stacks.py docstring).
+if [ "$(has_recent_games nfl)" = "1" ]; then
+    echo "--- NFL QB+WR stack logger ---"
+    python -m props.picks.nfl_stacks || true
+fi
+
 # ── 7e2d. Promo / odds-boost digest + reminder ───────────────────────────────
 # Odds boosts are the one STRUCTURAL +EV lane (the book deliberately overpays to
 # acquire/retain). Boosts are entered by hand (props.picks.boost_ev --add-many);

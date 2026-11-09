@@ -189,6 +189,26 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  note         TEXT,"
      "  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
      "  PRIMARY KEY (run_date, book, player_name, stat_type, line_value, side))"),
+    # NFL QB+own-WR correlated stacks (props.picks.nfl_stacks). One row per
+    # logged stack; graded forward on-the-fly against player_games (no result
+    # columns, same shape as sleeper_arb). payout = product of the two legs'
+    # posted over multipliers.
+    ("0018_nfl_stacks",
+     "CREATE TABLE IF NOT EXISTS nfl_stacks ("
+     "  run_date      DATE NOT NULL,"
+     "  game_id       INTEGER NOT NULL,"
+     "  team_id       INTEGER,"
+     "  qb_player_id  INTEGER NOT NULL,"
+     "  wr_player_id  INTEGER NOT NULL,"
+     "  qb_line       NUMERIC(8,2) NOT NULL,"
+     "  wr_line       NUMERIC(8,2) NOT NULL,"
+     "  qb_payout     NUMERIC(8,4) NOT NULL,"
+     "  wr_payout     NUMERIC(8,4) NOT NULL,"
+     "  payout        NUMERIC(8,4) NOT NULL,"
+     "  joint_est     NUMERIC(8,4),"
+     "  ev_est        NUMERIC(8,4),"
+     "  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
+     "  PRIMARY KEY (run_date, qb_player_id, wr_player_id))"),
 ]
 
 

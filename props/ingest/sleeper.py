@@ -82,6 +82,10 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("nfl", "receiving_yards"): "receiving_yards",
     ("nfl", "receptions"): "receptions",
     ("nfl", "rushing_yards"): "rushing_yards",
+    # passing_yards is NOT a model market (dropped at activation, −6.23% OOS)
+    # but it is the QB leg of the nfl_stacks lane: no registered model means
+    # stored lines generate no picks. String re-verified live 2026-11-09.
+    ("nfl", "passing_yards"): "passing_yards",
     # ── NHL (strings verified live 2026-10-05) ─────────────────────────────────
     # Sleeper also posts points/shots/powerplay_points/blocked_shots — no model
     # for those, so they stay unmapped.

@@ -13,12 +13,20 @@ from props.ingest.sleeper import SLEEPER_TO_OURS, SPORTS, WAGER_TO_STAT
 from props.models.registry import MODELS
 
 
+# Stats ingested on purpose with NO model: lines land in prop_lines for a
+# non-pick consumer and must never become picks. Each entry names its consumer.
+MODELLESS_BY_DESIGN = {
+    ("nfl", "passing_yards"),  # QB leg of props.picks.nfl_stacks (model-free lane)
+}
+
+
 def test_every_mapping_targets_a_real_model_for_that_sport():
     """A target that no model answers for that sport is a line that can never
-    become a pick — the exact shape of the earned_runs_allowed bug."""
+    become a pick — the exact shape of the earned_runs_allowed bug. Deliberate
+    exceptions live in MODELLESS_BY_DESIGN with their consumer named."""
     registered = {(m.sport_code, m.stat_type) for m in MODELS}
     orphans = [(sp, wt, st) for (sp, wt), st in WAGER_TO_STAT.items()
-               if (sp, st) not in registered]
+               if (sp, st) not in registered and (sp, st) not in MODELLESS_BY_DESIGN]
     assert orphans == [], f"mappings with no model for that sport: {orphans}"
 
 
