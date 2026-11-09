@@ -22,7 +22,6 @@ Run:  python -m props.picks.sleeper_arb          # find + persist + digest
       python -m props.picks.sleeper_arb --no-post
 """
 import argparse
-import math
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 

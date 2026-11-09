@@ -9,7 +9,7 @@ wager just counted as `unmodeled_stat` or the line never matched a model):
   2. The map was keyed on wager_type ALONE, so NFL "assists" (a defensive
      assisted tackle) resolved to the basketball assists stat.
 """
-from props.ingest.sleeper import SPORTS, WAGER_TO_STAT
+from props.ingest.sleeper import SLEEPER_TO_OURS, SPORTS, WAGER_TO_STAT
 from props.models.registry import MODELS
 
 
@@ -23,11 +23,13 @@ def test_every_mapping_targets_a_real_model_for_that_sport():
 
 
 def test_mapping_is_keyed_on_sport_and_wager_type():
-    """Keys must be (sport, wager_type) pairs, not bare wager_type strings."""
+    """Keys must be (OUR sport, wager_type) pairs, not bare wager_type strings.
+    A sport that maps wagers but has no Sleeper code feeding it is dark."""
+    ingested = set(SLEEPER_TO_OURS.values())
     for key in WAGER_TO_STAT:
         assert isinstance(key, tuple) and len(key) == 2, f"not a pair: {key!r}"
         sport, wager = key
-        assert sport in SPORTS, f"{sport!r} maps wagers but is not ingested"
+        assert sport in ingested, f"{sport!r} maps wagers but is not ingested"
         assert isinstance(wager, str) and wager
 
 
@@ -41,10 +43,22 @@ def test_same_wager_type_may_differ_across_sports():
 
 
 def test_sports_covers_every_registered_model_sport():
-    """A sport with models but absent from SPORTS is dark — the NHL bug."""
+    """A sport with models but no Sleeper code mapping to it is dark — the NHL
+    bug. Soccer is fed by the clubsoccer:<league> codes, not a bare 'soccer'."""
     modelled = {m.sport_code for m in MODELS}
-    missing = modelled - set(SPORTS)
+    missing = modelled - set(SLEEPER_TO_OURS.values())
     assert missing == set(), f"models exist but lines are never ingested: {missing}"
+
+
+def test_clubsoccer_leagues_land_in_one_sport():
+    """Every clubsoccer:<league> code must map to our single 'soccer' sport,
+    and the US sports must map to themselves (identity)."""
+    for code, ours in SLEEPER_TO_OURS.items():
+        if code.startswith("clubsoccer:"):
+            assert ours == "soccer", f"{code} maps to {ours!r}"
+        else:
+            assert ours == code, f"{code} should be identity, got {ours!r}"
+    assert set(SPORTS) <= set(SLEEPER_TO_OURS)
 
 
 # ── namesakes ───────────────────────────────────────────────────────────────

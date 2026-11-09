@@ -31,7 +31,7 @@ def _to_int(v) -> int:
         return 0
 
 
-def find_unprocessed_games(reprocess_all: bool = False) -> list[dict]:
+def find_unprocessed_games(reprocess_all: bool = False, limit: int = 600) -> list[dict]:
     extra = "" if reprocess_all else \
         "AND NOT EXISTS (SELECT 1 FROM player_games pg WHERE pg.game_id = g.game_id)"
     with session_scope() as session:
@@ -40,20 +40,9 @@ def find_unprocessed_games(reprocess_all: bool = False) -> list[dict]:
             FROM games g
             WHERE g.sport_code = 'soccer' AND g.external_id IS NOT NULL AND g.status = 'final'
               {extra}
-            ORDER BY g.game_date DESC LIMIT 600
-        """)).all()
+            ORDER BY g.game_date DESC LIMIT :lim
+        """), {"lim": limit}).all()
     return [{"game_id": r[0], "external_id": r[1], "home_team_id": r[2], "away_team_id": r[3]} for r in rows]
-
-
-def resolve_player(session, athlete_id: str, name: str, team_id: int) -> int:
-    res = session.execute(text("""
-        INSERT INTO players (sport_code, external_id, full_name, current_team_id, active)
-        VALUES ('soccer', :ext, :name, :tid, true)
-        ON CONFLICT (sport_code, external_id) DO UPDATE
-        SET full_name = EXCLUDED.full_name, current_team_id = EXCLUDED.current_team_id
-        RETURNING player_id
-    """), {"ext": f"espn_{athlete_id}", "name": name, "tid": team_id}).first()
-    return res[0]
 
 
 def process_game(session, game: dict) -> int:
@@ -68,7 +57,8 @@ def process_game(session, game: dict) -> int:
         return 0
     session.execute(text("UPDATE games SET status='final' WHERE game_id=:gid AND status<>'final'"),
                     {"gid": game["game_id"]})
-    rows = 0
+    players: list[dict] = []
+    pg_rows: list[dict] = []
     for team in rosters:
         side = team.get("homeAway")
         if side == "home":
@@ -85,36 +75,73 @@ def process_game(session, game: dict) -> int:
             raw = {s.get("name"): s.get("value") for s in p.get("stats", [])}
             stats = {ours: _to_int(raw.get(espn)) for espn, ours in STAT_MAP.items()}
             played = stats.get("appearances", 0) > 0 or bool(p.get("starter"))
-            pid = resolve_player(session, aid, info.get("displayName") or info.get("shortName") or f"S-{aid}", team_id)
-            session.execute(text("""
-                INSERT INTO player_games (player_id, game_id, team_id, opponent_id,
-                                          is_home, did_play, minutes_played, stats, derived)
-                VALUES (:pid, :gid, :tid, :oid, :home, :played, 0, CAST(:stats AS JSONB), '{}')
-                ON CONFLICT (player_id, game_id) DO UPDATE
-                SET stats = EXCLUDED.stats, did_play = EXCLUDED.did_play
-            """), {"pid": pid, "gid": game["game_id"], "tid": team_id, "oid": opp_id,
-                   "home": is_home, "played": played, "stats": json.dumps(stats)})
-            rows += 1
-    return rows
+            ext = f"espn_{aid}"
+            players.append({"ext": ext, "tid": team_id,
+                            "name": info.get("displayName") or info.get("shortName") or f"S-{aid}"})
+            pg_rows.append({"ext": ext, "gid": game["game_id"], "tid": team_id, "oid": opp_id,
+                            "home": is_home, "played": played, "stats": json.dumps(stats)})
+    if not pg_rows:
+        return 0
+    # One pipelined upsert + one SELECT + one pipelined insert, instead of two
+    # statements PER PLAYER: ~35 players/game over the Railway proxy was ~100
+    # round-trips (~3s/game), which made the 2026-11-09 backfill crawl and look
+    # hung between batch logs.
+    session.execute(text("""
+        INSERT INTO players (sport_code, external_id, full_name, current_team_id, active)
+        VALUES ('soccer', :ext, :name, :tid, true)
+        ON CONFLICT (sport_code, external_id) DO UPDATE
+        SET full_name = EXCLUDED.full_name, current_team_id = EXCLUDED.current_team_id
+    """), players)
+    pid_map = {r[0]: r[1] for r in session.execute(text("""
+        SELECT external_id, player_id FROM players
+        WHERE sport_code='soccer' AND external_id = ANY(:exts)
+    """), {"exts": [p["ext"] for p in players]})}
+    for r in pg_rows:
+        r["pid"] = pid_map[r.pop("ext")]
+    session.execute(text("""
+        INSERT INTO player_games (player_id, game_id, team_id, opponent_id,
+                                  is_home, did_play, minutes_played, stats, derived)
+        VALUES (:pid, :gid, :tid, :oid, :home, :played, 0, CAST(:stats AS JSONB), '{}')
+        ON CONFLICT (player_id, game_id) DO UPDATE
+        SET stats = EXCLUDED.stats, did_play = EXCLUDED.did_play
+    """), pg_rows)
+    return len(pg_rows)
 
 
-def run(reprocess_all: bool = False):
+def run(reprocess_all: bool = False, limit: int = 600, batch: int = 50):
+    """Ingest box scores for unprocessed soccer games.
+
+    Commits every `batch` games (same shape as cfb_boxscores, for the same
+    reason): the whole loop used to run inside ONE session_scope, and the
+    Railway proxy terminated that long-held connection mid-backfill
+    (2026-11-09, ~600 games of ESPN round-trips) — rolling back every game the
+    run had already fetched. Batching makes it restartable: re-running simply
+    picks up whatever is still unprocessed.
+    """
     configure_logging()
-    games = find_unprocessed_games(reprocess_all=reprocess_all)
+    games = find_unprocessed_games(reprocess_all=reprocess_all, limit=limit)
     log.info("found_unprocessed_soccer_games", count=len(games))
     if not games:
         return
     total = failed = 0
-    with session_scope() as session:
-        for g in games:
-            n = process_game(session, g)
-            failed += (n == 0)
-            total += n
-            time.sleep(0.15)
+    for start in range(0, len(games), batch):
+        chunk = games[start:start + batch]
+        with session_scope() as session:
+            for g in chunk:
+                n = process_game(session, g)
+                failed += (n == 0)
+                total += n
+                time.sleep(0.15)
+        log.info("soccer_boxscore_batch", done=min(start + batch, len(games)),
+                 of=len(games), players=total)
     log.info("soccer_boxscore_ingest_complete", games=len(games), players=total, failed=failed)
 
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(); ap.add_argument("--all", action="store_true")
-    run(reprocess_all=ap.parse_args().all)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--all", action="store_true")
+    ap.add_argument("--limit", type=int, default=600, help="max games to consider")
+    ap.add_argument("--batch", type=int, default=50, help="games per commit")
+    a = ap.parse_args()
+    run(reprocess_all=a.all, limit=a.limit, batch=a.batch)

@@ -90,6 +90,22 @@ MAX_LINE_BY_STAT = {
     "receptions":         15.0,
 }
 
+# Per-sport overrides for stats whose scale collides across sports, keyed on
+# (sport_code, stat_type) and checked before the stat-only tables above. The one
+# live collision: "saves" is an NHL goalie stat (lines ~18–35) AND a soccer
+# keeper stat (lines ~1.5–6.5) — without the override, the NHL minimum of 15
+# would silently suppress every soccer saves line.
+MIN_LINE_BY_SPORT_STAT = {
+    ("soccer", "saves"): 0.5,
+    ("soccer", "shots"): 0.5,
+    ("soccer", "fouls"): 0.5,
+}
+MAX_LINE_BY_SPORT_STAT = {
+    ("soccer", "saves"): 11.0,   # record-keeper nights are ~14; lines live 1.5–6.5
+    ("soccer", "shots"): 9.0,
+    ("soccer", "fouls"): 7.0,
+}
+
 # Injury-status keywords.
 PLAYS_ANYWAY = ("day-to-day", "day to day", "questionable", "probable",
                 "gtd", "game-time", "available")
@@ -127,8 +143,12 @@ def is_stale_game(game_state: dict, game_id, target_date) -> bool:
     return gdate is None or gdate != target_date
 
 
-def line_in_range(stat_type: str, line_value: float) -> bool:
-    """True if the line is within the plausible single-game band for its stat."""
-    lo = MIN_LINE_BY_STAT.get(stat_type, 0.0)
-    hi = MAX_LINE_BY_STAT.get(stat_type, float("inf"))
+def line_in_range(stat_type: str, line_value: float, sport_code: str | None = None) -> bool:
+    """True if the line is within the plausible single-game band for its stat.
+    A (sport, stat) override wins over the stat-only default — "saves" spans
+    both NHL goalies (~25) and soccer keepers (~3.5), so stat alone can't band it."""
+    lo = MIN_LINE_BY_SPORT_STAT.get((sport_code, stat_type),
+                                    MIN_LINE_BY_STAT.get(stat_type, 0.0))
+    hi = MAX_LINE_BY_SPORT_STAT.get((sport_code, stat_type),
+                                    MAX_LINE_BY_STAT.get(stat_type, float("inf")))
     return lo <= float(line_value) <= hi

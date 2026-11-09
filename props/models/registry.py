@@ -220,6 +220,21 @@ MODELS += [
     for stat in ("receiving_yards", "rushing_yards", "passing_yards", "receptions")
 ]
 
+# Soccer (club) — 6 leagues (EPL/La Liga/Bundesliga/Serie A/Ligue 1/MLS) under
+# one sport_code. Trained by props.models.soccer_models_v1 on the full
+# multi-league sample; ships the 3 markets that beat the season-avg baseline
+# OOS: saves +8.25% (n=974), fouls +2.75% (n=11.2k), shots +2.03% (n=7.8k).
+# goals (+0.25%) and shots_on_target (−0.29%) stay unregistered — their .txt
+# files exist on disk but neither clears the gate.
+MODELS += [
+    ModelEntry(
+        name=f"soccer_{stat}_v1", sport_code="soccer", stat_type=stat, role="player",
+        model_path=Path(f"models/soccer_{stat}_v1.txt"),
+        meta_path=Path(f"models/soccer_{stat}_v1_meta.json"),
+    )
+    for stat in ("saves", "fouls", "shots")
+]
+
 # NBA/WNBA combo markets — direct summed-target Poisson models
 # (props.models.basketball_combos_v1). stat_type matches prop_lines.
 MODELS += [

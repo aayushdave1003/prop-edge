@@ -71,6 +71,31 @@ jobs:
       - name: Build (tsc + vite)
         run: npm run build
 
+  alert:
+    # CI on main sat RED for three weeks (2026-10-15 → 11-09, one dead import)
+    # and nothing pinged — a red main gate is exactly the silent failure this
+    # repo is built to avoid. Fires only on a push to main, only when a gate
+    # job failed; PRs stay quiet (the PR UI already shows red).
+    needs: [test, web]
+    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Discord CI-failure alert
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && { echo "no webhook configured"; exit 0; }
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK_URL" -d '{
+            "embeds": [{
+              "title": "🔴 CI failed on main",
+              "description": "Commit `'"${GITHUB_SHA:0:7}"'` broke the gate — ['"$RUN_URL"']('"$RUN_URL"')",
+              "color": 15158332,
+              "footer": {"text": "ci.yml · test/web gate"}
+            }]
+          }'
+
   docker:
     # Build the board image so a broken Dockerfile.board is caught before a
     # deploy. PR / manual only — a direct push to main is built by Railway on

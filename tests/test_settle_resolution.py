@@ -48,6 +48,12 @@ BOX = {
     "nhl": {k: 1 for k in [
         "assists", "blocked_shots", "goals", "goals_against", "hits", "minutes",
         "points", "save_pct", "saves", "shots", "shots_against"]},
+    # Soccer writes the full STAT_MAP key set on every row (absent ESPN values
+    # coerce to 0 at ingest), keeper and outfield alike — so no ZERO_WHEN_ABSENT
+    # entry is needed for the sport.
+    "soccer": {k: 1 for k in [
+        "appearances", "assists", "fouls", "fouls_drawn", "goals", "saves",
+        "shots", "shots_on_target", "yellow_cards"]},
 }
 
 MARKETS = sorted({(m.sport_code, m.stat_type) for m in MODELS})

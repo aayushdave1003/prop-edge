@@ -31,6 +31,16 @@ from props.utils.logging import configure_logging, log
 BASE = "https://api.sleeper.app"
 SPORTS = ("mlb", "nba", "wnba", "nfl", "nhl", "cfb")
 
+# Sleeper sport code -> our sport_code. Identity for the US sports; club soccer
+# arrives PER LEAGUE as "clubsoccer:<league>" (verified live 2026-09-07 and again
+# 2026-11-09: /players + /schedule exist for all six), all landing in our single
+# 'soccer' sport. uefachamps is deliberately absent — we don't ingest UCL games,
+# and a line whose game we can never resolve (or settle) is worthless.
+SOCCER_LEAGUES = ("epl", "laliga", "bundesliga", "seriea", "ligue1", "mls")
+SLEEPER_TO_OURS: dict[str, str] = {sp: sp for sp in SPORTS}
+SLEEPER_TO_OURS.update({f"clubsoccer:{lg}": "soccer" for lg in SOCCER_LEAGUES})
+OUR_SPORTS = tuple(dict.fromkeys(SLEEPER_TO_OURS.values()))
+
 # (sport, Sleeper wager_type) -> our stat_type.
 #
 # Keyed on the PAIR, not on wager_type alone. The same string means different
@@ -83,6 +93,19 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("cfb", "rushing_yards"): "rushing_yards",
     ("cfb", "passing_yards"): "passing_yards",
     ("cfb", "receptions"): "receptions",
+    # ── Soccer (club, via clubsoccer:<league>; keyed on OUR code) ──────────────
+    # ⚠️ wager_type strings NOT yet verified live — soccer activated 2026-11-09,
+    # during the November international break, when Sleeper posts no club lines.
+    # An unused alias costs nothing and a missing key is a silent skip, so the
+    # plausible variants are listed; verify with --dry-run when club play
+    # resumes (~Nov 20) and prune/extend to the real strings.
+    ("soccer", "saves"): "saves",
+    ("soccer", "goalie_saves"): "saves",
+    ("soccer", "goalkeeper_saves"): "saves",
+    ("soccer", "fouls"): "fouls",
+    ("soccer", "fouls_committed"): "fouls",
+    ("soccer", "shots"): "shots",
+    ("soccer", "total_shots"): "shots",
     # ── NBA / WNBA ─────────────────────────────────────────────────────────────
     # WNBA strings verified live; NBA mirrors them (off-season at time of writing,
     # so re-check with `--dry-run` once the season opens). threes_made is NBA-only
@@ -151,7 +174,7 @@ def run(dry_run: bool = False) -> None:
     # season) is harmless.
     sched: dict[str, str] = {}
     seasons = (season, str(int(season) - 1))
-    for sp in SPORTS:
+    for sp in SLEEPER_TO_OURS:
         for yr in seasons:
             for season_type in ("regular", "post"):
                 try:
@@ -161,8 +184,15 @@ def run(dry_run: bool = False) -> None:
                 except Exception as e:
                     log.warning("sleeper_schedule_failed", sport=sp, season=yr,
                                 season_type=season_type, err=str(e)[:100])
-    # sleeper roster: sport -> {subject_id: full_name}
-    rosters = {sp: _get(f"/players/{sp}") for sp in SPORTS}
+    # sleeper roster: sleeper sport code -> {subject_id: player}. Guarded per
+    # sport — one league's roster endpoint failing must not zero out the run.
+    rosters: dict[str, dict] = {}
+    for sp in SLEEPER_TO_OURS:
+        try:
+            rosters[sp] = _get(f"/players/{sp}")
+        except Exception as e:
+            rosters[sp] = {}
+            log.warning("sleeper_roster_fetch_failed", sport=sp, err=str(e)[:100])
 
     with session_scope() as session:
         # our players: (sport, norm_name) -> [(player_id, current_team_id), …]
@@ -176,7 +206,7 @@ def run(dry_run: bool = False) -> None:
         # rather than guessed at — a wrong attribution poisons the record, a
         # skipped line is just a missing row.
         our: dict[tuple[str, str], list[tuple[int, int]]] = {}
-        for sp in SPORTS:
+        for sp in OUR_SPORTS:
             for r in session.execute(text(
                 "SELECT player_id, full_name, current_team_id FROM players WHERE sport_code=:sp"
                 " ORDER BY player_id"), {"sp": sp}):
@@ -204,10 +234,11 @@ def run(dry_run: bool = False) -> None:
         seen: set = set()
         for e in lines:
             sp = e.get("sport")
-            if sp not in SPORTS:
+            ours = SLEEPER_TO_OURS.get(sp)
+            if ours is None:
                 skip["sport"] += 1
                 continue
-            stat = WAGER_TO_STAT.get((sp, e.get("wager_type")))
+            stat = WAGER_TO_STAT.get((ours, e.get("wager_type")))
             if not stat:
                 skip["unmodeled_stat"] += 1
                 continue
@@ -218,12 +249,12 @@ def run(dry_run: bool = False) -> None:
                 skip["no_line_value"] += 1
                 continue
             sid = str(e.get("subject_id"))
-            cands = our.get((sp, _norm(_sleeper_name(rosters[sp].get(sid, {})))), [])
+            cands = our.get((ours, _norm(_sleeper_name(rosters[sp].get(sid, {})))), [])
             if not cands:
                 skip["unmatched_player"] += 1
                 continue
             chosen = pick_candidate(
-                cands, abbr_to_tid.get((sp, (over.get("subject_team") or "").strip())))
+                cands, abbr_to_tid.get((ours, (over.get("subject_team") or "").strip())))
             if chosen is None:
                 skip["ambiguous_player"] += 1
                 log.warning("sleeper_ambiguous_player", sport=sp,
@@ -233,7 +264,7 @@ def run(dry_run: bool = False) -> None:
                 continue
             pid, tid = chosen
             gdate = sched.get(str(e.get("game_id")))
-            gid = games_map.get((sp, tid, gdate)) if (gdate and tid) else None
+            gid = games_map.get((ours, tid, gdate)) if (gdate and tid) else None
             if gid is None:
                 skip["unresolved_game"] += 1
                 continue
@@ -245,7 +276,7 @@ def run(dry_run: bool = False) -> None:
             def _mult(o):
                 m = (o or {}).get("payout_multiplier")
                 return float(m) if m is not None else None
-            rows.append({"sc": sp, "pid": pid, "gid": gid, "stat": stat,
+            rows.append({"sc": ours, "pid": pid, "gid": gid, "stat": stat,
                          "line": float(over["outcome_value"]), "variant": "standard",
                          "over_payout": _mult(over), "under_payout": _mult(under),
                          "ts": started})

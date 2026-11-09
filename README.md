@@ -10,7 +10,7 @@ An **actively-developed** research project — the model has no standalone edge,
 
 ## What it does
 
-Every morning, for MLB, NBA, WNBA, NHL, and NFL, the cloud pipeline:
+Every morning, for MLB, NBA, WNBA, NHL, NFL, CFB, and club soccer (6 leagues), the cloud pipeline:
 
 1. **Ingests** fresh prop lines through a pluggable [`LineFeed`](props/ingest/line_feed.py) seam (currently Sleeper's open API; PrizePicks via residential proxy when reachable), plus schedules, box scores, injuries, and probable starters
 2. **Builds** 110–137 lookahead-safe features per player-game (rolling form, matchup quality, platoon splits, basketball IQ, opponent defense, rest, park factors, …)
@@ -76,7 +76,7 @@ The thing that makes prop-edge unusual isn't the models — it's that the whole 
 
 ---
 
-## Models (27 active)
+## Models (37 active)
 
 Poisson regression per stat (binary classifier for home runs). Combo stats (NBA/WNBA PRA·P+R·P+A·R+A, MLB hits+runs+RBIs) are **direct summed-target models** — they beat summing component lambdas. Isotonic calibration on top, recalibrated on full regular-season data and excluding playoffs (a different distribution).
 
@@ -86,6 +86,9 @@ Poisson regression per stat (binary classifier for home runs). Combo stats (NBA/
 | **NBA** | points, rebounds, assists, threes, **+ 4 combos (PRA, P+R, P+A, R+A)**, winner model |
 | **WNBA** | points, rebounds, assists, **+ 4 combos** |
 | **NHL** | goals, assists, saves |
+| **NFL** | receptions, receiving yards, rushing yards |
+| **CFB** | receptions, receiving yards, rushing yards, passing yards |
+| **Soccer** | keeper saves, fouls, shots — across EPL · La Liga · Bundesliga · Serie A · Ligue 1 · MLS |
 
 New markets earn their slot only if they beat a season-average baseline out-of-sample — pitcher ER/hits-allowed (+8% / +18% MAE) and the combos shipped; low-frequency batter events (runs, walks, doubles, steals, singles) were assessed and **dropped** as un-modelable noise. NBA/MLB also have game-winner models; NHL/WNBA winner models become trainable as history accrues.
 
@@ -99,6 +102,7 @@ New markets earn their slot only if they beat a season-average baseline out-of-s
 | NBA   | 36,000+  | 120 |
 | WNBA  | 9,700+   | 135 |
 | NHL   | 58,000+  | 114 |
+| Soccer | 89,000+ | 26 |
 
 The PrizePicks scraper covers 40+ stat types across all four sports.
 
@@ -138,7 +142,7 @@ Data sources:  PrizePicks (via residential proxy) · MLB Stats API · ESPN · nb
         │
   Features:  rolling form · matchup quality · advanced IQ  (110–137 / player-game)
         │
-   Models:  17 LightGBM (Poisson + binary) + isotonic calibration + winner models
+   Models:  37 LightGBM (Poisson + binary) + isotonic calibration + winner models
         │
     Picks:  per-category edge cutoffs · injury/bench/stale filters · dedup · logging
         │
@@ -196,7 +200,7 @@ Key env vars (`.env`): `DATABASE_URL`, `RAILWAY_DATABASE_URL`, `DISCORD_WEBHOOK_
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** for the full, continuously-updated list. The build of the autonomous system is done, and the high-value model work is largely exhausted — new signal features (team defense, times-through-order, pitcher velo, …) have been assessed and shown neutral on the now-saturated models, and the prop-market lane is built out. What's left is data-gated (NHL/WNBA market blend as sharp coverage accrues) or seasonal: a **college-basketball foundation is built and parked for tip-off in November**.
+See **[ROADMAP.md](ROADMAP.md)** for the full, continuously-updated list. The build of the autonomous system is done, and the high-value model work is largely exhausted — new signal features (team defense, times-through-order, pitcher velo, …) have been assessed and shown neutral on the now-saturated models, and the prop-market lane is built out. What's left is data-gated (NHL/WNBA market blend as sharp coverage accrues) or seasonal. The college-basketball lane was revisited at the November 2026 tip-off and **dropped**: even bettable (high-minute / Sleeper-posted) players don't beat their season averages — see [`props/models/cbb_bettable_eval.py`](props/models/cbb_bettable_eval.py).
 
 ---
 

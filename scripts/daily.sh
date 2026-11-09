@@ -100,12 +100,13 @@ _sched() {
 echo "--- MLB schedule ---"
 _sched mlb_schedule
 
-# NBA/NHL go quiet in summer; their schedule endpoints (flaky stats.nba.com,
-# api-web.nhle.com) then time out on empty future dates. A transient timeout
-# there must not inflate step_failures — a real in-season gap still surfaces via
-# ingest_monitor's slate_volume check. WARN, don't count.
+# NBA/NHL go quiet in summer; their schedule endpoints then time out on empty
+# future dates. A transient timeout there must not inflate step_failures — a
+# real in-season gap still surfaces via ingest_monitor's slate_volume check.
+# WARN, don't count. (NBA is ESPN-primary since 2026-11-09 — stats.nba.com
+# hard-blocks the runner; nba_api is the fallback.)
 echo "--- NBA schedule ---"
-_sched nba_schedule "flaky stats.nba.com / offseason"
+_sched nba_schedule "espn / offseason"
 
 echo "--- WNBA schedule ---"
 _sched wnba_schedule
@@ -121,6 +122,12 @@ _sched nfl_schedule "espn / offseason"
 # are not registered yet, so this accrues data rather than producing picks.
 echo "--- CFB schedule ---"
 _sched cfb_schedule "espn / offseason"
+
+# Soccer: 6 club leagues (EPL/La Liga/Bundesliga/Serie A/Ligue 1/MLS) under one
+# sport_code — activated 2026-11-09 (saves/fouls/shots models registered). Goes
+# quiet during international breaks; empty days are harmless upserts.
+echo "--- Soccer schedule ---"
+_sched soccer_schedule "espn / int'l break"
 
 # ── 2. Box scores ────────────────────────────────────────────────────────────
 # When writing to Railway (remote DB), cap the batch to avoid backfilling years
@@ -142,6 +149,7 @@ python -m props.ingest.nfl_boxscores
 # that outruns the step's time budget keeps whatever it already fetched and the
 # next run resumes, instead of rolling the whole thing back.
 python -m props.ingest.cfb_boxscores --limit 120 --batch 40 || echo "WARN: cfb_boxscores failed (espn / offseason)"
+python -m props.ingest.soccer_boxscores --limit 120 --batch 40 || echo "WARN: soccer_boxscores failed (espn / int'l break)"
 
 # ── 2b. MLB ballpark weather (Open-Meteo, free) ──────────────────────────────
 # Wind blowing out drives offense (validated: 65% over-rate vs 43% calm/in).
@@ -205,6 +213,13 @@ if [ "$(has_recent_games nfl)" = "1" ]; then
     python -m props.features.nfl_rolling
 else
     echo "--- NFL rolling features: skipped (off-season, no games in 10d) ---"
+fi
+
+if [ "$(has_recent_games soccer)" = "1" ]; then
+    echo "--- Soccer rolling features ---"
+    python -m props.features.soccer_rolling || echo "WARN: soccer_rolling failed"
+else
+    echo "--- Soccer rolling features: skipped (break/off-season, no games in 10d) ---"
 fi
 
 echo "--- MLB rolling features ---"

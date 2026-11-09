@@ -128,6 +128,18 @@ def test_suppression_line_in_range():
     assert supp.line_in_range("unknown_stat", 999) is True  # no band -> allow
 
 
+def test_suppression_saves_band_is_sport_aware():
+    # "saves" collides across sports: NHL goalie lines ~18-35, soccer keeper
+    # lines ~1.5-6.5. The NHL min of 15 must not eat every soccer saves line.
+    assert supp.line_in_range("saves", 3.5, "soccer") is True
+    assert supp.line_in_range("saves", 24.5, "nhl") is True
+    assert supp.line_in_range("saves", 3.5, "nhl") is False      # NHL band holds
+    assert supp.line_in_range("saves", 24.5, "soccer") is False  # multi-game line
+    assert supp.line_in_range("saves", 24.5) is True             # legacy stat-only call
+    assert supp.line_in_range("fouls", 1.5, "soccer") is True
+    assert supp.line_in_range("shots", 2.5, "soccer") is True
+
+
 def test_is_out_status():
     for s in ["Out", "Doubtful", "15-Day-IL", "60-Day-IL", "7-Day IL",
               "suspension", "developmental list", "paternity"]:

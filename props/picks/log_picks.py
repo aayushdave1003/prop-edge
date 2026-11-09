@@ -35,7 +35,7 @@ def sport_for_model(model_name: str, sport_by_model: dict | None = None) -> str:
     AND the wrong (lenient) per-category cutoff. Fall back to the name prefix."""
     if sport_by_model and model_name in sport_by_model:
         return sport_by_model[model_name]
-    for prefix in ("wnba", "nba", "nhl", "cfb", "nfl", "mlb"):   # wnba before nba
+    for prefix in ("wnba", "nba", "nhl", "cfb", "nfl", "soccer", "mlb"):   # wnba before nba
         if model_name.startswith(prefix):
             return prefix
     return "mlb"
@@ -261,7 +261,7 @@ def main():
             # lines (set for returning bench players) and absurdly high ones
             # (multi-game/fantasy cumulatives PrizePicks serves alongside normal
             # lines). See props.picks.suppression for the per-stat bands.
-            if not line_in_range(row["stat_type"], row["line_value"]):
+            if not line_in_range(row["stat_type"], row["line_value"], row.get("sport_code")):
                 skipped += 1
                 continue
             # Skip near-certain picks — no real single-game prop is >97% certain;
@@ -406,13 +406,13 @@ def _send_discord_alert(edges: pd.DataFrame, target_date):
         return
 
     sport_emoji = {"nba": "🏀", "mlb": "⚾", "wnba": "🏀", "nhl": "🏒", "nfl": "🏈",
-                   "cfb": "🏈"}
+                   "cfb": "🏈", "soccer": "⚽"}
 
     fields = []
     # Every sport that can produce a pick must be listed: this loop is what the
     # daily Discord post iterates, so an omitted sport is logged to the DB and
     # then silently never shown.
-    for sport_order in ["nba", "wnba", "mlb", "nhl", "nfl", "cfb"]:
+    for sport_order in ["nba", "wnba", "mlb", "nhl", "nfl", "cfb", "soccer"]:
         sport_picks = top[top["sport_code"] == sport_order]
         if sport_picks.empty:
             continue
