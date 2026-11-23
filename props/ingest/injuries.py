@@ -1,9 +1,12 @@
-"""Scrape injury statuses from ESPN's API for NBA, WNBA, MLB and NHL.
+"""Scrape injury statuses from ESPN's API for NBA, WNBA, MLB, NHL and NFL.
 
 Stores latest status per player in player_injuries table. Runs daily; the pick
 suppression filters players whose latest status is "out". WNBA + NHL were added
 2026-07 after the scratch_picks guard surfaced WNBA no-shows (e.g. Sonia Citron)
 slipping through — the feed had them "Out", we just weren't fetching WNBA.
+NFL added 2026-11-23: the table had ZERO nfl rows ever (same silent-coverage
+shape as the WNBA gap — the feed existed, we never fetched it). ESPN lists
+~800 NFL players incl. "Active"; only non-Active statuses matter downstream.
 """
 from curl_cffi import requests
 from sqlalchemy import text
@@ -17,6 +20,7 @@ URLS = {
     "wnba": "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba/injuries",
     "mlb": "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/injuries",
     "nhl": "https://site.web.api.espn.com/apis/site/v2/sports/hockey/nhl/injuries",
+    "nfl": "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/injuries",
 }
 
 # Statuses that mean "will not play tonight" — sport-specific
@@ -25,6 +29,9 @@ OUT_STATUSES = {
     "wnba": {"Out", "Doubtful"},
     "mlb": {"10-Day-IL", "15-Day-IL", "60-Day-IL", "7-Day-IL", "Out"},
     "nhl": {"Out", "Injured Reserve", "Suspension"},
+    # Questionable ≠ out (those mostly play); statuses observed live 2026-11-23:
+    # Active 613, Out 90, Questionable 49, Injured Reserve 45, Doubtful 3.
+    "nfl": {"Out", "Injured Reserve", "Doubtful"},
 }
 
 

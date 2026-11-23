@@ -15,9 +15,10 @@ from props.models.registry import MODELS
 
 # Stats ingested on purpose with NO model: lines land in prop_lines for a
 # non-pick consumer and must never become picks. Each entry names its consumer.
-MODELLESS_BY_DESIGN = {
-    ("nfl", "passing_yards"),  # QB leg of props.picks.nfl_stacks (model-free lane)
-}
+MODELLESS_BY_DESIGN: set[tuple[str, str]] = set()
+# Deliberate model-less ingests go here WITH their consumer named. Empty since
+# 2026-11-23: ("nfl", "passing_yards") was the QB leg of props.picks.nfl_stacks
+# until that lane closed at every venue; its mapping was pruned with it.
 
 
 def test_every_mapping_targets_a_real_model_for_that_sport():

@@ -82,10 +82,12 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("nfl", "receiving_yards"): "receiving_yards",
     ("nfl", "receptions"): "receptions",
     ("nfl", "rushing_yards"): "rushing_yards",
-    # passing_yards is NOT a model market (dropped at activation, −6.23% OOS)
-    # but it is the QB leg of the nfl_stacks lane: no registered model means
-    # stored lines generate no picks. String re-verified live 2026-11-09.
-    ("nfl", "passing_yards"): "passing_yards",
+    # passing_yards: intentionally UNMAPPED since 2026-11-23 (not an accident —
+    # see the unmodeled_stat lesson). It was never a model market (−6.23% OOS)
+    # and existed 2026-11-09→11-23 solely as the QB leg of the nfl_stacks
+    # correlated-parlay lane, which is now closed at every venue (Sleeper and
+    # Kalshi both price the correlation; see ROADMAP). Re-add here AND in
+    # MODELLESS_BY_DESIGN (tests/test_sleeper_mapping.py) if a consumer returns.
     # ── NHL (strings verified live 2026-10-05) ─────────────────────────────────
     # Sleeper also posts points/shots/powerplay_points/blocked_shots — no model
     # for those, so they stay unmapped.
@@ -98,11 +100,14 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("cfb", "passing_yards"): "passing_yards",
     ("cfb", "receptions"): "receptions",
     # ── Soccer (club, via clubsoccer:<league>; keyed on OUR code) ──────────────
-    # ⚠️ wager_type strings NOT yet verified live — soccer activated 2026-11-09,
-    # during the November international break, when Sleeper posts no club lines.
-    # An unused alias costs nothing and a missing key is a silent skip, so the
-    # plausible variants are listed; verify with --dry-run when club play
-    # resumes (~Nov 20) and prune/extend to the real strings.
+    # Live check 2026-11-23 (early UCL+MLS board, 21 lines): `shots` CONFIRMED
+    # (3 posted + 1 `shots_on_target`, a different stat we don't model). No
+    # saves/fouls market appeared under ANY name — Sleeper's goalie markets are
+    # `goalie_fantasy_points` and `goals_against`, not raw saves. If the full
+    # UCL board (Tue/Wed) confirms, the saves/fouls MODELS are line-less on
+    # Sleeper (modeled-but-dark, the inverse of unmodeled_stat) and the open
+    # question is the lane's scope, not these aliases. Aliases stay until that
+    # final check: unused ones cost nothing and a missing key is a silent skip.
     ("soccer", "saves"): "saves",
     ("soccer", "goalie_saves"): "saves",
     ("soccer", "goalkeeper_saves"): "saves",
