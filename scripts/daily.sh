@@ -361,17 +361,13 @@ if [ "$(has_recent_games nfl)" = "1" ] && [ "$(date +%u)" = "1" ]; then
     python -m props.models.nfl_corr_probe --post || true
 fi
 
-# ── 7e2d. NFL QB+own-WR stack logger (daily, in-season) ─────────────────────
-# The probe's verdict is IN (2026-11-09: joint 0.381 vs 0.297 independent,
-# +14.4% EV @3.0x, n=312). This logs every available PRE-GAME stack at the
-# product of its two legs' posted multipliers and grades them forward (--roi).
-# Silent by design: an unproven lane doesn't advertise picks (the arb lesson),
-# and the stored payout is an upper bound until the in-app correlated-combo
-# check is done (see props/picks/nfl_stacks.py docstring).
-if [ "$(has_recent_games nfl)" = "1" ]; then
-    echo "--- NFL QB+WR stack logger ---"
-    python -m props.picks.nfl_stacks || true
-fi
+# ── 7e2d. NFL QB+own-WR stack logger — CLOSED 2026-11-20, step removed ──────
+# The in-app check settled it: Sleeper REPRICES the correlated combo (observed
+# 2.57x vs the 3.19x leg product), implying a joint of 38.9% vs our measured
+# 38.1% — the book prices the correlation to within ~2% vig of our own number.
+# EV at the real offer: 0.381 × 2.57 − 1 ≈ −2%. The +14.4% existed only at a
+# payout nobody is offered. Logger kept for the record (props.picks.nfl_stacks
+# --roi); the 101 logged stacks stay graded at their (overstated) stored payouts.
 
 # ── 7e2d. Promo / odds-boost digest + reminder ───────────────────────────────
 # Odds boosts are the one STRUCTURAL +EV lane (the book deliberately overpays to

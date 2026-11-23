@@ -20,10 +20,13 @@ concurrency:
 jobs:
   daily:
     runs-on: ubuntu-latest
-    # The full pipeline (4 sports × schedules/box-scores/features + settle +
-    # predict) runs ~35-40 min; 45 was too tight and a slow API timed out
-    # mid-predict, before picks/Discord. 90 gives headroom.
-    timeout-minutes: 90
+    # The full pipeline normally runs 30-90 min, but on DB-slow days every
+    # step runs 4-7x slower (2026-11-18: model loads that take 1-2 min took
+    # 7; one pick-persist stalled 12). Two runs (11-09, 11-18) hit the old
+    # 90-min ceiling and were cancelled mid-predict — silently, because
+    # daily.sh's own alerting dies with the job. 150 covers a slow day; the
+    # alert job below pings when even that isn't enough.
+    timeout-minutes: 150
     env:
       RAILWAY_DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
       DATABASE_URL: ${{ secrets.RAILWAY_DATABASE_URL }}
@@ -59,3 +62,29 @@ jobs:
 
       - name: Run daily pipeline
         run: bash scripts/daily.sh
+
+  alert:
+    # A job killed by timeout-minutes can't send its own alert — two daily
+    # runs (2026-11-09, 2026-11-18) were cancelled at the ceiling and nothing
+    # pinged, the same silent-failure shape as the red-main CI gap. This job
+    # outlives the kill and pings Discord whenever daily didn't succeed.
+    needs: [daily]
+    if: always() && needs.daily.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Discord daily-pipeline alert
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RESULT: ${{ needs.daily.result }}
+        run: |
+          [ -z "$DISCORD_WEBHOOK_URL" ] && { echo "no webhook configured"; exit 0; }
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -H "Content-Type: application/json" -X POST "$DISCORD_WEBHOOK_URL" -d '{
+            "embeds": [{
+              "title": "🔴 daily-pipeline: '"$RESULT"'",
+              "description": "The daily run did not finish — timeout kills land here too. ['"$RUN_URL"']('"$RUN_URL"')",
+              "color": 15158332,
+              "footer": {"text": "daily.yml · alert job"}
+            }]
+          }'

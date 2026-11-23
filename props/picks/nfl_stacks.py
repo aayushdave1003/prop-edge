@@ -12,12 +12,18 @@ multipliers, a parlay pays their product, and each logged stack carries the
 product of its two legs' posted over-multipliers. The forward ROI is then
 graded at that stored payout — the number the book actually offered.
 
-⚠️ THE ONE UNVERIFIED ASSUMPTION: books restrict obviously-correlated combos.
-If Sleeper blocks QB+own-WR in-app, or reprices the pairing below the posted
-leg product, the stored payout overstates and this lane is dead on arrival.
-That is checkable only in the app with an account (the API carries no
-restriction metadata — verified 2026-11-09, `options[].metadata` is empty).
-Until confirmed, the ROI here is an upper bound on a REAL track record.
+⛔ LANE CLOSED 2026-11-20 — the in-app check settled the one unverified
+assumption, against us: Sleeper REPRICES the correlated combo. Observed in-app
+2-pick (Josh Allen o228.5 pass + DJ Moore o49.5 rec): 2.57x, vs ~3.19x as the
+product of the legs' posted multipliers — a 19% correlation haircut. The
+implied breakeven joint at 2.57x is 38.9%; our measured joint is 38.1%
+(n=312), i.e. the book prices this correlation to within ~2% vig of our own
+estimate. EV at the real offer: 0.381 × 2.57 − 1 ≈ −2.1%. The probe's +14.4%
+existed only at a 3.0x payout that is never actually offered for this combo.
+daily.sh no longer runs the logger; the logged stacks (n=101, 2026-11-09 →
+11-19) remain for the record, graded by --roi at their STORED payout products,
+which overstate the real offer by ~24% — read any ROI from this module as
+history of a closed lane, not a live track record.
 
 Honest-lane rules (same as sleeper_arb): stacks are logged PRE-GAME only
 (+30min guard), every available stack is logged (the edge claim is the
@@ -185,7 +191,8 @@ def _print_roi():
         print(f"  building ({s['n']}/{MIN_TIER_N} settled) — verdict held until the tier fills")
     else:
         print("  no settled stacks yet")
-    print("  ⚠️ upper bound until the in-app combo check is done (see module docstring)")
+    print("  ⛔ lane CLOSED 2026-11-20: the book reprices the combo (2.57x offered vs")
+    print("     ~3.17x stored) — stored-payout ROI overstates; see module docstring")
 
 
 def main():
