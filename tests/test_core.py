@@ -142,9 +142,11 @@ def test_suppression_saves_band_is_sport_aware():
 
 def test_is_out_status():
     for s in ["Out", "Doubtful", "15-Day-IL", "60-Day-IL", "7-Day IL",
-              "suspension", "developmental list", "paternity"]:
+              "suspension", "developmental list", "paternity",
+              "Injured Reserve"]:   # ESPN's NHL/NFL IR spelling — was a miss
         assert _is_out_status(s), s
-    for s in ["Day-To-Day", "Questionable", "Probable", "GTD", "Available", "", None]:
+    for s in ["Day-To-Day", "Questionable", "Probable", "GTD", "Available",
+              "Active", "", None]:
         assert not _is_out_status(s), s
 
 

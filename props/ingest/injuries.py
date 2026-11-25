@@ -5,8 +5,13 @@ suppression filters players whose latest status is "out". WNBA + NHL were added
 2026-07 after the scratch_picks guard surfaced WNBA no-shows (e.g. Sonia Citron)
 slipping through — the feed had them "Out", we just weren't fetching WNBA.
 NFL added 2026-11-23: the table had ZERO nfl rows ever (same silent-coverage
-shape as the WNBA gap — the feed existed, we never fetched it). ESPN lists
-~800 NFL players incl. "Active"; only non-Active statuses matter downstream.
+shape as the WNBA gap — the feed existed, we never fetched it). ESPN's NFL
+feed lists whole rosters (~800 players, ~75% "Active"), unlike the other
+sports' injured-only feeds. The Active rows are kept deliberately: pick
+suppression reads the LATEST row per player, so an explicit Active is an
+all-clear that overrides a stale Out immediately instead of waiting for the
+30-hour recency window to expire. Cost: ~4k rows/day vs ~1k for all other
+sports combined — fine at current table size.
 """
 from curl_cffi import requests
 from sqlalchemy import text

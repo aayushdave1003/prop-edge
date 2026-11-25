@@ -100,21 +100,18 @@ WAGER_TO_STAT: dict[tuple[str, str], str] = {
     ("cfb", "passing_yards"): "passing_yards",
     ("cfb", "receptions"): "receptions",
     # ── Soccer (club, via clubsoccer:<league>; keyed on OUR code) ──────────────
-    # Live check 2026-11-23 (early UCL+MLS board, 21 lines): `shots` CONFIRMED
-    # (3 posted + 1 `shots_on_target`, a different stat we don't model). No
-    # saves/fouls market appeared under ANY name — Sleeper's goalie markets are
-    # `goalie_fantasy_points` and `goals_against`, not raw saves. If the full
-    # UCL board (Tue/Wed) confirms, the saves/fouls MODELS are line-less on
-    # Sleeper (modeled-but-dark, the inverse of unmodeled_stat) and the open
-    # question is the lane's scope, not these aliases. Aliases stay until that
-    # final check: unused ones cost nothing and a missing key is a silent skip.
-    ("soccer", "saves"): "saves",
-    ("soccer", "goalie_saves"): "saves",
-    ("soccer", "goalkeeper_saves"): "saves",
-    ("soccer", "fouls"): "fouls",
-    ("soccer", "fouls_committed"): "fouls",
+    # VERDICT 2026-11-24, full UCL-day board (56 soccer lines; 77 across the
+    # 11-23/11-24 checks): `shots` is the one confirmed market. saves/fouls
+    # exist under NO name — Sleeper's goalie markets are goalie_fantasy_points
+    # / goals_against / first_half_goals_against, and no fouls market is
+    # posted at all. The speculative aliases are pruned: they guessed at
+    # spellings of markets that turned out not to exist. The soccer `saves`
+    # and `fouls` MODELS are therefore line-less on Sleeper (modeled-but-dark)
+    # — tracked in ROADMAP as a lane-scope question, not a mapping problem.
+    # Also seen, unmodeled (correctly skip as unmodeled_stat): shots_on_target,
+    # goals.
     ("soccer", "shots"): "shots",
-    ("soccer", "total_shots"): "shots",
+    ("soccer", "total_shots"): "shots",   # plausible alt-spelling of a REAL market
     # ── NBA / WNBA ─────────────────────────────────────────────────────────────
     # WNBA strings verified live; NBA mirrors them (off-season at time of writing,
     # so re-check with `--dry-run` once the season opens). threes_made is NBA-only

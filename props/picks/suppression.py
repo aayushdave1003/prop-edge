@@ -109,8 +109,11 @@ MAX_LINE_BY_SPORT_STAT = {
 # Injury-status keywords.
 PLAYS_ANYWAY = ("day-to-day", "day to day", "questionable", "probable",
                 "gtd", "game-time", "available")
+# "injured reserve" added 2026-11-24: ESPN spells NHL/NFL IR as "Injured
+# Reserve", which contains none of the other keywords — IR players were
+# passing suppression unflagged (found when the NFL feed landed 45 of them).
 WONT_PLAY = ("out", "doubtful", "il", "suspens", "developmental",
-             "bereavement", "paternity")
+             "bereavement", "paternity", "injured reserve")
 
 
 def is_out_status(status: str) -> bool:
