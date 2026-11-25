@@ -252,6 +252,14 @@ python -m props.ingest.line_feed || echo "WARN: line ingest failed"
 echo "--- Injuries ---"
 python -m props.ingest.injuries
 
+# Kalshi reference snapshot — sharp, executable per-prop market probabilities.
+# Measurement feed ONLY (no picks come from it; see props.ingest.kalshi_lines).
+# Kalshi books populate on game day, so weekday runs mostly capture NBA/NHL and
+# the Sunday run catches whatever NFL hasn't kicked off yet. Consumers gate on
+# snapshot_at < games.game_datetime (the market_odds 22:00-UTC leak lesson).
+echo "--- Kalshi reference snapshot ---"
+python -m props.ingest.kalshi_lines
+
 # ── 5. Settle previous picks ─────────────────────────────────────────────────
 echo "--- Settle yesterday's picks ---"
 python -m props.picks.settle_picks

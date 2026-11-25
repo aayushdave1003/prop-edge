@@ -209,6 +209,30 @@ MIGRATIONS: list[tuple[str, str]] = [
      "  ev_est        NUMERIC(8,4),"
      "  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),"
      "  PRIMARY KEY (run_date, qb_player_id, wr_player_id))"),
+    # Kalshi prop-ladder snapshots (props.ingest.kalshi_lines) — a sharp,
+    # EXECUTABLE market-probability reference per prop. Measurement feed only:
+    # no picks are generated from it. Name-keyed like player_injuries (Kalshi
+    # players resolve to ours by name at analysis time). threshold is Kalshi's
+    # "X+" strike: equivalent to the over side of a Sleeper X-0.5 line.
+    # ⚠️ Consumers MUST gate on snapshot_at < games.game_datetime — a snapshot
+    # taken mid-game is in-play data (the market_odds 22:00-UTC lesson).
+    ("0019_kalshi_lines",
+     "CREATE TABLE IF NOT EXISTS kalshi_lines ("
+     "  snapshot_at   TIMESTAMPTZ NOT NULL,"
+     "  market_ticker TEXT NOT NULL,"
+     "  series_ticker TEXT NOT NULL,"
+     "  sport_code    TEXT NOT NULL,"
+     "  stat_type     TEXT NOT NULL,"
+     "  event_date    DATE NOT NULL,"
+     "  matchup       TEXT NOT NULL,"
+     "  player_name   TEXT NOT NULL,"
+     "  threshold     NUMERIC(8,2) NOT NULL,"
+     "  yes_bid       NUMERIC(6,4),"
+     "  yes_ask       NUMERIC(6,4),"
+     "  volume        NUMERIC(14,2),"
+     "  PRIMARY KEY (market_ticker, snapshot_at));"
+     "CREATE INDEX IF NOT EXISTS kalshi_lines_lookup ON kalshi_lines"
+     "  (sport_code, stat_type, event_date, player_name)"),
 ]
 
 
